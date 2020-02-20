@@ -10,6 +10,7 @@ extern crate timely;
 extern crate url;
 
 mod datasets;
+mod min_sum;
 
 use datasets::*;
 use differential_dataflow::input::Input;
@@ -17,37 +18,15 @@ use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::reduce::ReduceCore;
 use differential_dataflow::operators::*;
 use differential_dataflow::trace::implementations::ord::OrdKeySpine;
+use min_sum::*;
 use timely::dataflow::operators::probe::Handle;
-use timely::dataflow::operators::*;
-
-#[derive(Abomonation, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Hash)]
-pub struct MinSum {
-    value: u32,
-}
-
-use differential_dataflow::difference::Semigroup;
-use std::ops::{AddAssign, Mul};
-
-impl<'a> AddAssign<&'a Self> for MinSum {
-    fn add_assign(&mut self, rhs: &'a Self) {
-        self.value = std::cmp::min(self.value, rhs.value);
-    }
-}
-
-impl Mul<Self> for MinSum {
-    type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        MinSum {
-            value: self.value + rhs.value,
-        }
-    }
-}
-
-impl Semigroup for MinSum {
-    fn is_zero(&self) -> bool {
-        false
-    }
-}
+// use timely::dataflow::operators::*;
+use timely::dataflow::operators::Accumulate;
+use timely::dataflow::operators::Exchange;
+use timely::dataflow::operators::Input as TimelyInput;
+use timely::dataflow::operators::Inspect;
+use timely::dataflow::operators::Map;
+use timely::dataflow::operators::Probe;
 
 fn main() {
     let facebook =
@@ -62,9 +41,10 @@ fn main() {
     timely::execute_from_args(std::env::args(), move |worker| {
         let mut probe = Handle::new();
         let (mut roots, mut edges) = worker.dataflow::<usize, _, _>(|scope| {
+            let (edge_input, edges) = scope.new_input::<(u32, u32)>();
             let (root_input, roots) = scope.new_collection::<u32, MinSum>();
-            let (edge_input, edges) = scope.new_collection::<(u32, u32), MinSum>();
 
+            let edges = edges.as_min_sum_collection();
             let edges = edges.arrange_by_key();
             let nodes = roots.map(|src| (src, ())); // initialize distances at zero
 
@@ -107,18 +87,8 @@ fn main() {
         });
 
         if worker.index() == 0 {
-            livejournal.load_dataflow(&mut edges);
+            facebook.load_stream(&mut edges);
             println!("{:?}\tread data from file", timer.elapsed());
-
-            // edges.update((0, 1), MinSum { value: 4 });
-            // edges.update((0, 2), MinSum { value: 4 });
-            // edges.update((2, 3), MinSum { value: 4 });
-            // edges.update((1, 3), MinSum { value: 4 });
-            // edges.update((3, 4), MinSum { value: 4 });
-            // edges.update((0, 5), MinSum { value: 1 });
-            // edges.update((5, 6), MinSum { value: 1 });
-            // edges.update((6, 3), MinSum { value: 1 });
-
             roots.update(0, MinSum { value: 0 });
         }
         edges.close();

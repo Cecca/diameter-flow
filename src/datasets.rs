@@ -1,5 +1,4 @@
-use crate::MinSum;
-use differential_dataflow::difference::Semigroup;
+use crate::min_sum::MinSum;
 use differential_dataflow::input::InputSession;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -10,8 +9,8 @@ use std::cmp::Ordering;
 use std::fmt::Write;
 use std::fs;
 use std::fs::File;
-use std::ops::{AddAssign, Mul};
 use std::path::PathBuf;
+use timely::dataflow::operators::input::Handle as InputHandle;
 use timely::progress::Timestamp;
 use url::Url;
 
@@ -47,6 +46,21 @@ impl Dataset {
                         input_handle.update((src, dst), MinSum { value: 1 });
                         // Also add the flipped edge, to make the graph undirected
                         input_handle.update((dst, src), MinSum { value: 1 });
+                    },
+                );
+            }
+        };
+    }
+
+    pub fn load_stream<T: Timestamp + Clone>(&self, input_handle: &mut InputHandle<T, (u32, u32)>) {
+        match self {
+            Self::Snap(url) => {
+                read_text_edge_file_unweighted(
+                    &maybe_download_and_remap_file(url),
+                    |(src, dst)| {
+                        input_handle.send((src, dst));
+                        // Also add the flipped edge, to make the graph undirected
+                        input_handle.send((dst, src));
                     },
                 );
             }
