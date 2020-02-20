@@ -1,3 +1,4 @@
+use crate::MinSum;
 use differential_dataflow::difference::Semigroup;
 use differential_dataflow::input::InputSession;
 use flate2::read::GzDecoder;
@@ -36,23 +37,16 @@ pub enum Dataset {
 impl Dataset {
     pub fn load_dataflow<T: Timestamp + Clone>(
         &self,
-        input_handle: &mut InputSession<T, (u32, WeightedEdge), isize>,
+        input_handle: &mut InputSession<T, (u32, u32), MinSum>,
     ) {
         match self {
             Self::Snap(url) => {
                 read_text_edge_file_unweighted(
                     &maybe_download_and_remap_file(url),
                     |(src, dst)| {
-                        //input_handle.update((src, dst), MinSum { value: 1.0 });
-                        input_handle.insert((src, WeightedEdge { dst, weight: 1 }));
+                        input_handle.update((src, dst), MinSum { value: 1 });
                         // Also add the flipped edge, to make the graph undirected
-                        input_handle.insert((
-                            dst,
-                            WeightedEdge {
-                                dst: src,
-                                weight: 1,
-                            },
-                        ));
+                        input_handle.update((dst, src), MinSum { value: 1 });
                     },
                 );
             }

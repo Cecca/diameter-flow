@@ -14,9 +14,40 @@ mod datasets;
 use datasets::*;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeByKey;
+use differential_dataflow::operators::reduce::ReduceCore;
 use differential_dataflow::operators::*;
+use differential_dataflow::trace::implementations::ord::OrdKeySpine;
 use timely::dataflow::operators::probe::Handle;
 use timely::dataflow::operators::*;
+
+#[derive(Abomonation, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Hash)]
+pub struct MinSum {
+    value: u32,
+}
+
+use differential_dataflow::difference::Semigroup;
+use std::ops::{AddAssign, Mul};
+
+impl<'a> AddAssign<&'a Self> for MinSum {
+    fn add_assign(&mut self, rhs: &'a Self) {
+        self.value = std::cmp::min(self.value, rhs.value);
+    }
+}
+
+impl Mul<Self> for MinSum {
+    type Output = Self;
+    fn mul(self, rhs: Self) -> Self {
+        MinSum {
+            value: self.value + rhs.value,
+        }
+    }
+}
+
+impl Semigroup for MinSum {
+    fn is_zero(&self) -> bool {
+        false
+    }
+}
 
 fn main() {
     let facebook =
@@ -31,32 +62,37 @@ fn main() {
     timely::execute_from_args(std::env::args(), move |worker| {
         let mut probe = Handle::new();
         let (mut roots, mut edges) = worker.dataflow::<usize, _, _>(|scope| {
-            let (root_input, roots) = scope.new_collection::<u32, isize>();
-            let (edge_input, edges) = scope.new_collection::<(u32, WeightedEdge), isize>();
+            let (root_input, roots) = scope.new_collection::<u32, MinSum>();
+            let (edge_input, edges) = scope.new_collection::<(u32, u32), MinSum>();
 
             let edges = edges.arrange_by_key();
-            let nodes = roots.map(|src| (src, 0)); // initialize distances at zero
+            let nodes = roots.map(|src| (src, ())); // initialize distances at zero
 
             let distances = nodes
+                .scope()
                 .iterate(|inner| {
                     let edges = edges.enter(&inner.scope());
                     let nodes = nodes.enter(&inner.scope());
 
                     edges
-                        .join_map(&inner, |_src, edge, dist| (edge.dst, dist + edge.weight))
+                        .join_map(&inner, |_src, dst, ()| (*dst, ()))
                         .concat(&nodes)
-                        .reduce(|_node, input, output| {
-                            let res = (*input.iter().map(|p| p.0).min().unwrap(), 1isize);
-                            output.push(res);
-                        })
-                        .consolidate()
+                        .reduce_core::<_, OrdKeySpine<_, _, _>>(
+                            "Reduce",
+                            |_node, input, output, updates| {
+                                if output.is_empty() || input[0].1 < output[0].1 {
+                                    updates.push(((), input[0].1));
+                                }
+                            },
+                        )
+                        .as_collection(|k, ()| (*k, ()))
                 })
-                .consolidate();
+                .consolidate()
+                .map(|pair| pair.0);
 
             let diameter = distances
-                .map(|(_node, dist)| dist)
                 .inner
-                .map(|triplet| triplet.0)
+                .map(|triplet| triplet.2.value)
                 .accumulate(0, |max, data| {
                     *max = *data.iter().max().expect("empty collection")
                 })
@@ -73,15 +109,17 @@ fn main() {
         if worker.index() == 0 {
             livejournal.load_dataflow(&mut edges);
             println!("{:?}\tread data from file", timer.elapsed());
-            // edges.insert((0, WeightedEdge { dst: 1, weight: 4 }));
-            // edges.insert((0, WeightedEdge { dst: 2, weight: 4 }));
-            // edges.insert((1, WeightedEdge { dst: 3, weight: 4 }));
-            // edges.insert((2, WeightedEdge { dst: 3, weight: 4 }));
-            // edges.insert((3, WeightedEdge { dst: 4, weight: 4 }));
-            // edges.insert((0, WeightedEdge { dst: 5, weight: 1 }));
-            // edges.insert((5, WeightedEdge { dst: 6, weight: 1 }));
-            // edges.insert((6, WeightedEdge { dst: 3, weight: 1 }));
-            roots.insert(0);
+
+            // edges.update((0, 1), MinSum { value: 4 });
+            // edges.update((0, 2), MinSum { value: 4 });
+            // edges.update((2, 3), MinSum { value: 4 });
+            // edges.update((1, 3), MinSum { value: 4 });
+            // edges.update((3, 4), MinSum { value: 4 });
+            // edges.update((0, 5), MinSum { value: 1 });
+            // edges.update((5, 6), MinSum { value: 1 });
+            // edges.update((6, 3), MinSum { value: 1 });
+
+            roots.update(0, MinSum { value: 0 });
         }
         edges.close();
         roots.close();
