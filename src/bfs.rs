@@ -1,4 +1,5 @@
 use crate::min_sum::*;
+use crate::timely::progress::PathSummary;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::reduce::ReduceCore;
@@ -15,13 +16,13 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::progress::Timestamp;
 
-fn get_roots<G: Scope>(
-    edges: &Stream<G, (u32, u32)>,
+fn get_roots<G: Scope<Timestamp = usize>>(
+    edges: &Stream<G, (u32, u32, u32)>,
     num_roots: usize,
     seed: u64,
 ) -> Collection<G, u32, MinSum> {
     edges
-        .map(|(src, dst)| std::cmp::max(src, dst))
+        .map(|(src, dst, _w)| std::cmp::max(src, dst))
         .accumulate(0, |max, data| {
             *max = *data.iter().max().expect("empty collection")
         })
@@ -37,19 +38,24 @@ fn get_roots<G: Scope>(
         .unary(Pipeline, "roots builder", |_, _| {
             |input, output| {
                 input.for_each(|t, data| {
-                    let mut session = output.session(&t);
                     let mut data = data.replace(Vec::new());
-                    for node in data.drain(..) {
-                        session.give((node, t.time().clone(), MinSum { value: 0 }))
+                    for (i, node) in data.drain(..).enumerate() {
+                        let new_time = t.time().clone() + i;
+                        let new_cap = t.delayed(&new_time);
+                        let mut session = output.session(&new_cap);
+                        session.give((node, new_time, MinSum { value: 0 }))
                     }
                 });
             }
         })
         .as_collection()
-        .inspect(|r| println!("Root node {:?}", r))
 }
 
-pub fn bfs<G: Scope>(edges: &Stream<G, (u32, u32)>, num_roots: usize, seed: u64) -> Stream<G, u32>
+pub fn bfs<G: Scope<Timestamp = usize>>(
+    edges: &Stream<G, (u32, u32, u32)>,
+    num_roots: usize,
+    seed: u64,
+) -> Stream<G, u32>
 where
     G::Timestamp: Timestamp + Clone + Lattice,
 {
@@ -65,7 +71,7 @@ where
             let roots = roots.enter(&inner.scope());
 
             edges
-                .join_map(&inner, |_src, dst, ()| (*dst, ()))
+                .join_map(&roots, |_src, dst, ()| (*dst, ()))
                 .concat(&roots)
                 .reduce_core::<_, OrdKeySpine<_, _, _>>(
                     "Reduce",
@@ -76,7 +82,6 @@ where
                     },
                 )
                 .as_collection(|k, ()| (*k, ()))
-                .inspect(|x| println!("{:?}", x))
         })
         .consolidate()
         .map(|pair| pair.0);

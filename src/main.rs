@@ -32,31 +32,65 @@ use timely::dataflow::operators::Map;
 use timely::dataflow::operators::Probe;
 
 fn main() {
-    let facebook =
-        Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned());
-    let twitter =
-        Dataset::Snap("https://snap.stanford.edu/data/twitter_combined.txt.gz".to_owned());
-    let livejournal =
-        Dataset::Snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz".to_owned());
+    let mut datasets = std::collections::HashMap::new();
+    datasets.insert(
+        "facebook".to_owned(),
+        Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned()),
+    );
+    datasets.insert(
+        "twitter".to_owned(),
+        Dataset::Snap("https://snap.stanford.edu/data/twitter_combined.txt.gz".to_owned()),
+    );
+    datasets.insert(
+        "livejournal".to_owned(),
+        Dataset::Snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz".to_owned()),
+    );
+    datasets.insert(
+        "colorado".to_owned(),
+        Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"
+                .to_owned(),
+        ),
+    );
+    datasets.insert(
+        "USA".to_owned(),
+        Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"
+                .to_owned(),
+        ),
+    );
+    datasets.insert(
+        "USA-east".to_owned(),
+        Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"
+                .to_owned(),
+        ),
+    );
+
+    let dataset = std::env::args()
+        .nth(1)
+        .expect("missing dataset on the command line");
+    println!("running on dataset {}", dataset);
+    let dataset = datasets
+        .remove(&dataset)
+        .expect("missing dataset in configuration");
 
     let timer = std::time::Instant::now();
 
     timely::execute_from_args(std::env::args(), move |worker| {
         let mut probe = Handle::new();
         let mut edges = worker.dataflow::<usize, _, _>(|scope| {
-            let (edge_input, edges) = scope.new_input::<(u32, u32)>();
-
-            let edges = edges.filter(|e| e.0 < 10 && e.1 < 10);
+            let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
 
             bfs(&edges, 1, 123)
-                .inspect(|d| println!("The diameter range is {:?}", d))
+                .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                 .probe_with(&mut probe);
 
             edge_input
         });
 
         if worker.index() == 0 {
-            facebook.load_stream(&mut edges);
+            dataset.load_stream(&mut edges);
             println!("{:?}\tread data from file", timer.elapsed());
         }
         edges.close();

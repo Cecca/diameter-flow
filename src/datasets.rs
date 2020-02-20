@@ -31,53 +31,67 @@ impl Ord for WeightedEdge {
 #[derive(Debug, Deserialize)]
 pub enum Dataset {
     Snap(String),
+    Dimacs(String),
 }
 
 impl Dataset {
-    pub fn load_dataflow<T: Timestamp + Clone>(
+    // pub fn load_dataflow<T: Timestamp + Clone>(
+    //     &self,
+    //     input_handle: &mut InputSession<T, (u32, u32), MinSum>,
+    // ) {
+    //     match self {
+    //         Self::Snap(url) => {
+    //             read_text_edge_file_unweighted(
+    //                 &maybe_download_and_remap_file(url),
+    //                 |(src, dst)| {
+    //                     input_handle.update((src, dst), MinSum { value: 1 });
+    //                     // Also add the flipped edge, to make the graph undirected
+    //                     input_handle.update((dst, src), MinSum { value: 1 });
+    //                 },
+    //             );
+    //         }
+    //     };
+    // }
+
+    pub fn load_stream<T: Timestamp + Clone>(
         &self,
-        input_handle: &mut InputSession<T, (u32, u32), MinSum>,
+        input_handle: &mut InputHandle<T, (u32, u32, u32)>,
     ) {
         match self {
+            Self::Dimacs(url) => {
+                read_text_edge_file_weighted(
+                    &maybe_download_and_remap_dimacs_file(url),
+                    |(src, dst, w)| {
+                        input_handle.send((src, dst, w));
+                        // Also add the flipped edge, to make the graph undirected
+                        input_handle.send((dst, src, w));
+                    },
+                );
+            }
             Self::Snap(url) => {
                 read_text_edge_file_unweighted(
                     &maybe_download_and_remap_file(url),
                     |(src, dst)| {
-                        input_handle.update((src, dst), MinSum { value: 1 });
+                        input_handle.send((src, dst, 1));
                         // Also add the flipped edge, to make the graph undirected
-                        input_handle.update((dst, src), MinSum { value: 1 });
+                        input_handle.send((dst, src, 1));
                     },
                 );
             }
         };
     }
 
-    pub fn load_stream<T: Timestamp + Clone>(&self, input_handle: &mut InputHandle<T, (u32, u32)>) {
-        match self {
-            Self::Snap(url) => {
-                read_text_edge_file_unweighted(
-                    &maybe_download_and_remap_file(url),
-                    |(src, dst)| {
-                        input_handle.send((src, dst));
-                        // Also add the flipped edge, to make the graph undirected
-                        input_handle.send((dst, src));
-                    },
-                );
-            }
-        };
-    }
-
-    pub fn num_edges(&self) -> usize {
-        match self {
-            Self::Snap(url) => {
-                let mut cnt = 0;
-                read_text_edge_file_unweighted(&maybe_download_file(url), |_| {
-                    cnt += 1;
-                });
-                cnt
-            }
-        }
-    }
+    // pub fn num_edges(&self) -> usize {
+    //     match self {
+    //         Self::Snap(url) => {
+    //             let mut cnt = 0;
+    //             read_text_edge_file_unweighted(&maybe_download_file(url), |_| {
+    //                 cnt += 1;
+    //             });
+    //             cnt
+    //         }
+    //     }
+    // }
 }
 
 fn global_dataset_directory() -> PathBuf {
@@ -153,6 +167,39 @@ fn maybe_download_and_remap_file(url: &str) -> PathBuf {
     remapped_path
 }
 
+fn maybe_download_and_remap_dimacs_file(url: &str) -> PathBuf {
+    let remapped_path = remapped_dataset_file_path(url);
+    if !remapped_path.exists() {
+        println!("Remapping the file");
+        dimacs_file_remap(&maybe_download_file(url), &remapped_path);
+    }
+    remapped_path
+}
+
+fn dimacs_file_remap(input_path: &PathBuf, output_path: &PathBuf) {
+    use std::io::{BufWriter, Write};
+
+    let mut cnt = 0;
+    let mut node_map = std::collections::HashMap::new();
+    let mut output = BufWriter::new(GzEncoder::new(
+        File::create(output_path).expect("problem creating output file"),
+        Compression::best(),
+    ));
+    read_dimacs_file(input_path, |(src, dst, w)| {
+        let src = *node_map.entry(src).or_insert_with(|| {
+            let old = cnt;
+            cnt += 1;
+            old
+        });
+        let dst = *node_map.entry(dst).or_insert_with(|| {
+            let old = cnt;
+            cnt += 1;
+            old
+        });
+        writeln!(output, "{} {} {}", src, dst, w).expect("error writing line");
+    });
+}
+
 fn text_edge_file_remap(input_path: &PathBuf, output_path: &PathBuf) {
     use std::io::{BufWriter, Write};
 
@@ -200,6 +247,70 @@ where
                 .parse::<u32>()
                 .expect("could not parse destination");
             action((src, dst));
+        }
+    }
+}
+
+fn read_text_edge_file_weighted<F>(path: &PathBuf, mut action: F)
+where
+    F: FnMut((u32, u32, u32)),
+{
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(GzDecoder::new(
+        File::open(path).expect("problems opening file"),
+    ));
+    for line in reader.lines() {
+        let line = line.expect("error reading line");
+        if !line.starts_with("#") {
+            let mut tokens = line.split_whitespace();
+            let src = tokens
+                .next()
+                .expect("no source in line")
+                .parse::<u32>()
+                .expect("could not parse source");
+            let dst = tokens
+                .next()
+                .expect("no destination in line")
+                .parse::<u32>()
+                .expect("could not parse destination");
+            let weight = tokens
+                .next()
+                .expect("no weight")
+                .parse::<u32>()
+                .expect("could not parse weight");
+            action((src, dst, weight));
+        }
+    }
+}
+
+fn read_dimacs_file<F>(path: &PathBuf, mut action: F)
+where
+    F: FnMut((u32, u32, u32)),
+{
+    use std::io::{BufRead, BufReader};
+    let reader = BufReader::new(GzDecoder::new(
+        File::open(path).expect("problems opening file"),
+    ));
+    for line in reader.lines() {
+        let line = line.expect("error reading line");
+        if line.starts_with("a") {
+            let mut tokens = line.split_whitespace().skip(1);
+            let src = tokens
+                .next()
+                .expect("no source in line")
+                .parse::<u32>()
+                .expect("could not parse source");
+            let dst = tokens
+                .next()
+                .expect("no destination in line")
+                .parse::<u32>()
+                .expect("could not parse destination");
+            let weight = tokens
+                .next()
+                .expect("no weight")
+                .parse::<u32>()
+                .expect("could not parse weight");
+            action((src, dst, weight));
         }
     }
 }
