@@ -9,9 +9,11 @@ extern crate sha2;
 extern crate timely;
 extern crate url;
 
+mod bfs;
 mod datasets;
 mod min_sum;
 
+use bfs::*;
 use datasets::*;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeByKey;
@@ -23,6 +25,7 @@ use timely::dataflow::operators::probe::Handle;
 // use timely::dataflow::operators::*;
 use timely::dataflow::operators::Accumulate;
 use timely::dataflow::operators::Exchange;
+use timely::dataflow::operators::Filter;
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Map;
@@ -40,59 +43,23 @@ fn main() {
 
     timely::execute_from_args(std::env::args(), move |worker| {
         let mut probe = Handle::new();
-        let (mut roots, mut edges) = worker.dataflow::<usize, _, _>(|scope| {
+        let mut edges = worker.dataflow::<usize, _, _>(|scope| {
             let (edge_input, edges) = scope.new_input::<(u32, u32)>();
-            let (root_input, roots) = scope.new_collection::<u32, MinSum>();
 
-            let edges = edges.as_min_sum_collection();
-            let edges = edges.arrange_by_key();
-            let nodes = roots.map(|src| (src, ())); // initialize distances at zero
+            let edges = edges.filter(|e| e.0 < 10 && e.1 < 10);
 
-            let distances = nodes
-                .scope()
-                .iterate(|inner| {
-                    let edges = edges.enter(&inner.scope());
-                    let nodes = nodes.enter(&inner.scope());
-
-                    edges
-                        .join_map(&inner, |_src, dst, ()| (*dst, ()))
-                        .concat(&nodes)
-                        .reduce_core::<_, OrdKeySpine<_, _, _>>(
-                            "Reduce",
-                            |_node, input, output, updates| {
-                                if output.is_empty() || input[0].1 < output[0].1 {
-                                    updates.push(((), input[0].1));
-                                }
-                            },
-                        )
-                        .as_collection(|k, ()| (*k, ()))
-                })
-                .consolidate()
-                .map(|pair| pair.0);
-
-            let diameter = distances
-                .inner
-                .map(|triplet| triplet.2.value)
-                .accumulate(0, |max, data| {
-                    *max = *data.iter().max().expect("empty collection")
-                })
-                .exchange(|_| 0)
-                .accumulate(0, |max, data| {
-                    *max = *data.iter().max().expect("empty collection")
-                })
-                .inspect(|d| println!("Diameter in [{}, {}]", d, 2 * d))
+            bfs(&edges, 1, 123)
+                .inspect(|d| println!("The diameter range is {:?}", d))
                 .probe_with(&mut probe);
 
-            (root_input, edge_input)
+            edge_input
         });
 
         if worker.index() == 0 {
             facebook.load_stream(&mut edges);
             println!("{:?}\tread data from file", timer.elapsed());
-            roots.update(0, MinSum { value: 0 });
         }
         edges.close();
-        roots.close();
         worker.step_while(|| !probe.done());
         println!("{:?}\tcomputed diameter", timer.elapsed());
     })
