@@ -9,12 +9,12 @@ extern crate sha2;
 extern crate timely;
 extern crate url;
 
-mod bfs;
 mod datasets;
+mod delta_stepping;
 mod min_sum;
 
-use bfs::*;
 use datasets::*;
+use delta_stepping::*;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::reduce::ReduceCore;
