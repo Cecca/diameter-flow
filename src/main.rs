@@ -66,10 +66,26 @@ fn main() {
                 .to_owned(),
         ),
     );
+    datasets.insert(
+        "rome".to_owned(),
+        Dataset::Dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr".to_owned()),
+    );
+    datasets.insert(
+        "ny".to_owned(),
+        Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz"
+                .to_owned(),
+        ),
+    );
 
     let dataset = std::env::args()
         .nth(1)
         .expect("missing dataset on the command line");
+    let delta = std::env::args()
+        .nth(2)
+        .expect("missing delta on the command line")
+        .parse::<u32>()
+        .expect("fail to parse delta");
     println!("running on dataset {}", dataset);
     let dataset = datasets
         .remove(&dataset)
@@ -78,21 +94,36 @@ fn main() {
     let timer = std::time::Instant::now();
 
     timely::execute_from_args(std::env::args(), move |worker| {
-        let mut probe = Handle::new();
-        let mut edges = worker.dataflow::<usize, _, _>(|scope| {
+        let (mut roots, mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
+            let mut probe = Handle::new();
+            let delta = delta;
             let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
+            let (root_input, roots) = scope.new_collection::<u32, MinSum>();
+            let roots = roots.map(|x| (x, ()));
 
-            bfs(&edges, 1, 123)
-                .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+            // let roots = get_roots(&edges, 1, 112323).map(|x| (x, ()));
+            let light = edges.filter(move |trip| trip.2 <= delta);
+            let heavy = edges.filter(move |trip| trip.2 > delta);
+            light.count().inspect(|c| println!("light {}", c));
+            heavy.count().inspect(|c| println!("heavy {}", c));
+
+            let light = light.as_min_sum_collection().arrange_by_key();
+            let heavy = heavy.as_min_sum_collection().arrange_by_key();
+
+            delta_step(&roots, &light, &heavy, delta)
+                // .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                 .probe_with(&mut probe);
 
-            edge_input
+            (root_input, edge_input, probe)
         });
 
+        // 8104
         if worker.index() == 0 {
+            roots.update(0, MinSum { value: 0 });
             dataset.load_stream(&mut edges);
             println!("{:?}\tread data from file", timer.elapsed());
         }
+        roots.close();
         edges.close();
         worker.step_while(|| !probe.done());
         println!("{:?}\tcomputed diameter", timer.elapsed());
