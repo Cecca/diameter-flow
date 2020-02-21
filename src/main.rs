@@ -17,19 +17,13 @@ use datasets::*;
 use delta_stepping::*;
 use differential_dataflow::input::Input;
 use differential_dataflow::operators::arrange::ArrangeByKey;
-use differential_dataflow::operators::reduce::ReduceCore;
-use differential_dataflow::operators::*;
-use differential_dataflow::trace::implementations::ord::OrdKeySpine;
 use min_sum::*;
 use timely::dataflow::operators::probe::Handle;
 // use timely::dataflow::operators::*;
 use timely::dataflow::operators::Accumulate;
-use timely::dataflow::operators::Exchange;
 use timely::dataflow::operators::Filter;
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
-use timely::dataflow::operators::Map;
-use timely::dataflow::operators::Probe;
 
 fn main() {
     let mut datasets = std::collections::HashMap::new();

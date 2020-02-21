@@ -19,6 +19,13 @@ impl<'a> AddAssign<&'a Self> for MinSum {
     }
 }
 
+/// Multimplication is needed in the join to combine the differences of the left
+/// value with the one of the right value when the output for that pair is
+/// computed using the `result` function of `join_core`.
+///
+/// Consider the case where the differences are multiplicities. Then obviously
+/// the elements represents items of multisets, and the multiplicity of the
+/// output should be the product of the multiplicities of the input.
 impl Mul<Self> for MinSum {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {

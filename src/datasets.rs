@@ -3,7 +3,6 @@ use differential_dataflow::input::InputSession;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
 use std::fmt::Write;
@@ -28,7 +27,7 @@ impl Ord for WeightedEdge {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub enum Dataset {
     Snap(String),
     Dimacs(String),
