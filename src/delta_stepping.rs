@@ -1,5 +1,4 @@
 use crate::min_sum::*;
-use crate::timely::progress::PathSummary;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::arrange::{Arranged, TraceAgent};
@@ -17,44 +16,46 @@ use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
+use timely::progress::timestamp::Refines;
+use timely::progress::PathSummary;
 use timely::progress::Timestamp;
 
-// pub fn get_roots<G: Scope<Timestamp = usIze>>(
-//     edges: &Stream<G, (u32, u32, u32)>,
-//     num_roots: usize,
-//     seed: u64,
-// ) -> Collection<G, u32, MinSum> {
-//     edges
-//         .map(|(src, dst, _w)| std::cmp::max(src, dst))
-//         .accumulate(0, |max, data| {
-//             *max = *data.iter().max().expect("empty collection")
-//         })
-//         .exchange(|_| 0)
-//         .accumulate(0, |max, data| {
-//             *max = *data.iter().max().expect("empty collection")
-//         })
-//         .flat_map(move |n| {
-//             let rng = Xoshiro256StarStar::seed_from_u64(seed);
-//             let dist = Uniform::new(0, n + 1);
-//             dist.sample_iter(rng).take(num_roots)
-//         })
-//         .unary(Pipeline, "roots builder", |_, _| {
-//             |input, output| {
-//                 input.for_each(|t, data| {
-//                     let mut data = data.replace(Vec::new());
-//                     for (i, node) in data.drain(..).enumerate() {
-//                         let new_time = t.time().clone() + i;
-//                         let new_cap = t.delayed(&new_time);
-//                         let mut session = output.session(&new_cap);
-//                         session.give((node, new_time, MinSum { value: 0 }))
-//                     }
-//                 });
-//             }
-//         })
-//         .as_collection()
-// }
+pub fn get_roots<G: Scope<Timestamp = usize>>(
+    edges: &Stream<G, (u32, u32, u32)>,
+    num_roots: usize,
+    seed: u64,
+) -> Collection<G, u32, MinSum> {
+    edges
+        .map(|(src, dst, _w)| std::cmp::max(src, dst))
+        .accumulate(0, |max, data| {
+            *max = *data.iter().max().expect("empty collection")
+        })
+        .exchange(|_| 0)
+        .accumulate(0, |max, data| {
+            *max = *data.iter().max().expect("empty collection")
+        })
+        .flat_map(move |n| {
+            let rng = Xoshiro256StarStar::seed_from_u64(seed);
+            let dist = Uniform::new(0, n + 1);
+            dist.sample_iter(rng).take(num_roots)
+        })
+        .unary(Pipeline, "roots builder", |_, _| {
+            |input, output| {
+                input.for_each(|t, data| {
+                    let mut data = data.replace(Vec::new());
+                    for (i, node) in data.drain(..).enumerate() {
+                        let new_time = t.time().clone() + i;
+                        let new_cap = t.delayed(&new_time);
+                        let mut session = output.session(&new_cap);
+                        session.give((node, new_time, MinSum { value: 0 }))
+                    }
+                });
+            }
+        })
+        .as_collection()
+}
 
-// pub fn bfs<G: Scope<Timestamp = usize>>(
+// pub fn bfs<G: Scope<timestamp = usize>>(
 //     edges: &Stream<G, (u32, u32, u32)>,
 //     num_roots: usize,
 //     seed: u64,
@@ -101,53 +102,26 @@ use timely::progress::Timestamp;
 //         })
 // }
 
-pub trait Outermost {
-    /// The innermost value of a timestamp
-    fn outermost(&self) -> u32;
-}
-
-impl Outermost for usize {
-    fn outermost(&self) -> u32 {
-        *self as u32
-    }
-}
-
-impl<Touter: Outermost, Tinner> Outermost for Product<Touter, Tinner> {
-    fn outermost(&self) -> u32 {
-        self.outer.outermost()
-    }
-}
-
-trait FilterActive<G: Scope>
-where
-    G::Timestamp: Outermost,
-{
-    fn filter_active(&self, delta: u32) -> Collection<G, (u32, ()), MinSum>;
-}
-
-impl<G: Scope> FilterActive<G> for Collection<G, (u32, ()), MinSum>
-where
-    G::Timestamp: Outermost,
-{
-    fn filter_active(&self, delta: u32) -> Collection<G, (u32, ()), MinSum> {
-        self.inner
-            .filter(move |(_, time, diff)| diff.value < (time.outermost() + 1) * delta)
-            .as_collection()
-    }
+fn filter_active_2<G: Scope<Timestamp = Product<Product<usize, u64>, u64>>>(
+    coll: &Collection<G, (u32, ()), MinSum>,
+    delta: u32,
+) -> Collection<G, (u32, ()), MinSum> {
+    coll.inner
+        .filter(move |(_, time, dist)| dist.value < (time.outer.inner as u32 + 1) * delta)
+        .as_collection()
 }
 
 #[allow(dead_code)]
 pub fn delta_step<G, Tr>(
     nodes: &Collection<G, (u32, ()), MinSum>,
-    light_edges: &Arranged<G, TraceAgent<Tr>>,
-    heavy_edges: &Arranged<G, TraceAgent<Tr>>,
+    light_edges: &Arranged<G, Tr>,
+    heavy_edges: &Arranged<G, Tr>,
     delta: u32,
 ) -> Collection<G, (u32, ()), MinSum>
 where
-    G: Scope,
-    G::Timestamp: Timestamp + Clone + Lattice + Outermost,
-    Tr: Trace + TraceReader<Key = u32, Val = u32, Time = G::Timestamp, R = MinSum> + 'static,
-    Tr::Batch: Batch<u32, u32, G::Timestamp, MinSum>,
+    G: Scope<Timestamp = Product<usize, u64>>,
+    Tr: TraceReader<Key = u32, Val = u32, Time = G::Timestamp, R = MinSum> + Clone + 'static,
+    Tr::Batch: BatchReader<u32, u32, G::Timestamp, MinSum>,
     Tr::Cursor: Cursor<u32, u32, G::Timestamp, MinSum>,
 {
     // Iteratively perform the light updates
@@ -160,7 +134,8 @@ where
             .count()
             .inspect_batch(|t, c| println!("[{:?}] iteration input {:?}", t, c));
 
-        let active = inner.filter_active(delta);
+        // let active = inner.filter_active(delta);
+        let active = filter_active_2(&inner, delta);
         active
             .inner
             .count()
@@ -190,4 +165,47 @@ where
         })
         .as_collection(|k, ()| (*k, ()))
         .inspect_batch(|t, x| println!("[{:?}] heavy {:?}", t, x.len()))
+}
+
+pub fn delta_stepping<G: Scope<Timestamp = usize>>(
+    edges: &Stream<G, (u32, u32, u32)>,
+    delta: u32,
+    num_roots: usize,
+    seed: u64,
+) -> Stream<G, u32> {
+    // Separate light and heavy edges, and arrage them
+    let light = edges.filter(move |trip| trip.2 <= delta);
+    let heavy = edges.filter(move |trip| trip.2 > delta);
+    light.count().inspect(|c| println!("light {}", c));
+    heavy.count().inspect(|c| println!("heavy {}", c));
+    let light = light.as_min_sum_collection().arrange_by_key();
+    let heavy = heavy.as_min_sum_collection().arrange_by_key();
+
+    // Get the random roots
+    let roots = get_roots(&edges, num_roots, seed).map(|x| (x, ()));
+
+    let distances = roots
+        .scope()
+        .iterate(|inner| {
+            let light = light.enter(&inner.scope());
+            let heavy = heavy.enter(&inner.scope());
+            let roots = roots.enter(&inner.scope());
+
+            delta_step(&inner, &light, &heavy, delta)
+                .concat(&roots)
+                .inspect_batch(|t, k| println!("Inner batch at time {:?}", t))
+        })
+        .consolidate()
+        .map(|pair| pair.0);
+
+    distances
+        .inner
+        .map(|triplet| triplet.2.value)
+        .accumulate(0, |max, data| {
+            *max = *data.iter().max().expect("empty collection")
+        })
+        .exchange(|_| 0)
+        .accumulate(0, |max, data| {
+            *max = *data.iter().max().expect("empty collection")
+        })
 }

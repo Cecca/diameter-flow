@@ -24,6 +24,7 @@ use timely::dataflow::operators::Accumulate;
 use timely::dataflow::operators::Filter;
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
+use timely::dataflow::operators::Probe;
 
 fn main() {
     let mut datasets = std::collections::HashMap::new();
@@ -93,19 +94,9 @@ fn main() {
             let delta = delta;
             let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
             let (root_input, roots) = scope.new_collection::<u32, MinSum>();
-            let roots = roots.map(|x| (x, ()));
 
-            // let roots = get_roots(&edges, 1, 112323).map(|x| (x, ()));
-            let light = edges.filter(move |trip| trip.2 <= delta);
-            let heavy = edges.filter(move |trip| trip.2 > delta);
-            light.count().inspect(|c| println!("light {}", c));
-            heavy.count().inspect(|c| println!("heavy {}", c));
-
-            let light = light.as_min_sum_collection().arrange_by_key();
-            let heavy = heavy.as_min_sum_collection().arrange_by_key();
-
-            delta_step(&roots, &light, &heavy, delta)
-                // .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+            delta_stepping(&edges, delta, 1, 123)
+                .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                 .probe_with(&mut probe);
 
             (root_input, edge_input, probe)
