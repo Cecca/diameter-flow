@@ -90,14 +90,14 @@ where
     worker
         .log_register()
         .insert::<(CountEvent, CountValue), _>("counts", move |time, data| {
-            for (time_bound, worker_id, (key, value)) in data.drain(..) {
+            for (time_bound, _worker_id, (key, value)) in data.drain(..) {
                 // println!("{:?} <? {:?}", time_bound, time);
                 // Round the duration one second up
-                // let time = Duration::from_secs(time.as_secs() + 1);
+                let time = Duration::from_secs(time.as_secs() + 1);
                 input
                     .borrow_mut()
                     .as_mut()
-                    .map(|input| input.update_at(key, *time, value));
+                    .map(|input| input.update_at(key, time, value));
 
                 input
                     .borrow_mut()

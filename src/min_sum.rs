@@ -1,3 +1,4 @@
+use differential_dataflow::difference::Monoid;
 use differential_dataflow::difference::Semigroup;
 use differential_dataflow::AsCollection;
 use differential_dataflow::Collection;
@@ -38,6 +39,14 @@ impl Mul<Self> for MinSum {
 impl Semigroup for MinSum {
     fn is_zero(&self) -> bool {
         false
+    }
+}
+
+impl Monoid for MinSum {
+    fn zero() -> Self {
+        Self {
+            value: std::u32::MAX,
+        }
     }
 }
 
