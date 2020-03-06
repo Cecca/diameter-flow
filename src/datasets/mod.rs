@@ -5,9 +5,9 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
-use std::fmt::Write;
 use std::fs;
 use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::PathBuf;
 use timely::dataflow::operators::input::Handle as InputHandle;
 use timely::progress::Timestamp;
@@ -33,6 +33,7 @@ impl Ord for WeightedEdge {
 pub enum Dataset {
     Snap(String),
     Dimacs(String),
+    WebGraph(String),
 }
 
 impl Dataset {
@@ -79,6 +80,50 @@ impl Dataset {
                     },
                 );
             }
+            Self::WebGraph(name) => {
+                let graph_url = format!(
+                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
+                    name, name
+                );
+                let properties_url = format!(
+                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.properties",
+                    name, name
+                );
+                let graph_fname = format!("{}-hc.graph", name);
+                let properties_fname = format!("{}-hc.properties", name);
+                let dir = dataset_directory(&graph_url);
+                println!("Destination directory is {:?}", dir);
+
+                let mut output_path = dir.clone();
+                output_path.push(name);
+                output_path.set_extension("txt.bz2");
+
+                if !output_path.exists() {
+                    let mut graph_path = dir.clone();
+                    let mut properties_path = dir.clone();
+                    graph_path.push(graph_fname);
+                    properties_path.push(properties_fname);
+                    let mut tool_graph_path = dir.clone();
+                    tool_graph_path.push(format!("{}-hc", name));
+
+                    // Download the files
+                    bvconvert::maybe_download_file(&graph_url, graph_path);
+                    bvconvert::maybe_download_file(&properties_url, properties_path);
+
+                    // Convert the file
+                    let output = BufWriter::new(GzEncoder::new(
+                        File::create(output_path.clone()).expect("problem creating output file"),
+                        Compression::fast(),
+                    ));
+                    bvconvert::convert(&tool_graph_path, output);
+                }
+
+                read_text_edge_file_unweighted(&output_path, |(src, dst)| {
+                    input_handle.send((src, dst, 1));
+                    // Also add the flipped edge, to make the graph undirected
+                    input_handle.send((dst, src, 1));
+                });
+            }
         };
     }
 
@@ -105,6 +150,7 @@ fn global_dataset_directory() -> PathBuf {
 }
 
 fn dataset_directory(url: &str) -> PathBuf {
+    use std::fmt::Write;
     let mut hasher = Sha256::new();
     hasher.input(url);
     let result = hasher.result();

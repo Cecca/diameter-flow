@@ -13,7 +13,6 @@ public class BVGraphToEdges {
             for (int i = 0; i < outdeg; i++) {
                 int v = neighs.nextInt();
                 System.out.println(u + " " + v);
-                System.out.println(v + " " + u);
             }
         }
     }

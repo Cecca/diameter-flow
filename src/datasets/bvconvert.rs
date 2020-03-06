@@ -5,19 +5,19 @@
 // it is far easier
 use flate2::read::GzDecoder;
 use std::collections::HashSet;
-use std::ffi::OsString;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 use std::iter::FromIterator;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use tar::Archive;
 
-fn maybe_download_file(url: &str, dest: PathBuf) -> PathBuf {
+pub fn maybe_download_file(url: &str, dest: PathBuf) -> PathBuf {
     if !dest.exists() {
-        println!("cargo:warning=Downloading {}", url);
+        println!("Downloading {} to {:?}", url, dest);
         let mut resp = reqwest::get(url).expect("problem while getting the url");
+        assert!(resp.status().is_success());
         let mut out = File::create(&dest).expect("failed to create file");
         std::io::copy(&mut resp, &mut out).expect("failed to copy content");
     }
@@ -52,8 +52,6 @@ where
 }
 
 fn get_jars(directory: &PathBuf) {
-    let java_path = "java/BVGraphToEdges.java";
-    let binary_path = "java/BVGraphToEdges.class";
     let webgraph_url = "http://webgraph.di.unimi.it/webgraph-3.6.3-bin.tar.gz";
     let dependencies_url = "http://webgraph.di.unimi.it/webgraph-deps.tar.gz";
 
@@ -84,7 +82,8 @@ fn get_jars(directory: &PathBuf) {
     );
 }
 
-pub fn convert(graph_path: &PathBuf) {
+pub fn convert<W: Write>(graph_path: &PathBuf, mut out: W) {
+    println!("Converting {:?}", graph_path);
     let java_dir = PathBuf::from("java");
     if !java_dir.is_dir() {
         std::fs::create_dir(&java_dir).expect("Problems creating directory");
@@ -98,12 +97,37 @@ pub fn convert(graph_path: &PathBuf) {
         .write_all(java_binary)
         .expect("Problem writing class file");
     get_jars(&java_dir);
-    Command::new("java")
+    let mut child = Command::new("java")
         .args(&["-classpath",
                 ".:webgraph-3.6.3.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:slf4j-api-1.7.26.jar",
                 "BVGraphToEdges",
                 graph_path.to_str().unwrap()])
         .current_dir(&java_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("java command failed");
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                assert!(status.success());
+                // Finish copying the stream
+                let stdout = child.stdout.as_mut().unwrap();
+                std::io::copy(stdout, &mut out).expect("Failure piping the output");
+                let stderr = child.stderr.as_mut().unwrap();
+                std::io::copy(stderr, &mut std::io::stderr()).expect("Failure piping the output");
+                println!("Returning");
+                return;
+            }
+            Ok(None) => {
+                println!("Reading some output");
+                let stdout = child.stdout.as_mut().unwrap();
+                std::io::copy(stdout, &mut out).expect("Failure piping the output");
+                let stderr = child.stderr.as_mut().unwrap();
+                std::io::copy(stderr, &mut std::io::stderr()).expect("Failure piping the output");
+            }
+            Err(e) => panic!("error attempting to wait: {}", e),
+        }
+    }
 }

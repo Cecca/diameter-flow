@@ -31,6 +31,10 @@ use timely::dataflow::operators::Probe;
 fn main() {
     let mut datasets = std::collections::HashMap::new();
     datasets.insert(
+        "cnr-2000".to_owned(),
+        Dataset::WebGraph("cnr-2000".to_owned()),
+    );
+    datasets.insert(
         "facebook".to_owned(),
         Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned()),
     );
