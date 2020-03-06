@@ -6,6 +6,7 @@ extern crate dirs;
 extern crate flate2;
 extern crate reqwest;
 extern crate sha2;
+extern crate tar;
 extern crate timely;
 extern crate url;
 

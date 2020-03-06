@@ -13,6 +13,8 @@ use timely::dataflow::operators::input::Handle as InputHandle;
 use timely::progress::Timestamp;
 use url::Url;
 
+mod bvconvert;
+
 #[derive(Abomonation, Clone, PartialEq, PartialOrd, Debug)]
 pub struct WeightedEdge {
     pub dst: u32,
