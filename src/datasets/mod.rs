@@ -37,6 +37,16 @@ pub enum Dataset {
 }
 
 impl Dataset {
+    pub fn snap<S: Into<String>>(s: S) -> Self {
+        Self::Snap(s.into())
+    }
+    pub fn dimacs<S: Into<String>>(s: S) -> Self {
+        Self::Dimacs(s.into())
+    }
+    pub fn webgraph<S: Into<String>>(s: S) -> Self {
+        Self::WebGraph(s.into())
+    }
+
     pub fn load_stream<T: Timestamp + Clone>(
         &self,
         input_handle: &mut InputHandle<T, (u32, u32, u32)>,

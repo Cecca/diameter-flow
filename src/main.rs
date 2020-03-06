@@ -42,20 +42,16 @@ macro_rules! map(
 
 fn main() {
     let mut datasets = map! {
-        "cnr-2000" => Dataset::WebGraph("cnr-2000".to_owned()),
-        "uk-2007-05-small" => Dataset::WebGraph("uk-2007-05@100000".to_owned()),
-        "facebook" => Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned()),
-        "twitter" => Dataset::Snap("https://snap.stanford.edu/data/twitter_combined.txt.gz".to_owned()),
-        "livejournal" => Dataset::Snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz".to_owned()),
-        "colorado" => Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz".to_owned()),
-        "USA" => Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz".to_owned()),
-        "USA-east" => Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz".to_owned()),
-        "rome" => Dataset::Dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr".to_owned()),
-        "ny" => Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz".to_owned())
+        "cnr-2000" => Dataset::webgraph("cnr-2000"),
+        "uk-2007-05-small" => Dataset::webgraph("uk-2007-05@100000"),
+        "facebook" => Dataset::snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
+        "twitter" => Dataset::snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
+        "livejournal" => Dataset::snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
+        "colorado" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
+        "USA" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
+        "USA-east" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
+        "rome" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
+        "ny" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
     };
 
     let dataset = std::env::args()
