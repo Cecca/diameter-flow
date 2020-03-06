@@ -33,7 +33,7 @@ macro_rules! map(
         {
             let mut m = ::std::collections::HashMap::new();
             $(
-                m.insert($key, $value);
+                m.insert($key.to_owned(), $value);
             )+
             m
         }
@@ -41,62 +41,22 @@ macro_rules! map(
 );
 
 fn main() {
-    let mut datasets = std::collections::HashMap::new();
-    let datasets_2 = map! {
-        "cnr-2000".to_owned() => Dataset::WebGraph("cnr-2000".to_owned())
+    let mut datasets = map! {
+        "cnr-2000" => Dataset::WebGraph("cnr-2000".to_owned()),
+        "uk-2007-05-small" => Dataset::WebGraph("uk-2007-05@100000".to_owned()),
+        "facebook" => Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned()),
+        "twitter" => Dataset::Snap("https://snap.stanford.edu/data/twitter_combined.txt.gz".to_owned()),
+        "livejournal" => Dataset::Snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz".to_owned()),
+        "colorado" => Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz".to_owned()),
+        "USA" => Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz".to_owned()),
+        "USA-east" => Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz".to_owned()),
+        "rome" => Dataset::Dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr".to_owned()),
+        "ny" => Dataset::Dimacs(
+            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz".to_owned())
     };
-    datasets.insert(
-        "cnr-2000".to_owned(),
-        Dataset::WebGraph("cnr-2000".to_owned()),
-    );
-    datasets.insert(
-        "uk-2007-05-small".to_owned(),
-        Dataset::WebGraph("uk-2007-05@100000".to_owned()),
-    );
-    datasets.insert(
-        "facebook".to_owned(),
-        Dataset::Snap("https://snap.stanford.edu/data/facebook_combined.txt.gz".to_owned()),
-    );
-    datasets.insert(
-        "twitter".to_owned(),
-        Dataset::Snap("https://snap.stanford.edu/data/twitter_combined.txt.gz".to_owned()),
-    );
-    datasets.insert(
-        "livejournal".to_owned(),
-        Dataset::Snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz".to_owned()),
-    );
-    datasets.insert(
-        "colorado".to_owned(),
-        Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"
-                .to_owned(),
-        ),
-    );
-    datasets.insert(
-        "USA".to_owned(),
-        Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"
-                .to_owned(),
-        ),
-    );
-    datasets.insert(
-        "USA-east".to_owned(),
-        Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"
-                .to_owned(),
-        ),
-    );
-    datasets.insert(
-        "rome".to_owned(),
-        Dataset::Dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr".to_owned()),
-    );
-    datasets.insert(
-        "ny".to_owned(),
-        Dataset::Dimacs(
-            "http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz"
-                .to_owned(),
-        ),
-    );
 
     let dataset = std::env::args()
         .nth(1)
@@ -108,7 +68,7 @@ fn main() {
         .expect("fail to parse delta");
     println!("running on dataset {}", dataset);
     let dataset = datasets
-        .remove(&dataset)
+        .remove(&dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
 
     let timer = std::time::Instant::now();
