@@ -54,6 +54,15 @@ fn main() {
         "ny" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
     };
 
+    if std::env::args().count() == 1 {
+        println!("USAGE: diameter-flow DATASET DELTA -w NUM_THREADS");
+        println!("Legal values for DATASET are\n");
+        for d in datasets.keys() {
+            println!("  {}", d);
+        }
+        return;
+    }
+
     let dataset = std::env::args()
         .nth(1)
         .expect("missing dataset on the command line");
