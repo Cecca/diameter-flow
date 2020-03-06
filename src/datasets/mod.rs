@@ -37,24 +37,6 @@ pub enum Dataset {
 }
 
 impl Dataset {
-    // pub fn load_dataflow<T: Timestamp + Clone>(
-    //     &self,
-    //     input_handle: &mut InputSession<T, (u32, u32), MinSum>,
-    // ) {
-    //     match self {
-    //         Self::Snap(url) => {
-    //             read_text_edge_file_unweighted(
-    //                 &maybe_download_and_remap_file(url),
-    //                 |(src, dst)| {
-    //                     input_handle.update((src, dst), MinSum { value: 1 });
-    //                     // Also add the flipped edge, to make the graph undirected
-    //                     input_handle.update((dst, src), MinSum { value: 1 });
-    //                 },
-    //             );
-    //         }
-    //     };
-    // }
-
     pub fn load_stream<T: Timestamp + Clone>(
         &self,
         input_handle: &mut InputHandle<T, (u32, u32, u32)>,
@@ -114,18 +96,6 @@ impl Dataset {
             }
         };
     }
-
-    // pub fn num_edges(&self) -> usize {
-    //     match self {
-    //         Self::Snap(url) => {
-    //             let mut cnt = 0;
-    //             read_text_edge_file_unweighted(&maybe_download_file(url), |_| {
-    //                 cnt += 1;
-    //             });
-    //             cnt
-    //         }
-    //     }
-    // }
 }
 
 fn global_dataset_directory() -> PathBuf {
