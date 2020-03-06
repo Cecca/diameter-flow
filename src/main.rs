@@ -28,11 +28,30 @@ use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Probe;
 
+macro_rules! map(
+    { $($key:expr => $value:expr),+ } => {
+        {
+            let mut m = ::std::collections::HashMap::new();
+            $(
+                m.insert($key, $value);
+            )+
+            m
+        }
+     };
+);
+
 fn main() {
     let mut datasets = std::collections::HashMap::new();
+    let datasets_2 = map! {
+        "cnr-2000".to_owned() => Dataset::WebGraph("cnr-2000".to_owned())
+    };
     datasets.insert(
         "cnr-2000".to_owned(),
         Dataset::WebGraph("cnr-2000".to_owned()),
+    );
+    datasets.insert(
+        "uk-2007-05-small".to_owned(),
+        Dataset::WebGraph("uk-2007-05@100000".to_owned()),
     );
     datasets.insert(
         "facebook".to_owned(),

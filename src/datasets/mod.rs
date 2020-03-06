@@ -94,31 +94,19 @@ impl Dataset {
                 let dir = dataset_directory(&graph_url);
                 println!("Destination directory is {:?}", dir);
 
-                let mut output_path = dir.clone();
-                output_path.push(name);
-                output_path.set_extension("txt.bz2");
+                let mut graph_path = dir.clone();
+                let mut properties_path = dir.clone();
+                graph_path.push(graph_fname);
+                properties_path.push(properties_fname);
+                let mut tool_graph_path = dir.clone();
+                tool_graph_path.push(format!("{}-hc", name));
 
-                if !output_path.exists() {
-                    let mut graph_path = dir.clone();
-                    let mut properties_path = dir.clone();
-                    graph_path.push(graph_fname);
-                    properties_path.push(properties_fname);
-                    let mut tool_graph_path = dir.clone();
-                    tool_graph_path.push(format!("{}-hc", name));
+                // Download the files
+                bvconvert::maybe_download_file(&graph_url, graph_path);
+                bvconvert::maybe_download_file(&properties_url, properties_path);
 
-                    // Download the files
-                    bvconvert::maybe_download_file(&graph_url, graph_path);
-                    bvconvert::maybe_download_file(&properties_url, properties_path);
-
-                    // Convert the file
-                    let output = BufWriter::new(GzEncoder::new(
-                        File::create(output_path.clone()).expect("problem creating output file"),
-                        Compression::fast(),
-                    ));
-                    bvconvert::convert(&tool_graph_path, output);
-                }
-
-                read_text_edge_file_unweighted(&output_path, |(src, dst)| {
+                // read the file
+                bvconvert::read(&tool_graph_path, |(src, dst)| {
                     input_handle.send((src, dst, 1));
                     // Also add the flipped edge, to make the graph undirected
                     input_handle.send((dst, src, 1));

@@ -6,7 +6,10 @@
 use flate2::read::GzDecoder;
 use std::collections::HashSet;
 use std::fs::File;
+use std::io::BufRead;
+use std::io::BufReader;
 use std::io::BufWriter;
+use std::io::Read;
 use std::io::Write;
 use std::iter::FromIterator;
 use std::path::PathBuf;
@@ -124,6 +127,99 @@ pub fn convert<W: Write>(graph_path: &PathBuf, mut out: W) {
                 println!("Reading some output");
                 let stdout = child.stdout.as_mut().unwrap();
                 std::io::copy(stdout, &mut out).expect("Failure piping the output");
+                let stderr = child.stderr.as_mut().unwrap();
+                std::io::copy(stderr, &mut std::io::stderr()).expect("Failure piping the output");
+            }
+            Err(e) => panic!("error attempting to wait: {}", e),
+        }
+    }
+}
+
+pub fn read<F>(graph_path: &PathBuf, mut action: F)
+where
+    F: FnMut((u32, u32)),
+{
+    println!("Converting {:?}", graph_path);
+    let java_dir = PathBuf::from("java");
+    if !java_dir.is_dir() {
+        std::fs::create_dir(&java_dir).expect("Problems creating directory");
+    }
+    let mut graph_path = graph_path.clone();
+    graph_path.set_extension("");
+    let java_binary = include_bytes!("../../java/BVGraphToEdges.class");
+    let file = File::create("BVGraphToEdges.class").expect("Problem creating clas file");
+    let mut writer = BufWriter::new(file);
+    writer
+        .write_all(java_binary)
+        .expect("Problem writing class file");
+    get_jars(&java_dir);
+    let mut child = Command::new("java")
+        .args(&["-classpath",
+                ".:webgraph-3.6.3.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:slf4j-api-1.7.26.jar",
+                "BVGraphToEdges",
+                graph_path.to_str().unwrap()])
+        .current_dir(&java_dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("java command failed");
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                assert!(status.success());
+                // Finish copying the stream
+                let stdout = child.stdout.as_mut().unwrap();
+                let reader = BufReader::new(stdout);
+                let mut cnt = 0;
+                for line in reader.lines() {
+                    let line = line.unwrap();
+                    let mut tokens = line.split_whitespace();
+                    let src = tokens
+                        .next()
+                        .expect("no source in line")
+                        .parse::<u32>()
+                        .expect("could not parse source");
+                    let dst = tokens
+                        .next()
+                        .expect("no destination in line")
+                        .parse::<u32>()
+                        .expect("could not parse destination");
+                    action((src, dst));
+                    cnt += 1;
+                }
+
+                let stderr = child.stderr.as_mut().unwrap();
+                std::io::copy(stderr, &mut std::io::stderr()).expect("Failure piping the output");
+                println!(
+                    "Reading input from compressed file complete ({} lines in the last batch)",
+                    cnt
+                );
+                return;
+            }
+            Ok(None) => {
+                println!("Reading some output");
+                let stdout = child.stdout.as_mut().unwrap();
+                let reader = BufReader::new(stdout);
+                let mut cnt = 0;
+                for line in reader.lines() {
+                    let line = line.unwrap();
+                    let mut tokens = line.split_whitespace();
+                    let src = tokens
+                        .next()
+                        .expect("no source in line")
+                        .parse::<u32>()
+                        .expect("could not parse source");
+                    let dst = tokens
+                        .next()
+                        .expect("no destination in line")
+                        .parse::<u32>()
+                        .expect("could not parse destination");
+                    action((src, dst));
+                    cnt += 1;
+                }
+                println!("Read {} lines in this batch", cnt);
+
                 let stderr = child.stderr.as_mut().unwrap();
                 std::io::copy(stderr, &mut std::io::stderr()).expect("Failure piping the output");
             }
