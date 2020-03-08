@@ -23,7 +23,7 @@ struct HyperLogLogCounter {
 }
 
 impl HyperLogLogCounter {
-    fn new<V: Hash, H: Hasher>(value: &V, mut hasher: H, p: usize) -> Self {
+    fn new<V: Hash + std::fmt::Debug, H: Hasher>(value: &V, mut hasher: H, p: usize) -> Self {
         assert!(p >= 4 && p <= 16);
         let m = 2usize.pow(p as u32);
         let mut registers = vec![0u8; m];
@@ -44,7 +44,7 @@ impl HyperLogLogCounter {
     }
 
     fn rho(hash: u64) -> u8 {
-        (hash.leading_zeros() + 1) as u8
+        (hash.trailing_zeros() + 1) as u8
     }
 
     fn merge_inplace(&mut self, other: &Self) {
@@ -170,7 +170,8 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
             unstable.set(
                 &unstable_result
                     .as_collection()
-                    .map(|(node, counter, _)| (node, counter)),
+                    .map(|(node, counter, _)| (node, counter))
+                    .consolidate(),
             );
 
             stable_result
@@ -180,7 +181,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
         })
         .consolidate()
         .inner
-        .inspect(|x| println!("{:?}", x))
+        // .inspect(|x| println!("{:?}", x))
         .map(|((_node, time), _, _)| time)
         .accumulate(0u32, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
@@ -190,4 +191,9 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
         .accumulate(0u32, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })
+}
+
+#[test]
+fn test_rho() {
+    assert_eq!(HyperLogLogCounter::rho(1 << 2), 3);
 }

@@ -87,7 +87,10 @@ fn main() {
             let delta = delta;
             let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
 
-            delta_stepping(&edges, delta, 1, 123)
+            // delta_stepping(&edges, delta, 1, 123)
+            //     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+            //     .probe_with(&mut probe);
+            hyperball::hyperball(&edges, 4, 123)
                 .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                 .probe_with(&mut probe);
 
