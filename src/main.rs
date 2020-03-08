@@ -25,6 +25,7 @@ use differential_dataflow::operators::arrange::ArrangeByKey;
 use min_sum::*;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
+use std::process::Command;
 use timely::communication::{
     allocator::AllocateBuilder, initialize_from, Allocator, Configuration as TimelyConfig,
     WorkerGuards,
@@ -122,9 +123,29 @@ impl Config {
         base64::encode(&bincode::serialize(&self).unwrap())
     }
 
-    fn decode(string: &str) -> Self {
-        bincode::deserialize(&base64::decode(string).expect("Error reading base64"))
-            .expect("error deserializing the struct")
+    fn decode(string: &str) -> Option<Self> {
+        let bytes = base64::decode(string).ok()?;
+        bincode::deserialize(&bytes).ok()
+    }
+
+    fn with_process_id(&self, process_id: usize) -> Self {
+        Self {
+            process_id: Some(process_id),
+            ..self.clone()
+        }
+    }
+
+    /// If the command line contains a single argument (other than the command name)
+    /// tries to decode the first argument into a `Config` struct. If this fails,
+    /// proceeds to reading the command line arguments.
+    fn create() -> Self {
+        match std::env::args().nth(1) {
+            Some(arg1) => match Config::decode(&arg1) {
+                Some(config) => config,
+                None => argh::from_env(),
+            },
+            None => argh::from_env(),
+        }
     }
 
     fn execute<T, F>(&self, func: F) -> Result<WorkerGuards<T>, String>
@@ -134,8 +155,28 @@ impl Config {
     {
         if self.hosts.is_some() && self.process_id.is_none() {
             // This is the top level invocation, which should spawn the processes with ssh
+            let handles =
+                self.hosts
+                    .as_ref()
+                    .unwrap()
+                    .hosts
+                    .iter()
+                    .enumerate()
+                    .map(|(pid, host)| {
+                        let encoded_config = self.with_process_id(pid).encode();
+                        Command::new("ssh")
+                            .arg(&host.name)
+                            .arg("diameter-flow")
+                            .arg(encoded_config)
+                            .spawn()
+                            .expect("problem spawning the ssh process")
+                    });
 
-            unimplemented!();
+            for mut h in handles {
+                h.wait().expect("problem waiting for the ssh process");
+            }
+
+            unimplemented!()
         } else {
             let c = match &self.hosts {
                 None => match self.threads {
@@ -168,7 +209,7 @@ macro_rules! map(
 );
 
 fn main() {
-    let config: Config = argh::from_env();
+    let config = Config::create();
 
     let mut datasets = map! {
         "cnr-2000" => Dataset::webgraph("cnr-2000"),
