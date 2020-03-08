@@ -118,6 +118,14 @@ fn parse_hosts(arg: &str) -> Result<Hosts, String> {
     }
 }
 
+#[derive(Debug)]
+enum ExecError {
+    /// Not actually an error
+    RemoteExecution,
+    /// Actually an error, with message
+    Error(String),
+}
+
 impl Config {
     fn encode(&self) -> String {
         base64::encode(&bincode::serialize(&self).unwrap())
@@ -148,7 +156,7 @@ impl Config {
         }
     }
 
-    fn execute<T, F>(&self, func: F) -> Result<WorkerGuards<T>, String>
+    fn execute<T, F>(&self, func: F) -> Result<WorkerGuards<T>, ExecError>
     where
         T: Send + 'static,
         F: Fn(&mut Worker<Allocator>) -> T + Send + Sync + 'static,
@@ -176,7 +184,7 @@ impl Config {
                 h.wait().expect("problem waiting for the ssh process");
             }
 
-            unimplemented!()
+            Err(ExecError::RemoteExecution)
         } else {
             let c = match &self.hosts {
                 None => match self.threads {
@@ -191,7 +199,7 @@ impl Config {
                     log_fn: Box::new(|_| None),
                 },
             };
-            timely::execute(c, func)
+            timely::execute(c, func).or_else(|e| Err(ExecError::Error(e)))
         }
     }
 }
