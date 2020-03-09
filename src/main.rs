@@ -241,57 +241,59 @@ fn main() {
 
     let timer = std::time::Instant::now();
 
-    config
-        .execute(move |worker| {
-            let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
+    let ret_status = config.execute(move |worker| {
+        let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
 
-            let (mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
-                let mut probe = Handle::new();
-                let delta = 10;
-                let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
+        let (mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
+            let mut probe = Handle::new();
+            let delta = 10;
+            let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
 
-                delta_stepping(&edges, delta, 1, 123)
-                    .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-                    .probe_with(&mut probe);
-                // hyperball::hyperball(&edges, 4, 123)
-                //     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-                //     .probe_with(&mut probe);
+            delta_stepping(&edges, delta, 1, 123)
+                .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+                .probe_with(&mut probe);
+            // hyperball::hyperball(&edges, 4, 123)
+            //     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+            //     .probe_with(&mut probe);
 
-                (edge_input, probe)
-            });
+            (edge_input, probe)
+        });
 
-            if worker.index() == 0 {
-                dataset.load_stream(&mut edges);
-                // edges.send((0, 1, 1));
-                // edges.send((0, 2, 2));
-                // edges.send((0, 3, 3));
-                // edges.send((0, 4, 4));
-                // edges.send((1, 5, 1));
-                // edges.send((2, 5, 1));
-                // edges.send((3, 5, 1));
-                // edges.send((4, 5, 1));
-                // edges.send((0, 10, 10));
-                // edges.send((10, 11, 1));
+        if worker.index() == 0 {
+            dataset.load_stream(&mut edges);
+            // edges.send((0, 1, 1));
+            // edges.send((0, 2, 2));
+            // edges.send((0, 3, 3));
+            // edges.send((0, 4, 4));
+            // edges.send((1, 5, 1));
+            // edges.send((2, 5, 1));
+            // edges.send((3, 5, 1));
+            // edges.send((4, 5, 1));
+            // edges.send((0, 10, 10));
+            // edges.send((10, 11, 1));
 
-                println!("{:?}\tread data from file", timer.elapsed());
-            }
-            edges.close();
-            worker.step_while(|| {
-                // probe.with_frontier(|f| println!("frontier {:?}", f.to_vec()));
-                !probe.done()
-            });
-            println!("{:?}\tcomputed diameter", timer.elapsed());
+            println!("{:?}\tread data from file", timer.elapsed());
+        }
+        edges.close();
+        worker.step_while(|| {
+            // probe.with_frontier(|f| println!("frontier {:?}", f.to_vec()));
+            !probe.done()
+        });
+        println!("{:?}\tcomputed diameter", timer.elapsed());
 
-            // close the logging input and perform any outstanding work
-            logging_input_handle
-                .replace(None)
-                .expect("missing logging input handle")
-                .close();
-            worker.step_while(|| {
-                // logging_probe.with_frontier(|f| println!("logging vfrontier {:?}", f.to_vec()));
-                logging_probe.done()
-            })
+        // close the logging input and perform any outstanding work
+        logging_input_handle
+            .replace(None)
+            .expect("missing logging input handle")
+            .close();
+        worker.step_while(|| {
+            // logging_probe.with_frontier(|f| println!("logging vfrontier {:?}", f.to_vec()));
+            logging_probe.done()
         })
-        .expect("problems executing the dataflow");
-    println!("returned from the timely execution");
+    });
+    match ret_status {
+        Ok(_) => println!("Done"),
+        Err(ExecError::RemoteExecution) => println!("Done"),
+        Err(e) => panic!("{:?}", e),
+    }
 }
