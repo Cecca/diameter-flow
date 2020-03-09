@@ -163,23 +163,24 @@ impl Config {
     {
         if self.hosts.is_some() && self.process_id.is_none() {
             // This is the top level invocation, which should spawn the processes with ssh
-            let handles =
-                self.hosts
-                    .as_ref()
-                    .unwrap()
-                    .hosts
-                    .iter()
-                    .enumerate()
-                    .map(|(pid, host)| {
-                        let encoded_config = self.with_process_id(pid).encode();
-                        println!("Connecting to {}", host.name);
-                        Command::new("ssh")
-                            .arg(&host.name)
-                            .arg("diameter-flow")
-                            .arg(encoded_config)
-                            .spawn()
-                            .expect("problem spawning the ssh process")
-                    });
+            let handles: Vec<std::process::Child> = self
+                .hosts
+                .as_ref()
+                .unwrap()
+                .hosts
+                .iter()
+                .enumerate()
+                .map(|(pid, host)| {
+                    let encoded_config = self.with_process_id(pid).encode();
+                    println!("Connecting to {}", host.name);
+                    Command::new("ssh")
+                        .arg(&host.name)
+                        .arg("diameter-flow")
+                        .arg(encoded_config)
+                        .spawn()
+                        .expect("problem spawning the ssh process")
+                })
+                .collect();
 
             for mut h in handles {
                 println!("Waiting for ssh process to finish");
