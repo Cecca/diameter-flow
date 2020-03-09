@@ -172,6 +172,7 @@ impl Config {
                     .enumerate()
                     .map(|(pid, host)| {
                         let encoded_config = self.with_process_id(pid).encode();
+                        println!("Connecting to {}", host.name);
                         Command::new("ssh")
                             .arg(&host.name)
                             .arg("diameter-flow")
@@ -181,6 +182,7 @@ impl Config {
                     });
 
             for mut h in handles {
+                println!("Waiting for ssh process to finish");
                 h.wait().expect("problem waiting for the ssh process");
             }
 
