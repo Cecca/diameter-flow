@@ -5,6 +5,7 @@ extern crate base64;
 extern crate differential_dataflow;
 extern crate dirs;
 extern crate flate2;
+extern crate regex;
 extern crate reqwest;
 extern crate sha2;
 extern crate tar;
@@ -72,6 +73,48 @@ impl Hosts {
     }
 }
 
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
+enum Algorithm {
+    DeltaStepping(u32),
+    HyperBall(usize),
+}
+
+impl TryFrom<&str> for Algorithm {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        use regex::Regex;
+        let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
+        let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
+        if let Some(captures) = re_delta_stepping.captures(value) {
+            let delta = captures
+                .get(1)
+                .ok_or_else(|| format!("unable to get first capture"))?
+                .as_str()
+                .parse::<u32>()
+                .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
+            return Ok(Self::DeltaStepping(delta));
+        }
+        if let Some(captures) = re_hyperball.captures(value) {
+            let p_str = captures
+                .get(1)
+                .ok_or_else(|| format!("unable to get first group"))?
+                .as_str();
+            let p = p_str
+                .parse::<usize>()
+                .or_else(|e| Err(format!("unable to parse {:?} as integer: {:?}", p_str, e)))?;
+            if p < 4 || p > 16 {
+                return Err(format!(
+                    "Hyperball parameter should be between 4 and 16, got {} instead",
+                    p
+                ));
+            }
+            return Ok(Self::HyperBall(p));
+        }
+        Err(format!("Unrecognized algorithm: {}", value))
+    }
+}
+
 #[derive(Debug, FromArgs, Serialize, Deserialize, Clone)]
 #[argh(description = "")]
 struct Config {
@@ -85,10 +128,18 @@ struct Config {
     hosts: Option<Hosts>,
     #[argh(option, description = "set automatically. Don't set manually")]
     process_id: Option<usize>,
-    #[argh(positional, description = "algortihm to use")]
-    algorithm: String,
+    #[argh(
+        positional,
+        description = "algortihm to use",
+        from_str_fn(parse_algorithm)
+    )]
+    algorithm: Algorithm,
     #[argh(positional, description = "dataset to use")]
     dataset: String,
+}
+
+fn parse_algorithm(arg: &str) -> Result<Algorithm, String> {
+    Algorithm::try_from(arg)
 }
 
 fn parse_hosts(arg: &str) -> Result<Hosts, String> {
@@ -240,21 +291,23 @@ fn main() {
         .expect("missing dataset in configuration");
 
     let timer = std::time::Instant::now();
+    let algorithm = config.algorithm;
 
     let ret_status = config.execute(move |worker| {
         let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
 
         let (mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
             let mut probe = Handle::new();
-            let delta = 10;
             let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
 
-            delta_stepping(&edges, delta, 1, 123)
+            let diameter_stream = match algorithm {
+                Algorithm::DeltaStepping(delta) => delta_stepping(&edges, delta, 1, 123),
+                Algorithm::HyperBall(p) => hyperball::hyperball(&edges, p, 123),
+            };
+
+            diameter_stream
                 .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                 .probe_with(&mut probe);
-            // hyperball::hyperball(&edges, 4, 123)
-            //     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-            //     .probe_with(&mut probe);
 
             (edge_input, probe)
         });
@@ -292,8 +345,8 @@ fn main() {
         })
     });
     match ret_status {
-        Ok(_) => println!("Done"),
-        Err(ExecError::RemoteExecution) => println!("Done"),
+        Ok(_) => println!(""),
+        Err(ExecError::RemoteExecution) => println!(""),
         Err(e) => panic!("{:?}", e),
     }
 }
