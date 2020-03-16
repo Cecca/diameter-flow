@@ -439,31 +439,77 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 
     let auxiliary_graph = remap_edges(&clustering.inner.map(|triplet| triplet.0), &edges);
 
-    unimplemented!()
-}
-
-#[test]
-fn tryout() {
-    timely::execute_directly(|worker| {
-        use differential_dataflow::input::Input;
-        use differential_dataflow::trace::implementations::spine_fueled_neu::Spine;
-
-        let mut input = worker.dataflow::<usize, _, _>(|scope| {
-            let (input, coll) = scope.new_collection::<(u32, Option<(u32, u32)>), isize>();
-
-            // coll.inspect(|triplet| eprintln!("{:?}", triplet));
-
-            coll.reduce(|key, input, output| {
-                eprintln!("key: {:?}, input: {:?}, output: {:?}", key, input, output);
-                output.push((input[0].0.clone(), input[0].1.clone()));
+    // Collect the auxiliary graph and compute the diameter on it
+    let mut stash_auxiliary = HashMap::new();
+    let mut remapping = HashMap::new();
+    let mut node_count = 0;
+    auxiliary_graph.exchange(|_| 0).unary_notify(
+        Pipeline,
+        "diameter computation",
+        None,
+        move |input, output, notificator| {
+            input.for_each(|t, data| {
+                let mut data = data.replace(Vec::new());
+                let entry = stash_auxiliary
+                    .entry(t.time().clone())
+                    .or_insert_with(HashMap::new);
+                for ((u, v), w) in data.into_iter() {
+                    let u: u32 = *remapping.entry(u).or_insert_with(|| {
+                        let x = node_count;
+                        node_count += 1;
+                        x
+                    });
+                    let v: u32 = *remapping.entry(v).or_insert_with(|| {
+                        let x = node_count;
+                        node_count += 1;
+                        x
+                    });
+                    entry.insert((u, v), w);
+                }
+                notificator.notify_at(t.retain());
             });
 
-            input
-        });
+            notificator.for_each(|t, _, _| {
+                if let Some(edges) = stash_auxiliary.remove(t.time()) {
+                    let n = *edges
+                        .keys()
+                        .map(|(u, v)| std::cmp::max(u, v))
+                        .max()
+                        .unwrap() as usize;
+                    let adj = vec![vec![std::u32::MAX; n]; n];
+                    let distances = apsp(&adj);
+                    let diameter = distances
+                        .into_iter()
+                        .map(|row| row.into_iter())
+                        .flatten()
+                        .max()
+                        .unwrap();
+                    output.session(&t).give(diameter);
+                }
+            });
+        },
+    )
+}
 
-        input.insert((1, Some((0, 1))));
-        input.insert((1, Some((0, 3))));
-        input.close();
-        worker.step();
-    });
+// Floyd-Warshall algorithm
+fn apsp(adjacency: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
+    let n = adjacency.len();
+    let mut cur = vec![vec![032; n]; n];
+    let mut prev = vec![vec![0u32; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            cur[i][j] = adjacency[i][j];
+        }
+    }
+
+    for k in 0..n {
+        std::mem::swap(&mut cur, &mut prev);
+        for i in 0..n {
+            for j in 0..n {
+                cur[i][j] = std::cmp::min(prev[i][j], prev[i][k] + prev[k][j]);
+            }
+        }
+    }
+
+    cur
 }

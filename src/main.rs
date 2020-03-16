@@ -78,6 +78,7 @@ impl Hosts {
 enum Algorithm {
     DeltaStepping(u32),
     HyperBall(usize),
+    RandCluster(u32),
 }
 
 impl TryFrom<&str> for Algorithm {
@@ -87,6 +88,7 @@ impl TryFrom<&str> for Algorithm {
         use regex::Regex;
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
+        let re_rand_cluster = Regex::new(r"rand-cluster\((\d+)\)").unwrap();
         if let Some(captures) = re_delta_stepping.captures(value) {
             let delta = captures
                 .get(1)
@@ -111,6 +113,15 @@ impl TryFrom<&str> for Algorithm {
                 ));
             }
             return Ok(Self::HyperBall(p));
+        }
+        if let Some(captures) = re_rand_cluster.captures(value) {
+            let radius = captures
+                .get(1)
+                .ok_or_else(|| format!("unable to get first capture"))?
+                .as_str()
+                .parse::<u32>()
+                .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
+            return Ok(Self::RandCluster(radius));
         }
         Err(format!("Unrecognized algorithm: {}", value))
     }
@@ -290,6 +301,7 @@ fn main() {
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
+    let n: usize = unimplemented!();
 
     let timer = std::time::Instant::now();
     let algorithm = config.algorithm;
@@ -304,6 +316,9 @@ fn main() {
             let diameter_stream = match algorithm {
                 Algorithm::DeltaStepping(delta) => delta_stepping(&edges, delta, 1, 123),
                 Algorithm::HyperBall(p) => hyperball::hyperball(&edges, p, 123),
+                Algorithm::RandCluster(radius) => {
+                    rand_cluster::rand_cluster(&edges, radius, n, 123)
+                }
             };
 
             diameter_stream
