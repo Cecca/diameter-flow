@@ -54,7 +54,9 @@ fn init_nodes<G: Scope<Timestamp = usize>>(
                 });
 
                 notificator.for_each(|time, _, _| {
-                    let n = ns.remove(time.time()).unwrap();
+                    let n = ns
+                        .remove(time.time())
+                        .expect("could not find n from edge stream");
                     let n_per_worker = (n as f32 / workers as f32).ceil() as usize;
                     let lower = (worker * n_per_worker) as u32;
                     let upper = std::cmp::min(n, ((worker + 1) * n_per_worker) as u32);
@@ -115,7 +117,7 @@ impl NodeState {
         assert!(self.can_send());
         self.distance
             .map(|(root, distance)| Either::Message((root, distance + weight)))
-            .unwrap()
+            .expect("called propagate on a non reached node")
     }
 
     fn as_center(&self, id: u32) -> Self {
@@ -229,7 +231,7 @@ where
                         .expect("missing old state")
                         .0
                         .state();
-                    let closest: (u32, u32) = inputs
+                    let closest: Option<(u32, u32)> = inputs
                         .iter()
                         .filter_map(move |(either, diff)| {
                             if either.is_state() || either.message().1 > radius {
@@ -238,11 +240,14 @@ where
                                 Some((either.message(), diff))
                             }
                         })
-                        .min_by_key(|((root, dist), _)| *dist)
-                        .unwrap()
-                        .0
+                        .min_by_key(|((_root, dist), _)| *dist)
+                        .map(|pair| pair.0)
                         .clone();
-                    outputs.push((Either::State(old_state.updated(closest)), 1))
+                    if let Some(closest) = closest {
+                        outputs.push((Either::State(old_state.updated(closest)), 1))
+                    } else {
+                        outputs.push((Either::State(old_state.clone()), 1))
+                    }
                 });
 
             nodes.set(&iter_res.consolidate());
@@ -343,7 +348,9 @@ fn remap_edges<G: Scope>(
 
                 notificator.for_each(|time, _, _| {
                     if let Some(edges) = stash_edges.remove(&time.time()) {
-                        let nodes = stash_nodes.remove(&time.time()).unwrap();
+                        let nodes = stash_nodes
+                            .remove(&time.time())
+                            .expect("missing time in nodes stash");
                         let mut session = out.session(&time);
                         for (src, dst, weight) in edges {
                             let (center_src, distance_src) = nodes
@@ -389,7 +396,6 @@ fn remap_edges<G: Scope>(
                         output.session(&time).give_iterator(edges.drain());
                     }
                 });
-                unimplemented!()
             },
         )
 }
@@ -475,7 +481,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         .keys()
                         .map(|(u, v)| std::cmp::max(u, v))
                         .max()
-                        .unwrap() as usize;
+                        .expect("could not compute n from edge stream")
+                        as usize;
                     let adj = vec![vec![std::u32::MAX; n]; n];
                     let distances = apsp(&adj);
                     let diameter = distances
@@ -483,7 +490,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         .map(|row| row.into_iter())
                         .flatten()
                         .max()
-                        .unwrap();
+                        .expect("could not get the maximum distance");
                     output.session(&t).give(diameter);
                 }
             });
