@@ -5,6 +5,7 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -29,10 +30,11 @@ impl Ord for WeightedEdge {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Metadata {
     pub num_nodes: u32,
     pub num_edges: u32,
+    pub max_weight: u32,
 }
 
 #[derive(Debug)]
@@ -53,22 +55,75 @@ impl Dataset {
         Self::WebGraph(s.into())
     }
 
-    pub fn metadata(&self) -> Metadata {
-        unimplemented!()
+    fn metadata_key(&self) -> String {
+        match self {
+            Self::Dimacs(url) => format!("dimacs::{}", url),
+            Self::Snap(url) => format!("snap::{}", url),
+            Self::WebGraph(name) => format!("webgraph::{}", name),
+        }
     }
 
-    pub fn load_stream<T: Timestamp + Clone>(
-        &self,
-        input_handle: &mut InputHandle<T, (u32, u32, u32)>,
-    ) {
+    fn metadata_map() -> HashMap<String, Metadata> {
+        let mut map = HashMap::new();
+        let mut metadata_file = global_dataset_directory();
+        metadata_file.push("metadata.bin");
+        if metadata_file.exists() {
+            let reader = File::open(metadata_file).expect("error opening metadata file");
+            let values: Vec<(String, Metadata)> =
+                bincode::deserialize_from(reader).expect("problem decoding metadata file. Possibly an old version, try to delete it to force recomputation");
+            map.extend(values.into_iter());
+        }
+        map
+    }
+
+    fn update_metadata(new_map: HashMap<String, Metadata>) {
+        let mut metadata_file = global_dataset_directory();
+        metadata_file.push("metadata.bin");
+        let writer = File::create(metadata_file).expect("error creating metadata file");
+        let values: Vec<(String, Metadata)> = new_map.into_iter().collect();
+        bincode::serialize_into(writer, &values).expect("problem serializing metadata");
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        let key = self.metadata_key();
+        let mut meta_map = Self::metadata_map();
+        if meta_map.contains_key(&key) {
+            meta_map.get(&key).unwrap().clone()
+        } else {
+            println!("Missing metadata computing it");
+            let mut num_nodes = 0;
+            let mut num_edges = 0;
+            let mut max_weight = 0;
+            self.for_each(|u, v, w| {
+                num_nodes = std::cmp::max(num_nodes, std::cmp::max(u, v));
+                num_edges += 1;
+                max_weight = std::cmp::max(max_weight, w);
+            });
+            let meta = Metadata {
+                num_edges,
+                num_nodes,
+                max_weight,
+            };
+            println!("{:?}", meta);
+
+            // Add it to the map and update the file
+            meta_map.insert(key, meta.clone());
+            Self::update_metadata(meta_map);
+
+            meta
+        }
+    }
+
+    pub fn for_each<F>(&self, mut action: F)
+    where
+        F: FnMut(u32, u32, u32),
+    {
         match self {
             Self::Dimacs(url) => {
                 read_text_edge_file_weighted(
                     &maybe_download_and_remap_dimacs_file(url),
                     |(src, dst, w)| {
-                        input_handle.send((src, dst, w));
-                        // Also add the flipped edge, to make the graph undirected
-                        input_handle.send((dst, src, w));
+                        action(src, dst, w);
                     },
                 );
             }
@@ -76,9 +131,7 @@ impl Dataset {
                 read_text_edge_file_unweighted(
                     &maybe_download_and_remap_file(url),
                     |(src, dst)| {
-                        input_handle.send((src, dst, 1));
-                        // Also add the flipped edge, to make the graph undirected
-                        input_handle.send((dst, src, 1));
+                        action(src, dst, 1);
                     },
                 );
             }
@@ -109,12 +162,21 @@ impl Dataset {
 
                 // read the file
                 bvconvert::read(&tool_graph_path, |(src, dst)| {
-                    input_handle.send((src, dst, 1));
-                    // Also add the flipped edge, to make the graph undirected
-                    input_handle.send((dst, src, 1));
+                    action(src, dst, 1);
                 });
             }
         };
+    }
+
+    pub fn load_stream<T: Timestamp + Clone>(
+        &self,
+        input_handle: &mut InputHandle<T, (u32, u32, u32)>,
+    ) {
+        self.for_each(|src, dst, w| {
+            input_handle.send((src, dst, w));
+            // Also add the flipped edge, to make the graph undirected
+            input_handle.send((dst, src, w));
+        });
     }
 }
 
