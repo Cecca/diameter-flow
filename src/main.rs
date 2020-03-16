@@ -17,6 +17,7 @@ mod delta_stepping;
 mod hyperball;
 mod logging;
 mod min_sum;
+mod rand_cluster;
 
 use argh::FromArgs;
 use datasets::*;
