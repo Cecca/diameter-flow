@@ -30,6 +30,12 @@ impl Ord for WeightedEdge {
 }
 
 #[derive(Debug)]
+pub struct Metadata {
+    pub num_nodes: u32,
+    pub num_edges: u32,
+}
+
+#[derive(Debug)]
 pub enum Dataset {
     Snap(String),
     Dimacs(String),
@@ -45,6 +51,10 @@ impl Dataset {
     }
     pub fn webgraph<S: Into<String>>(s: S) -> Self {
         Self::WebGraph(s.into())
+    }
+
+    pub fn metadata(&self) -> Metadata {
+        unimplemented!()
     }
 
     pub fn load_stream<T: Timestamp + Clone>(

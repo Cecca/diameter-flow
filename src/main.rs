@@ -301,7 +301,8 @@ fn main() {
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
-    let n: usize = unimplemented!();
+    let meta = dataset.metadata();
+    let n = meta.num_nodes;
 
     let timer = std::time::Instant::now();
     let algorithm = config.algorithm;

@@ -71,7 +71,7 @@ fn init_nodes<G: Scope<Timestamp = usize>>(
 
 fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
     nodes: &Collection<G, (u32, NodeState), isize>,
-    n: usize,
+    n: u32,
     rand: Rc<RefCell<R>>,
 ) -> Collection<G, (u32, NodeState), isize> {
     nodes
@@ -398,7 +398,7 @@ fn remap_edges<G: Scope>(
 pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     edges: &Stream<G, (u32, u32, u32)>,
     radius: u32,
-    n: usize,
+    n: u32,
     seed: u64,
 ) -> Stream<G, u32> {
     use differential_dataflow::operators::iterate::SemigroupVariable;
