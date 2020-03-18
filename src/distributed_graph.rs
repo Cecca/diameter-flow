@@ -141,19 +141,21 @@ impl DistributedEdges {
 
     /// Send messages that can be aggregated along the edges
     #[allow(dead_code)]
-    pub fn send<G: Scope, S: ExchangeData, M: ExchangeData, P, Fm, Fa, Fu>(
+    pub fn send<G: Scope, S: ExchangeData, M: ExchangeData, P, Fm, Fa, Fu, Fun>(
         &self,
         nodes: &Stream<G, (u32, S)>,
         should_send: P,
         message: Fm,
         aggregate: Fa,
         update: Fu,
+        update_no_msg: Fun,
     ) -> Stream<G, (u32, S)>
     where
         P: Fn(u32, &S) -> bool + 'static,
         Fm: Fn(u32, &S, u32) -> M + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
         Fu: Fn(&S, &M) -> S + 'static,
+        Fun: Fn(&S) -> S + 'static,
     {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::{Exchange, Filter, Map, Operator};
@@ -189,6 +191,7 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
+                            println!("[{:?}] propagating messages", t.time());
                             let mut output_messages = HashMap::new();
 
                             // Accumulate messages going over the edges
@@ -250,13 +253,29 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
                             if let Some(msgs) = msg_stash.remove(t.time()) {
+                                println!(
+                                    "[{:?}] got {} messages, and {} nodes",
+                                    t.time(),
+                                    msgs.len(),
+                                    nodes.len()
+                                );
+                                let mut cnt_messaged = 0;
+                                let mut cnt_no_messaged = 0;
                                 for (id, state) in nodes.into_iter() {
                                     if let Some(message) = msgs.get(&id) {
                                         session.give((id, update(&state, message)));
+                                        cnt_messaged += 1;
                                     } else {
-                                        session.give((id, state));
+                                        session.give((id, update_no_msg(&state)));
+                                        cnt_no_messaged += 1;
                                     }
                                 }
+                                println!(
+                                    "[{:?}], messaged: {}, no messaged: {}",
+                                    t.time(),
+                                    cnt_messaged,
+                                    cnt_no_messaged
+                                );
                             }
                         }
                     });

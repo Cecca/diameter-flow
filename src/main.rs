@@ -12,6 +12,7 @@ extern crate tar;
 extern crate timely;
 extern crate url;
 
+mod bfs;
 mod datasets;
 mod delta_stepping;
 mod distributed_graph;
@@ -80,6 +81,7 @@ enum Algorithm {
     DeltaStepping(u32),
     HyperBall(usize),
     RandCluster(u32),
+    Bfs,
 }
 
 impl TryFrom<&str> for Algorithm {
@@ -90,6 +92,7 @@ impl TryFrom<&str> for Algorithm {
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
         let re_rand_cluster = Regex::new(r"rand-cluster\((\d+)\)").unwrap();
+        let re_bfs = Regex::new(r"bfs").unwrap();
         if let Some(captures) = re_delta_stepping.captures(value) {
             let delta = captures
                 .get(1)
@@ -123,6 +126,9 @@ impl TryFrom<&str> for Algorithm {
                 .parse::<u32>()
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
             return Ok(Self::RandCluster(radius));
+        }
+        if let Some(captures) = re_bfs.captures(value) {
+            return Ok(Self::Bfs);
         }
         Err(format!("Unrecognized algorithm: {}", value))
     }
@@ -304,12 +310,15 @@ fn main() {
         .expect("missing dataset in configuration");
     let meta = dataset.metadata();
     let n = meta.num_nodes;
+    println!("Input graph stats: {:?}", meta);
 
     let timer = std::time::Instant::now();
     let algorithm = config.algorithm;
 
     let ret_status = config.execute(move |worker| {
         let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
+
+        let static_edges = dataset.load_static(worker);
 
         let (mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
             let mut probe = Handle::new();
@@ -321,6 +330,7 @@ fn main() {
                 Algorithm::RandCluster(radius) => {
                     rand_cluster::rand_cluster(&edges, radius, n, 123)
                 }
+                Algorithm::Bfs => bfs::bfs(static_edges, scope),
             };
 
             diameter_stream
