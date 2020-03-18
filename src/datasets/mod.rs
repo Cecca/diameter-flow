@@ -1,3 +1,4 @@
+use crate::distributed_graph::*;
 use crate::min_sum::MinSum;
 use differential_dataflow::input::InputSession;
 use flate2::read::GzDecoder;
@@ -10,8 +11,10 @@ use std::fs;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::PathBuf;
+use timely::communication::Allocate;
 use timely::dataflow::operators::input::Handle as InputHandle;
 use timely::progress::Timestamp;
+use timely::worker::Worker;
 use url::Url;
 
 mod bvconvert;
@@ -178,6 +181,30 @@ impl Dataset {
             // Also add the flipped edge, to make the graph undirected
             input_handle.send((dst, src, w));
         });
+    }
+
+    /// Sets up a small dataflow to load a static set of edges, distributed among the workers
+    pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
+        use timely::dataflow::operators::probe::Handle as ProbeHandle;
+        use timely::dataflow::operators::Input as TimelyInput;
+        use timely::dataflow::operators::Probe;
+
+        let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
+            let (input, stream) = scope.new_input();
+            let mut probe = ProbeHandle::new();
+
+            let builder = DistributedEdgesBuilder::new(&stream.probe_with(&mut probe));
+
+            (input, probe, builder)
+        });
+
+        println!("loading input");
+        self.load_stream(&mut input);
+        input.close();
+        worker.step_while(|| !probe.done());
+        println!("loaded input {:?}", worker.timer().elapsed());
+
+        builder.build()
     }
 }
 
