@@ -27,6 +27,68 @@ use timely::dataflow::Stream;
 use timely::order::Product;
 use timely::progress::Timestamp;
 
+fn count_checker<G: Scope>(
+    nodes: &Collection<G, (u32, Either), isize>,
+    n: u32,
+) -> Collection<G, (u32, Either), isize> {
+    use std::collections::HashSet;
+
+    let mut covered = HashMap::new();
+    let mut uncovered = HashMap::new();
+    let mut identifiers = HashMap::new();
+
+    nodes
+        .inner
+        .unary_notify(
+            Pipeline,
+            "checker",
+            None,
+            move |input, output, notificator| {
+                input.for_each(|t, data| {
+                    let data = data.replace(Vec::new());
+                    let mut session = output.session(&t);
+                    for triplet in data.into_iter() {
+                        if (triplet.0).1.clone().as_state().distance.is_some() {
+                            covered
+                                .entry(t.time().clone())
+                                .and_modify(|c| *c += 1)
+                                .or_insert(1);
+                        } else {
+                            uncovered
+                                .entry(t.time().clone())
+                                .and_modify(|c| *c += 1)
+                                .or_insert(1);
+                        }
+                        identifiers
+                            .entry(t.time().clone())
+                            .or_insert_with(HashSet::new)
+                            .insert((triplet.0).0);
+                        session.give(triplet);
+                    }
+
+                    notificator.notify_at(t.retain());
+                });
+
+                notificator.for_each(|t, _, _| {
+                    let uncovered = uncovered.remove(&t.time()).unwrap_or(0);
+                    let covered = covered.remove(&t.time()).unwrap_or(0);
+                    let identifiers = identifiers.remove(&t.time()).expect("missing identifiers");
+                    println!(
+                        "time {:?} covered {}, uncovered {}, sum {} (distinct {} ?= {})",
+                        t.time(),
+                        covered,
+                        uncovered,
+                        covered + uncovered,
+                        identifiers.len(),
+                        n
+                    );
+                    // assert!(covered + uncovered == n);
+                });
+            },
+        )
+        .as_collection()
+}
+
 fn init_nodes<G: Scope<Timestamp = usize>>(
     edges: &Stream<G, (u32, u32, u32)>,
 ) -> Collection<G, (u32, NodeState), isize> {
@@ -54,7 +116,7 @@ fn init_nodes<G: Scope<Timestamp = usize>>(
                 });
 
                 notificator.for_each(|time, _, _| {
-                    let n = ns
+                    let n = 1 + ns
                         .remove(time.time())
                         .expect("could not find n from edge stream");
                     let n_per_worker = (n as f32 / workers as f32).ceil() as usize;
@@ -78,8 +140,21 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
 ) -> Collection<G, (u32, NodeState), isize> {
     nodes
         .inner
+        .inspect_batch(|_t, data| {
+            println!(
+                "there are {} uncovered nodes at time {:?}",
+                data.iter().filter(|trip| (trip.0).1.is_uncovered()).count(),
+                _t
+            )
+        })
         .map(move |((node, state), time, dist)| {
             let p = 2_f64.powi(time.inner as i32) / n as f64;
+            if node == 0 {
+                println!(
+                    "center sampling probability is {} at time {}",
+                    p, time.inner
+                );
+            }
             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                 ((node, state.as_center(node)), time, dist)
             } else {
@@ -125,6 +200,13 @@ impl NodeState {
         Self {
             active: true,
             distance: Some((id, 0)),
+        }
+    }
+
+    fn deactivate(&self) -> Self {
+        Self {
+            active: false,
+            ..self.clone()
         }
     }
 
@@ -188,6 +270,7 @@ fn expand_clusters<G, Tr>(
     nodes: &Collection<G, (u32, NodeState), isize>,
     light_edges: &Arranged<G, Tr>,
     radius: u32,
+    n: u32,
 ) -> Collection<G, (u32, NodeState), isize>
 where
     G: Scope<Timestamp = Product<usize, u32>>,
@@ -216,7 +299,7 @@ where
                 Product::new(Default::default(), 1_u32),
             );
 
-            let iter_res = nodes
+            let iter_res = count_checker(&nodes, n)
                 // Propagate distances from active nodes with actual distances
                 .filter(|(id, state)| state.state().can_send())
                 .join_core(&edges, |src, state, (dst, weight)| {
@@ -228,7 +311,7 @@ where
                     let old_state: &NodeState = inputs
                         .iter()
                         .find(|(either, _)| either.is_state())
-                        .expect("missing old state")
+                        .unwrap_or_else(|| panic!("missing old state: {} {:?}", _k, inputs))
                         .0
                         .state();
                     let closest: Option<(u32, u32)> = inputs
@@ -248,9 +331,13 @@ where
                     } else {
                         outputs.push((Either::State(old_state.clone()), 1))
                     }
-                });
+                })
+                .consolidate();
+            // .inspect(|t| println!("{:?}", t));
 
-            nodes.set(&iter_res.consolidate());
+            count_checker(&iter_res, n);
+
+            nodes.set(&iter_res);
 
             iter_res.leave()
         })
@@ -317,15 +404,17 @@ fn remap_edges<G: Scope>(
             .map(move |p| (p, (node, state.clone())))
     });
 
-    let mut stash_edges = HashMap::new();
-    let mut stash_nodes = HashMap::new();
+    let mut stash_edges: HashMap<G::Timestamp, Vec<(u32, u32, u32)>> = HashMap::new();
+    let mut stash_nodes: HashMap<G::Timestamp, HashMap<u32, NodeState>> = HashMap::new();
     let mut stash_deduplicator = HashMap::new();
 
     edges
         .binary_notify(
             &nodes,
-            Exchange::new(|(p, _)| *p as u64),
-            Exchange::new(|(p, _)| *p as u64),
+            // Exchange::new(|(p, _)| *p as u64),
+            // Exchange::new(|(p, _)| *p as u64),
+            Exchange::new(|(p, _)| 0),
+            Exchange::new(|(p, _)| 0),
             "graph contraction",
             None,
             move |in1, in2, out, notificator| {
@@ -351,18 +440,23 @@ fn remap_edges<G: Scope>(
                         let nodes = stash_nodes
                             .remove(&time.time())
                             .expect("missing time in nodes stash");
+                        println!(
+                            "remapping edges at time {:?}, with {} nodes",
+                            time,
+                            nodes.len()
+                        );
                         let mut session = out.session(&time);
                         for (src, dst, weight) in edges {
                             let (center_src, distance_src) = nodes
                                 .get(&src)
                                 .expect("missing source")
                                 .distance
-                                .expect("uncovered source!");
+                                .unwrap_or_else(|| panic!("uncovered source! {}", src));
                             let (center_dst, distance_dst) = nodes
                                 .get(&dst)
                                 .expect("missing destination")
                                 .distance
-                                .expect("uncovered destination!");
+                                .unwrap_or_else(|| panic!("uncovered destination! {}", dst));
                             session.give((
                                 (center_src, center_dst),
                                 distance_src + weight + distance_dst,
@@ -410,7 +504,13 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     use differential_dataflow::operators::iterate::SemigroupVariable;
     use rand_xoshiro::Xoroshiro128StarStar;
 
-    let nodes = init_nodes(edges);
+    println!("n is {}", n);
+
+    let nodes = (0..n)
+        .to_stream(&mut edges.scope())
+        .map(|i| ((i, NodeState::default()), 0, 1))
+        .as_collection();
+    //let nodes = init_nodes(edges);
     let l1 = edges.scope().count_logger().expect("missing logger");
     let l2 = l1.clone();
     let l3 = l1.clone();
@@ -429,19 +529,33 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         .as_collection()
         .arrange_by_key();
 
-    let clustering = nodes.scope().iterative::<u32, _, _>(|inner_scope| {
-        let light = light.enter(inner_scope);
+    let clustering = nodes
+        .scope()
+        .iterative::<u32, _, _>(|inner_scope| {
+            let light = light.enter(inner_scope);
 
-        let summary = Product::new(Default::default(), 1);
-        let nodes = Variable::new_from(nodes.enter(&inner_scope), summary);
+            let summary = Product::new(Default::default(), 1);
+            let nodes = Variable::new_from(nodes.enter(&inner_scope), summary);
 
-        let updated =
-            expand_clusters(&sample_centers(&nodes, n, rand), &light, radius).consolidate();
+            let updated = expand_clusters(&sample_centers(&nodes, n, rand), &light, radius, n)
+                .consolidate()
+                .map(|(node, state)| {
+                    if state.distance.is_some() {
+                        (node, state.deactivate())
+                    } else {
+                        (node, state.clone())
+                    }
+                });
 
-        nodes.set(&updated);
+            nodes.set(&updated);
 
-        updated.leave()
-    });
+            updated.filter(|(_, state)| !state.is_uncovered()).leave()
+        })
+        .inspect(|((id, state), _, _)| {
+            if state.distance.is_none() {
+                println!("{} is uncovered", id);
+            }
+        });
 
     let auxiliary_graph = remap_edges(&clustering.inner.map(|triplet| triplet.0), &edges);
 

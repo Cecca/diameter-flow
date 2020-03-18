@@ -99,6 +99,7 @@ impl Dataset {
                 num_edges += 1;
                 max_weight = std::cmp::max(max_weight, w);
             });
+            num_nodes += 1;
             let meta = Metadata {
                 num_edges,
                 num_nodes,
