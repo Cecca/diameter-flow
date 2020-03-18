@@ -14,6 +14,7 @@ extern crate url;
 
 mod datasets;
 mod delta_stepping;
+mod distributed_graph;
 mod hyperball;
 mod logging;
 mod min_sum;
