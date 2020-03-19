@@ -222,11 +222,11 @@ impl DistributedEdges {
                                     }
                                 }
                             });
-                            // println!(
-                            //     "[{:?}] propagating {} messages",
-                            //     t.time(),
-                            //     output_messages.len()
-                            // );
+                            println!(
+                                "[{:?}] propagating {} messages",
+                                t.time(),
+                                output_messages.len()
+                            );
 
                             // Output the aggregated messages
                             output
@@ -269,12 +269,12 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                            // println!(
-                            //     "[{:?}] got {} messages, and {} nodes",
-                            //     t.time(),
-                            //     msgs.len(),
-                            //     nodes.len()
-                            // );
+                            println!(
+                                "[{:?}] got {} messages, and {} nodes",
+                                t.time(),
+                                msgs.len(),
+                                nodes.len()
+                            );
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
                             for (id, state) in nodes.into_iter() {
@@ -286,12 +286,12 @@ impl DistributedEdges {
                                     cnt_no_messaged += 1;
                                 }
                             }
-                            // println!(
-                            //     "[{:?}], messaged: {}, no messaged: {}",
-                            //     t.time(),
-                            //     cnt_messaged,
-                            //     cnt_no_messaged
-                            // );
+                            println!(
+                                "[{:?}], messaged: {}, no messaged: {}",
+                                t.time(),
+                                cnt_messaged,
+                                cnt_no_messaged
+                            );
                         }
                     });
                 },

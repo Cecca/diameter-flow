@@ -1,3 +1,4 @@
+use crate::distributed_graph::*;
 use differential_dataflow::difference::Monoid;
 use differential_dataflow::difference::Semigroup;
 use differential_dataflow::operators::arrange::ArrangeByKey;
@@ -127,7 +128,7 @@ fn init_nodes<G: Scope<Timestamp = usize>>(
 }
 
 /// The weight will be disregarded
-pub fn hyperball<G: Scope<Timestamp = usize>>(
+pub fn hyperball_old<G: Scope<Timestamp = usize>>(
     edges: &Stream<G, (u32, u32, u32)>,
     p: usize,
     seed: u64,
@@ -183,6 +184,109 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
         .inner
         // .inspect(|x| println!("{:?}", x))
         .map(|((_node, time), _, _)| time)
+        .accumulate(0u32, |max, data| {
+            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+        })
+        .inspect(|partial| println!("Partial maximum {:?}", partial))
+        .exchange(|_| 0)
+        .accumulate(0u32, |max, data| {
+            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+        })
+}
+
+#[derive(Debug, Clone, Abomonation)]
+struct State {
+    counter: HyperLogLogCounter,
+    updated: bool,
+}
+
+impl State {
+    fn new(p: usize, id: u32) -> Self {
+        Self {
+            counter: HyperLogLogCounter::new(&id, DefaultHasher::new(), p),
+            updated: true,
+        }
+    }
+
+    fn update(&self, counter: &HyperLogLogCounter) -> Self {
+        let new_counter = self.counter.merge(counter);
+        let updated = new_counter != self.counter;
+        Self {
+            counter: new_counter,
+            updated,
+        }
+    }
+
+    fn deactivate(&self) -> Self {
+        Self {
+            updated: false,
+            ..self.clone()
+        }
+    }
+}
+
+pub fn hyperball<G: Scope<Timestamp = usize>>(
+    edges: DistributedEdges,
+    scope: &mut G,
+    p: usize,
+    seed: u64,
+) -> Stream<G, u32> {
+    // Init nodes
+    let nodes = edges
+        .nodes::<_, ()>(scope)
+        .map(move |(id, ())| (id, State::new(p, id)));
+
+    let stop_times: Stream<G, u32> = nodes.scope().iterative::<u32, _, _>(|subscope| {
+        let nodes = nodes.enter(subscope);
+        let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
+
+        let (stable, updated) = edges
+            .send(
+                &nodes.concat(&cycle),
+                // Should send?
+                |_, _| true,
+                // create message
+                |_time, state, _weight| Some(state.counter.clone()),
+                // Combine messages
+                HyperLogLogCounter::merge,
+                // Update state for nodes with messages
+                |state, message| state.update(message),
+                // Update the state for nodes without messages
+                |state| state.deactivate(),
+            )
+            .branch(|t, (_id, state)| state.updated);
+
+        updated.connect_loop(handle);
+
+        let mut counters = HashMap::new();
+        // Get the iteration we are returning from, and output just that
+        stable
+            .unary_notify(
+                Pipeline,
+                "get_iteration",
+                None,
+                move |input, output, notificator| {
+                    input.for_each(|t, data| {
+                        counters
+                            .entry(t.time().clone())
+                            .and_modify(|c| *c += data.len())
+                            .or_insert(data.len());
+                        notificator.notify_at(t.retain());
+                    });
+                    notificator.for_each(|t, _, _| {
+                        println!(
+                            "{:?} are exiting at time {:?}",
+                            counters.remove(t.time()),
+                            t.time()
+                        );
+                        output.session(&t).give(t.time().inner);
+                    });
+                },
+            )
+            .leave()
+    });
+
+    stop_times
         .accumulate(0u32, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })

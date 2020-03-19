@@ -328,7 +328,7 @@ fn main() {
                 Algorithm::DeltaStepping(delta) => {
                     delta_stepping(static_edges, scope, delta, n, 1, 123)
                 }
-                Algorithm::HyperBall(p) => hyperball::hyperball(&edges, p, 123),
+                Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
                 Algorithm::RandCluster(radius) => {
                     rand_cluster::rand_cluster(&edges, radius, n, 123)
                 }
@@ -355,7 +355,7 @@ fn main() {
             // edges.send((0, 10, 10));
             // edges.send((10, 11, 1));
 
-            println!("{:?}\tread data from file", timer.elapsed());
+            // println!("{:?}\tread data from file", timer.elapsed());
         }
         edges.close();
         worker.step_while(|| {
