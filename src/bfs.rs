@@ -50,7 +50,7 @@ pub fn bfs<G: Scope>(edges: DistributedEdges, scope: &mut G) -> Stream<G, u32> {
                 // Filter nodes that have something to say
                 |_, state| state.should_send(),
                 // Create messages
-                |_id, state, _weight| 1 + state.distance.expect("missing distance"),
+                |_id, state, _weight| Some(1 + state.distance.expect("missing distance")),
                 // Aggregate messages
                 |d1, d2| std::cmp::min(*d1, *d2),
                 // Update nodes that got messages

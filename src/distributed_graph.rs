@@ -153,7 +153,7 @@ impl DistributedEdges {
     ) -> Stream<G, (u32, S)>
     where
         P: Fn(u32, &S) -> bool + 'static,
-        Fm: Fn(u32, &S, u32) -> M + 'static,
+        Fm: Fn(u32, &S, u32) -> Option<M> + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
         Fu: Fn(&S, &M) -> S + 'static,
         Fun: Fn(&S) -> S + 'static,
@@ -198,18 +198,20 @@ impl DistributedEdges {
                             // Accumulate messages going over the edges
                             edges.for_each(|u, v, w| {
                                 if let Some(state_u) = states.get(&u) {
-                                    let msg = message(u, state_u, w);
-                                    output_messages
-                                        .entry(v)
-                                        .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
-                                        .or_insert(msg);
+                                    if let Some(msg) = message(u, state_u, w) {
+                                        output_messages
+                                            .entry(v)
+                                            .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
+                                            .or_insert(msg);
+                                    }
                                 }
                                 if let Some(state_v) = states.get(&v) {
-                                    let msg = message(v, state_v, w);
-                                    output_messages
-                                        .entry(u)
-                                        .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
-                                        .or_insert(msg);
+                                    if let Some(msg) = message(v, state_v, w) {
+                                        output_messages
+                                            .entry(u)
+                                            .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
+                                            .or_insert(msg);
+                                    }
                                 }
                             });
 
