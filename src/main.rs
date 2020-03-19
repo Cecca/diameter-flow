@@ -325,7 +325,9 @@ fn main() {
             let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
 
             let diameter_stream = match algorithm {
-                Algorithm::DeltaStepping(delta) => delta_stepping(&edges, delta, 1, 123),
+                Algorithm::DeltaStepping(delta) => {
+                    delta_stepping(static_edges, scope, delta, n, 1, 123)
+                }
                 Algorithm::HyperBall(p) => hyperball::hyperball(&edges, p, 123),
                 Algorithm::RandCluster(radius) => {
                     rand_cluster::rand_cluster(&edges, radius, n, 123)

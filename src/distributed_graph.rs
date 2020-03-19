@@ -48,7 +48,7 @@ impl Distributor {
 }
 
 pub struct DistributedEdgesBuilder {
-    edges: Rc<RefCell<Vec<(u32, u32, u32)>>>,
+    edges: Rc<RefCell<Option<Vec<(u32, u32, u32)>>>>,
     distributor: Distributor,
 }
 
@@ -59,7 +59,7 @@ impl DistributedEdgesBuilder {
         use timely::dataflow::operators::generic::operator::Operator;
         use timely::dataflow::operators::FrontierNotificator;
 
-        let mut edges_ref = Rc::new(RefCell::new(Vec::new()));
+        let mut edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
         let distributor = Distributor::new(&stream.scope());
 
@@ -71,7 +71,10 @@ impl DistributedEdgesBuilder {
             move |input| {
                 input.for_each(|t, data| {
                     let data = data.replace(Vec::new());
-                    edges_ref.borrow_mut().extend(data.into_iter());
+                    edges_ref
+                        .borrow_mut()
+                        .get_or_insert_with(Vec::new)
+                        .extend(data.into_iter());
                 });
             },
         );
@@ -80,13 +83,19 @@ impl DistributedEdgesBuilder {
     }
 
     pub fn build(self) -> DistributedEdges {
-        println!("Processor has {} edges", self.edges.borrow().len());
+        let edges = self.edges.borrow_mut().take().expect("Missing edges!");
+        println!("Processor has {} edges", edges.len());
         DistributedEdges {
-            edges: Rc::new(
-                Rc::try_unwrap(self.edges)
-                    .expect("more than one pointer to the edges")
-                    .into_inner(),
-            ),
+            edges: Rc::new(edges),
+            //     Rc::try_unwrap(self.edges)
+            //         .unwrap_or_else(|rc| {
+            //             panic!(
+            //                 "more than one pointer to the edges: {}",
+            //                 Rc::strong_count(&rc)
+            //             )
+            //         })
+            //         .into_inner(),
+            // ),
             distributor: self.distributor,
         }
     }
@@ -153,7 +162,7 @@ impl DistributedEdges {
     ) -> Stream<G, (u32, S)>
     where
         P: Fn(u32, &S) -> bool + 'static,
-        Fm: Fn(u32, &S, u32) -> Option<M> + 'static,
+        Fm: Fn(G::Timestamp, &S, u32) -> Option<M> + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
         Fu: Fn(&S, &M) -> S + 'static,
         Fun: Fn(&S) -> S + 'static,
@@ -192,13 +201,12 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
-                            println!("[{:?}] propagating messages", t.time());
                             let mut output_messages = HashMap::new();
 
                             // Accumulate messages going over the edges
                             edges.for_each(|u, v, w| {
                                 if let Some(state_u) = states.get(&u) {
-                                    if let Some(msg) = message(u, state_u, w) {
+                                    if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         output_messages
                                             .entry(v)
                                             .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
@@ -206,7 +214,7 @@ impl DistributedEdges {
                                     }
                                 }
                                 if let Some(state_v) = states.get(&v) {
-                                    if let Some(msg) = message(v, state_v, w) {
+                                    if let Some(msg) = message(t.time().clone(), state_v, w) {
                                         output_messages
                                             .entry(u)
                                             .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
@@ -214,6 +222,11 @@ impl DistributedEdges {
                                     }
                                 }
                             });
+                            // println!(
+                            //     "[{:?}] propagating {} messages",
+                            //     t.time(),
+                            //     output_messages.len()
+                            // );
 
                             // Output the aggregated messages
                             output
@@ -255,31 +268,30 @@ impl DistributedEdges {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
-                            if let Some(msgs) = msg_stash.remove(t.time()) {
-                                println!(
-                                    "[{:?}] got {} messages, and {} nodes",
-                                    t.time(),
-                                    msgs.len(),
-                                    nodes.len()
-                                );
-                                let mut cnt_messaged = 0;
-                                let mut cnt_no_messaged = 0;
-                                for (id, state) in nodes.into_iter() {
-                                    if let Some(message) = msgs.get(&id) {
-                                        session.give((id, update(&state, message)));
-                                        cnt_messaged += 1;
-                                    } else {
-                                        session.give((id, update_no_msg(&state)));
-                                        cnt_no_messaged += 1;
-                                    }
+                            let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
+                            // println!(
+                            //     "[{:?}] got {} messages, and {} nodes",
+                            //     t.time(),
+                            //     msgs.len(),
+                            //     nodes.len()
+                            // );
+                            let mut cnt_messaged = 0;
+                            let mut cnt_no_messaged = 0;
+                            for (id, state) in nodes.into_iter() {
+                                if let Some(message) = msgs.get(&id) {
+                                    session.give((id, update(&state, message)));
+                                    cnt_messaged += 1;
+                                } else {
+                                    session.give((id, update_no_msg(&state)));
+                                    cnt_no_messaged += 1;
                                 }
-                                println!(
-                                    "[{:?}], messaged: {}, no messaged: {}",
-                                    t.time(),
-                                    cnt_messaged,
-                                    cnt_no_messaged
-                                );
                             }
+                            // println!(
+                            //     "[{:?}], messaged: {}, no messaged: {}",
+                            //     t.time(),
+                            //     cnt_messaged,
+                            //     cnt_no_messaged
+                            // );
                         }
                     });
                 },

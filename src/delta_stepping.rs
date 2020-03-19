@@ -1,3 +1,4 @@
+use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::min_sum::*;
 use differential_dataflow::difference::Monoid;
@@ -123,54 +124,7 @@ pub fn get_roots<G: Scope<Timestamp = usize>>(
         .as_collection()
 }
 
-// pub fn bfs<G: Scope<timestamp = usize>>(
-//     edges: &Stream<G, (u32, u32, u32)>,
-//     num_roots: usize,
-//     seed: u64,
-// ) -> Stream<G, u32>
-// where
-//     G::Timestamp: Timestamp + Clone + Lattice,
-// {
-//     let roots: Collection<G, (u32, ()), MinSum> =
-//         get_roots(edges, num_roots, seed).map(|src| (src, ()));
-
-//     let edges = edges.as_min_sum_collection().arrange_by_key();
-
-//     let distances = roots
-//         .scope()
-//         .iterate(|inner| {
-//             let edges = edges.enter(&inner.scope());
-//             let roots = roots.enter(&inner.scope());
-
-//             edges
-//                 .join_map(&roots, |_src, dst, ()| (*dst, ()))
-//                 .concat(&roots)
-//                 .reduce_core::<_, OrdKeySpine<_, _, _>>(
-//                     "Reduce",
-//                     |_node, input, output, updates| {
-//                         if output.is_empty() || input[0].1 < output[0].1 {
-//                             updates.push(((), input[0].1));
-//                         }
-//                     },
-//                 )
-//                 .as_collection(|k, ()| (*k, ()))
-//         })
-//         .consolidate()
-//         .map(|pair| pair.0);
-
-//     distances
-//         .inner
-//         .map(|triplet| triplet.2.value)
-//         .accumulate(0, |max, data| {
-//             *max = *data.iter().max().expect("empty collection")
-//         })
-//         .exchange(|_| 0)
-//         .accumulate(0, |max, data| {
-//             *max = *data.iter().max().expect("empty collection")
-//         })
-// }
-
-pub fn delta_step<G, Tr>(
+pub fn delta_step_old<G, Tr>(
     initial_input: &Collection<G, (u32, ()), MinSum>,
     light_edges: &Arranged<G, Tr>,
     heavy_edges: &Arranged<G, Tr>,
@@ -238,7 +192,7 @@ where
         .inspect_batch(move |t, c| l5.log((IterationOutput(t.inner), c.len().into())))
 }
 
-pub fn delta_stepping<G: Scope<Timestamp = usize>>(
+pub fn delta_stepping_old<G: Scope<Timestamp = usize>>(
     edges: &Stream<G, (u32, u32, u32)>,
     delta: u32,
     num_roots: usize,
@@ -278,7 +232,7 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
             // .inspect(|v| println!("delta step input {:?}", v));
 
             let iteration_output =
-                delta_step(&iteration_input, &light, &heavy, delta).consolidate();
+                delta_step_old(&iteration_input, &light, &heavy, delta).consolidate();
 
             // Split the result of the iteration into three collections:
             //  - nodes at distance less than (buck+1)*delta, which should be output
@@ -318,6 +272,249 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
         .inner
         .map(|triplet| triplet.2.value)
         // .inspect(|c| println!("{:?}", c))
+        .accumulate(0, |max, data| {
+            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+        })
+        .inspect(|partial| println!("Partial maximum {:?}", partial))
+        .exchange(|_| 0)
+        .accumulate(0, |max, data| {
+            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+        })
+}
+
+#[derive(Debug, Clone, Abomonation)]
+struct State {
+    distance: Option<u32>,
+    updated: bool,
+}
+
+impl Default for State {
+    fn default() -> Self {
+        Self {
+            distance: None,
+            updated: false,
+        }
+    }
+}
+
+impl State {
+    fn root() -> Self {
+        Self {
+            distance: Some(0),
+            updated: true,
+        }
+    }
+
+    fn should_send(&self) -> bool {
+        self.updated && self.distance.is_some()
+    }
+
+    fn deactivate(&self) -> Self {
+        Self {
+            updated: false,
+            ..self.clone()
+        }
+    }
+
+    fn reactivate(&self) -> Self {
+        if self.distance.is_some() {
+            Self {
+                updated: true,
+                ..self.clone()
+            }
+        } else {
+            self.clone()
+        }
+    }
+
+    fn update_distance(&self, distance: u32) -> Self {
+        if let Some(prev_distance) = self.distance {
+            if distance < prev_distance {
+                Self {
+                    distance: Some(distance),
+                    updated: true,
+                }
+            } else {
+                Self {
+                    distance: Some(prev_distance),
+                    updated: false,
+                }
+            }
+        } else {
+            Self {
+                distance: Some(distance),
+                updated: true,
+            }
+        }
+    }
+
+    fn send_light(step: u32, delta: u32, state: &Self, weight: u32) -> Option<u32> {
+        let bucket_limit = delta * (step + 1);
+        if weight <= delta && state.distance.expect("missing distance") <= bucket_limit {
+            Some(weight + state.distance.expect("missing distance"))
+        } else {
+            None
+        }
+    }
+
+    fn send_heavy(step: u32, delta: u32, state: &Self, weight: u32) -> Option<u32> {
+        if weight > delta {
+            Some(weight + state.distance.expect("missing distance"))
+        } else {
+            None
+        }
+    }
+}
+
+/// Branch out when the stream of nodes has stabilized, that is,
+/// when there are no more updates in the current bucket
+fn branch_stabilized<G: Scope<Timestamp = Product<Product<usize, u32>, u32>>>(
+    nodes: &Stream<G, (u32, State)>,
+    delta: u32,
+) -> (Stream<G, (u32, State)>, Stream<G, (u32, State)>) {
+    use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
+    use timely::dataflow::operators::*;
+
+    let stash = Rc::new(RefCell::new(HashMap::new()));
+    let stash2 = Rc::clone(&stash);
+
+    let updated_counts = nodes
+        .unary(Pipeline, "count updated", move |_, _| {
+            move |input, output| {
+                input.for_each(|t, data| {
+                    let data = data.replace(Vec::new());
+                    output
+                        .session(&t)
+                        .give(data.iter().filter(|(_, state)| state.updated).count());
+                    stash
+                        .borrow_mut()
+                        .entry(t.time().clone())
+                        .or_insert_with(Vec::new)
+                        .extend(data.into_iter());
+                })
+            }
+        })
+        .broadcast();
+
+    let mut stash_counts = HashMap::new();
+    let (stable, some_updated) = updated_counts
+        .unary_notify(
+            Pipeline,
+            "splitter",
+            None,
+            move |input, output, notificator| {
+                input.for_each(|t, data| {
+                    let data = data.replace(Vec::new());
+                    let total: usize = data.into_iter().sum();
+                    stash_counts
+                        .entry(t.time().clone())
+                        .and_modify(|c| *c += total)
+                        .or_insert(total);
+                    notificator.notify_at(t.retain());
+                });
+                notificator.for_each(|time, _, _| {
+                    if let Some(updated_count) = stash_counts.remove(&time) {
+                        // println!("[{:?}] {} updated nodes", time.time(), updated_count);
+                        let branch = updated_count > 0;
+                        if let Some(nodes) = stash2.borrow_mut().remove(&time) {
+                            output
+                                .session(&time)
+                                .give_iterator(nodes.into_iter().map(|x| (branch, x)));
+                        }
+                    }
+                });
+            },
+        )
+        .branch(|_t, (some_updated, _pair)| *some_updated);
+
+    (stable.map(|pair| pair.1), some_updated.map(|pair| pair.1))
+}
+
+fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
+    edges: &DistributedEdges,
+    nodes: &Stream<G, (u32, State)>,
+    delta: u32,
+) -> Stream<G, (u32, State)> {
+    use timely::dataflow::operators::*;
+
+    let lightly_updated = nodes.scope().iterative::<u32, _, _>(|subscope| {
+        let nodes = nodes
+            .enter(subscope)
+            .map(|(id, state)| (id, state.reactivate()));
+        let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
+
+        // FIXME: we cannot retire old configuration
+        let nodes2 = edges.send(
+            &nodes.concat(&cycle),
+            |_, state| state.should_send(),
+            move |time, state, weight| State::send_light(time.outer.inner, delta, state, weight),
+            |d1, d2| std::cmp::min(*d1, *d2), // aggregate messages
+            |state, message| state.update_distance(*message),
+            |state| state.deactivate(), // deactivate nodes with no messages
+        );
+        let (output, further) = branch_stabilized(&nodes2, delta);
+
+        further.connect_loop(handle);
+
+        output.leave()
+    });
+
+    // do the heavy updates and return
+    edges.send(
+        &lightly_updated,
+        |_, state| state.distance.is_some(),
+        move |time, state, weight| State::send_heavy(time.inner, delta, state, weight),
+        |d1, d2| std::cmp::min(*d1, *d2), // aggregate messages
+        |state, message| state.update_distance(*message),
+        // |state| state.deactivate(), // deactivate nodes with no messages
+        |state| state.clone(),
+    )
+}
+
+pub fn delta_stepping<G: Scope<Timestamp = usize>>(
+    edges: DistributedEdges,
+    scope: &mut G,
+    delta: u32,
+    n: u32,
+    num_roots: usize,
+    seed: u64,
+) -> Stream<G, u32> {
+    use std::collections::HashSet;
+
+    let rng = Xoshiro256StarStar::seed_from_u64(seed);
+    let dist = Uniform::new(0u32, n + 1);
+    let roots: HashSet<u32> = dist.sample_iter(rng).take(num_roots).collect();
+
+    // Initialize nodes
+    let nodes = edges.nodes::<_, State>(scope).map(move |(id, state)| {
+        if roots.contains(&id) {
+            (id, State::root())
+        } else {
+            (id, state)
+        }
+    });
+
+    // Perform the delta steps, retiring at the end of each
+    // delta step the stable nodes
+    let distances = nodes.scope().iterative::<u32, _, _>(move |inner_scope| {
+        let nodes = nodes.enter(inner_scope);
+        let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
+
+        let (stable, further) =
+            delta_step(&edges, &nodes.concat(&cycle), delta).branch(move |t, (id, state)| {
+                state
+                    .distance
+                    .map(|d| d > delta * (t.inner + 1))
+                    .unwrap_or(true)
+            });
+
+        further.connect_loop(handle);
+
+        stable.leave()
+    });
+
+    distances
+        .map(|(_id, state)| state.distance.expect("unreached node"))
         .accumulate(0, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })
