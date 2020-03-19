@@ -341,7 +341,7 @@ fn main() {
         });
 
         if worker.index() == 0 {
-            dataset.load_stream(&mut edges);
+            // dataset.load_stream(&mut edges);
             // edges.send((0, 1, 1));
             // edges.send((0, 2, 2));
             // edges.send((0, 3, 3));

@@ -28,7 +28,7 @@ pub fn bfs<G: Scope>(edges: DistributedEdges, scope: &mut G) -> Stream<G, u32> {
     use timely::order::Product;
 
     let nodes = edges.nodes::<_, State>(scope).map(|(id, state)| {
-        if id == 3969452 {
+        if id == 0 {
             (
                 id,
                 State {

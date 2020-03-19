@@ -177,9 +177,12 @@ impl Dataset {
         input_handle: &mut InputHandle<T, (u32, u32, u32)>,
     ) {
         self.for_each(|src, dst, w| {
-            input_handle.send((src, dst, w));
-            // Also add the flipped edge, to make the graph undirected
-            input_handle.send((dst, src, w));
+            // Skip self loops
+            if src != dst {
+                input_handle.send((src, dst, w));
+                // Also add the flipped edge, to make the graph undirected
+                input_handle.send((dst, src, w));
+            }
         });
     }
 
@@ -199,7 +202,16 @@ impl Dataset {
         });
 
         println!("loading input");
-        self.load_stream(&mut input);
+        if worker.index() == 0 {
+            self.for_each(|u, v, w| {
+                // Skip self loops
+                if u > v {
+                    input.send((v, u, w));
+                } else if u < v {
+                    input.send((u, v, w));
+                }
+            });
+        }
         input.close();
         worker.step_while(|| !probe.done());
         println!("loaded input {:?}", worker.timer().elapsed());

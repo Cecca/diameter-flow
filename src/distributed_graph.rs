@@ -19,7 +19,7 @@ impl Distributor {
 
     /// Gets the processor for an edge
     fn proc_edge(&self, src: u32, dst: u32) -> u8 {
-        assert!(src > dst);
+        assert!(src < dst, "src >= dst! {} >= {}", src, dst);
         let cell_i = src % self.side;
         let cell_j = dst % self.side;
         let pos_i = src / self.side;
@@ -80,6 +80,7 @@ impl DistributedEdgesBuilder {
     }
 
     pub fn build(self) -> DistributedEdges {
+        println!("Processor has {} edges", self.edges.borrow().len());
         DistributedEdges {
             edges: Rc::new(
                 Rc::try_unwrap(self.edges)
