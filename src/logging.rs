@@ -15,13 +15,13 @@ use timely::worker::{AsWorker, Worker};
 #[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]
 pub enum CountEvent {
     LightEdges,
-    HeavyEdges,
-    LightIterInput(u64, u64),
-    LightIterActive(u64, u64),
-    LightUpdates(u64),
-    HeavyUpdates(u64),
-    IterationOutput(u64),
-    IterationInput(u64),
+    // HeavyEdges,
+    // LightIterInput(u64, u64),
+    // LightIterActive(u64, u64),
+    // LightUpdates(u64),
+    // HeavyUpdates(u64),
+    // IterationOutput(u64),
+    // IterationInput(u64),
 }
 
 #[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]

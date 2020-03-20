@@ -1,25 +1,11 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::operators::*;
-
-
-
-
-
-
-
-
-
-use differential_dataflow::trace::*;
-
-
 use rand::Rng;
 use rand::SeedableRng;
 use std::cell::RefCell;
-
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-
 use std::rc::Rc;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
@@ -28,123 +14,6 @@ use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
-
-
-// fn count_checker<G: Scope>(
-//     nodes: &Collection<G, (u32, Either), isize>,
-//     n: u32,
-// ) -> Collection<G, (u32, Either), isize> {
-//     use std::collections::HashSet;
-
-//     let mut covered = HashMap::new();
-//     let mut uncovered = HashMap::new();
-//     let mut identifiers = HashMap::new();
-
-//     nodes
-//         .inner
-//         .unary_notify(
-//             Pipeline,
-//             "checker",
-//             None,
-//             move |input, output, notificator| {
-//                 input.for_each(|t, data| {
-//                     let data = data.replace(Vec::new());
-//                     let mut session = output.session(&t);
-//                     for triplet in data.into_iter() {
-//                         if (triplet.0).1.clone().as_state().distance.is_some() {
-//                             covered
-//                                 .entry(t.time().clone())
-//                                 .and_modify(|c| *c += 1)
-//                                 .or_insert(1);
-//                         } else {
-//                             uncovered
-//                                 .entry(t.time().clone())
-//                                 .and_modify(|c| *c += 1)
-//                                 .or_insert(1);
-//                         }
-//                         identifiers
-//                             .entry(t.time().clone())
-//                             .or_insert_with(HashSet::new)
-//                             .insert((triplet.0).0);
-//                         session.give(triplet);
-//                     }
-
-//                     notificator.notify_at(t.retain());
-//                 });
-
-//                 notificator.for_each(|t, _, _| {
-//                     let uncovered = uncovered.remove(&t.time()).unwrap_or(0);
-//                     let covered = covered.remove(&t.time()).unwrap_or(0);
-//                     let identifiers = identifiers.remove(&t.time()).expect("missing identifiers");
-//                     println!(
-//                         "time {:?} covered {}, uncovered {}, sum {} (distinct {} ?= {})",
-//                         t.time(),
-//                         covered,
-//                         uncovered,
-//                         covered + uncovered,
-//                         identifiers.len(),
-//                         n
-//                     );
-//                     // assert!(covered + uncovered == n);
-//                 });
-//             },
-//         )
-//         .as_collection()
-// }
-
-fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
-    nodes: &Stream<G, (u32, NodeState)>,
-    n: u32,
-    rand: Rc<RefCell<R>>,
-) -> Stream<G, (u32, NodeState)> {
-    let mut stash = HashMap::new();
-
-    // we have to stash the nodes and sort them to make the center sampling
-    // deterministic, for a fixed random generator.
-    nodes.unary_notify(
-        Pipeline,
-        "sample",
-        None,
-        move |input, output, notificator| {
-            input.for_each(|t, data| {
-                let data = data.replace(Vec::new());
-                stash
-                    .entry(t.time().clone())
-                    .or_insert_with(Vec::new)
-                    .extend(data.into_iter());
-                notificator.notify_at(t.retain());
-            });
-            notificator.for_each(|t, _, _| {
-                if let Some(mut nodes) = stash.remove(&t) {
-                    nodes.sort_by_key(|pair| pair.0);
-                    let mut out = output.session(&t);
-                    let mut cnt = 0;
-                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
-                    if p <= 1.0 {
-                        println!("[{:?}] probability = {}", t.time(), p);
-                        for (id, state) in nodes.into_iter() {
-                            if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
-                                out.give((id, state.as_center(id)));
-                                cnt += 1;
-                            } else {
-                                out.give((id, state));
-                            }
-                        }
-                    } else {
-                        println!("[{:?}] probability = 1", t.time());
-                        cnt = nodes.len();
-                        out.give_iterator(
-                            nodes
-                                .into_iter()
-                                .map(|(id, state)| (id, state.as_center(id))),
-                        );
-                    }
-                    println!("[{:?}] sampled {} centers", t.time(), cnt);
-                }
-            });
-        },
-    )
-}
 
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct NodeState {
@@ -232,6 +101,60 @@ impl NodeState {
     }
 }
 
+fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
+    nodes: &Stream<G, (u32, NodeState)>,
+    n: u32,
+    rand: Rc<RefCell<R>>,
+) -> Stream<G, (u32, NodeState)> {
+    let mut stash = HashMap::new();
+
+    // we have to stash the nodes and sort them to make the center sampling
+    // deterministic, for a fixed random generator.
+    nodes.unary_notify(
+        Pipeline,
+        "sample",
+        None,
+        move |input, output, notificator| {
+            input.for_each(|t, data| {
+                let data = data.replace(Vec::new());
+                stash
+                    .entry(t.time().clone())
+                    .or_insert_with(Vec::new)
+                    .extend(data.into_iter());
+                notificator.notify_at(t.retain());
+            });
+            notificator.for_each(|t, _, _| {
+                if let Some(mut nodes) = stash.remove(&t) {
+                    nodes.sort_by_key(|pair| pair.0);
+                    let mut out = output.session(&t);
+                    let mut cnt = 0;
+                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
+                    if p <= 1.0 {
+                        println!("[{:?}] probability = {}", t.time(), p);
+                        for (id, state) in nodes.into_iter() {
+                            if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
+                                out.give((id, state.as_center(id)));
+                                cnt += 1;
+                            } else {
+                                out.give((id, state));
+                            }
+                        }
+                    } else {
+                        println!("[{:?}] probability = 1", t.time());
+                        cnt = nodes.len();
+                        out.give_iterator(
+                            nodes
+                                .into_iter()
+                                .map(|(id, state)| (id, state.as_center(id))),
+                        );
+                    }
+                    println!("[{:?}] sampled {} centers", t.time(), cnt);
+                }
+            });
+        },
+    )
+}
+
 fn expand_clusters<G>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, NodeState)>,
@@ -241,8 +164,6 @@ fn expand_clusters<G>(
 where
     G: Scope<Timestamp = Product<usize, u32>>,
 {
-    
-
     let l1 = nodes.scope().count_logger().expect("missing logger");
     let _l2 = l1.clone();
     let _l3 = l1.clone();
@@ -282,7 +203,6 @@ fn remap_edges<G: Scope>(
     clustering: &Stream<G, (u32, NodeState)>,
 ) -> Stream<G, ((u32, u32), u32)> {
     use std::collections::hash_map::DefaultHasher;
-    use timely::dataflow::operators::aggregation::Aggregate;
 
     edges
         .triplets(&clustering)
@@ -321,7 +241,6 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     n: u32,
     seed: u64,
 ) -> Stream<G, u32> {
-    
     use rand_xoshiro::Xoroshiro128StarStar;
 
     let nodes = edges.nodes::<_, NodeState>(scope);

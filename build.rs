@@ -1,9 +1,7 @@
 extern crate flate2;
 extern crate tar;
-
 use flate2::read::GzDecoder;
 use std::collections::HashSet;
-use std::ffi::OsString;
 use std::fs::File;
 use std::iter::FromIterator;
 use std::path::PathBuf;
@@ -48,8 +46,8 @@ where
 }
 
 fn get_jars(directory: &PathBuf) {
-    let java_path = "java/BVGraphToEdges.java";
-    let binary_path = "java/BVGraphToEdges.class";
+    // let java_path = "java/BVGraphToEdges.java";
+    // let binary_path = "java/BVGraphToEdges.class";
     let webgraph_url = "http://webgraph.di.unimi.it/webgraph-3.6.3-bin.tar.gz";
     let dependencies_url = "http://webgraph.di.unimi.it/webgraph-deps.tar.gz";
 

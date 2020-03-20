@@ -1,6 +1,4 @@
 use crate::distributed_graph::*;
-
-
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -9,11 +7,8 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{Write};
 use std::path::PathBuf;
 use timely::communication::Allocate;
-use timely::dataflow::operators::input::Handle as InputHandle;
-use timely::progress::Timestamp;
 use timely::worker::Worker;
 use url::Url;
 
@@ -174,20 +169,6 @@ impl Dataset {
                 });
             }
         };
-    }
-
-    pub fn load_stream<T: Timestamp + Clone>(
-        &self,
-        input_handle: &mut InputHandle<T, (u32, u32, u32)>,
-    ) {
-        self.for_each(|src, dst, w| {
-            // Skip self loops
-            if src != dst {
-                input_handle.send((src, dst, w));
-                // Also add the flipped edge, to make the graph undirected
-                input_handle.send((dst, src, w));
-            }
-        });
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers

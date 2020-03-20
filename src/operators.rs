@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use timely::dataflow::channels::pact::Pipeline;
-use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::Data;
@@ -18,7 +17,6 @@ impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
     where
         P: Fn(&D) -> bool + 'static,
     {
-        
         use timely::dataflow::operators::*;
 
         let stash = Rc::new(RefCell::new(HashMap::new()));
