@@ -19,6 +19,7 @@ mod distributed_graph;
 mod hyperball;
 mod logging;
 mod min_sum;
+mod operators;
 mod rand_cluster;
 
 use argh::FromArgs;
@@ -330,7 +331,7 @@ fn main() {
                 }
                 Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
                 Algorithm::RandCluster(radius) => {
-                    rand_cluster::rand_cluster(&edges, radius, n, 123)
+                    rand_cluster::rand_cluster(static_edges, scope, radius, n, 123)
                 }
                 Algorithm::Bfs => bfs::bfs(static_edges, scope),
             };
