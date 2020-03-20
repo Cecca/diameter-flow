@@ -37,6 +37,7 @@ impl Ord for WeightedEdge {
 pub struct Metadata {
     pub num_nodes: u32,
     pub num_edges: u32,
+    pub min_weight: u32,
     pub max_weight: u32,
 }
 
@@ -96,16 +97,19 @@ impl Dataset {
             println!("Missing metadata computing it");
             let mut num_nodes = 0;
             let mut num_edges = 0;
+            let mut min_weight = std::u32::MAX;
             let mut max_weight = 0;
             self.for_each(|u, v, w| {
                 num_nodes = std::cmp::max(num_nodes, std::cmp::max(u, v));
                 num_edges += 1;
+                min_weight = std::cmp::min(min_weight, w);
                 max_weight = std::cmp::max(max_weight, w);
             });
             num_nodes += 1;
             let meta = Metadata {
                 num_edges,
                 num_nodes,
+                min_weight,
                 max_weight,
             };
             println!("{:?}", meta);
