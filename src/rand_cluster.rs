@@ -96,35 +96,53 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
     n: u32,
     rand: Rc<RefCell<R>>,
 ) -> Stream<G, (u32, NodeState)> {
-    nodes.unary(Pipeline, "sample", |_, _| {
-        move |input, output| {
+    let mut stash = HashMap::new();
+
+    // we have to stash the nodes and sort them to make the center sampling
+    // deterministic, for a fixed random generator.
+    nodes.unary_notify(
+        Pipeline,
+        "sample",
+        None,
+        move |input, output, notificator| {
             input.for_each(|t, data| {
-                let mut out = output.session(&t);
                 let data = data.replace(Vec::new());
-                let mut cnt = 0;
-                let p = 2_f64.powi(t.time().inner as i32) / n as f64;
-                if p <= 1.0 {
-                    println!("[{:?}] probability = {}", t.time(), p);
-                    for (id, state) in data.into_iter() {
-                        if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
-                            out.give((id, state.as_center(id)));
-                            cnt += 1;
-                        } else {
-                            out.give((id, state));
-                        }
-                    }
-                } else {
-                    println!("[{:?}] probability = 1", t.time());
-                    cnt = data.len();
-                    out.give_iterator(
-                        data.into_iter()
-                            .map(|(id, state)| (id, state.as_center(id))),
-                    );
-                }
-                println!("[{:?}] sampled {} centers", t.time(), cnt);
+                stash
+                    .entry(t.time().clone())
+                    .or_insert_with(Vec::new)
+                    .extend(data.into_iter());
+                notificator.notify_at(t.retain());
             });
-        }
-    })
+            notificator.for_each(|t, _, _| {
+                if let Some(mut nodes) = stash.remove(&t) {
+                    nodes.sort_by_key(|pair| pair.0);
+                    let mut out = output.session(&t);
+                    let mut cnt = 0;
+                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
+                    if p <= 1.0 {
+                        println!("[{:?}] probability = {}", t.time(), p);
+                        for (id, state) in nodes.into_iter() {
+                            if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
+                                out.give((id, state.as_center(id)));
+                                cnt += 1;
+                            } else {
+                                out.give((id, state));
+                            }
+                        }
+                    } else {
+                        println!("[{:?}] probability = 1", t.time());
+                        cnt = nodes.len();
+                        out.give_iterator(
+                            nodes
+                                .into_iter()
+                                .map(|(id, state)| (id, state.as_center(id))),
+                        );
+                    }
+                    println!("[{:?}] sampled {} centers", t.time(), cnt);
+                }
+            });
+        },
+    )
 }
 
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -202,6 +220,10 @@ impl NodeState {
 
     fn merge(msg1: &(u32, u32), msg2: &(u32, u32)) -> (u32, u32) {
         if msg1.1 < msg2.1 {
+            *msg1
+        } else if msg1.1 > msg2.1 {
+            *msg2
+        } else if msg1.0 < msg2.0 {
             *msg1
         } else {
             *msg2
@@ -390,6 +412,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     }
                     // println!("{:#?}", adj);
                     let distances = apsp(&adj);
+                    // TODO: Should add the radius of the clusters
                     let diameter = distances
                         .into_iter()
                         .map(|row| row.into_iter())
