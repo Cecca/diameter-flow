@@ -1,4 +1,6 @@
+use crate::distributed_graph::*;
 use crate::logging::*;
+use crate::operators::*;
 use differential_dataflow::difference::Monoid;
 use differential_dataflow::difference::Semigroup;
 use differential_dataflow::lattice::Lattice;
@@ -27,141 +29,102 @@ use timely::dataflow::Stream;
 use timely::order::Product;
 use timely::progress::Timestamp;
 
-fn count_checker<G: Scope>(
-    nodes: &Collection<G, (u32, Either), isize>,
-    n: u32,
-) -> Collection<G, (u32, Either), isize> {
-    use std::collections::HashSet;
+// fn count_checker<G: Scope>(
+//     nodes: &Collection<G, (u32, Either), isize>,
+//     n: u32,
+// ) -> Collection<G, (u32, Either), isize> {
+//     use std::collections::HashSet;
 
-    let mut covered = HashMap::new();
-    let mut uncovered = HashMap::new();
-    let mut identifiers = HashMap::new();
+//     let mut covered = HashMap::new();
+//     let mut uncovered = HashMap::new();
+//     let mut identifiers = HashMap::new();
 
-    nodes
-        .inner
-        .unary_notify(
-            Pipeline,
-            "checker",
-            None,
-            move |input, output, notificator| {
-                input.for_each(|t, data| {
-                    let data = data.replace(Vec::new());
-                    let mut session = output.session(&t);
-                    for triplet in data.into_iter() {
-                        if (triplet.0).1.clone().as_state().distance.is_some() {
-                            covered
-                                .entry(t.time().clone())
-                                .and_modify(|c| *c += 1)
-                                .or_insert(1);
-                        } else {
-                            uncovered
-                                .entry(t.time().clone())
-                                .and_modify(|c| *c += 1)
-                                .or_insert(1);
-                        }
-                        identifiers
-                            .entry(t.time().clone())
-                            .or_insert_with(HashSet::new)
-                            .insert((triplet.0).0);
-                        session.give(triplet);
-                    }
+//     nodes
+//         .inner
+//         .unary_notify(
+//             Pipeline,
+//             "checker",
+//             None,
+//             move |input, output, notificator| {
+//                 input.for_each(|t, data| {
+//                     let data = data.replace(Vec::new());
+//                     let mut session = output.session(&t);
+//                     for triplet in data.into_iter() {
+//                         if (triplet.0).1.clone().as_state().distance.is_some() {
+//                             covered
+//                                 .entry(t.time().clone())
+//                                 .and_modify(|c| *c += 1)
+//                                 .or_insert(1);
+//                         } else {
+//                             uncovered
+//                                 .entry(t.time().clone())
+//                                 .and_modify(|c| *c += 1)
+//                                 .or_insert(1);
+//                         }
+//                         identifiers
+//                             .entry(t.time().clone())
+//                             .or_insert_with(HashSet::new)
+//                             .insert((triplet.0).0);
+//                         session.give(triplet);
+//                     }
 
-                    notificator.notify_at(t.retain());
-                });
+//                     notificator.notify_at(t.retain());
+//                 });
 
-                notificator.for_each(|t, _, _| {
-                    let uncovered = uncovered.remove(&t.time()).unwrap_or(0);
-                    let covered = covered.remove(&t.time()).unwrap_or(0);
-                    let identifiers = identifiers.remove(&t.time()).expect("missing identifiers");
-                    println!(
-                        "time {:?} covered {}, uncovered {}, sum {} (distinct {} ?= {})",
-                        t.time(),
-                        covered,
-                        uncovered,
-                        covered + uncovered,
-                        identifiers.len(),
-                        n
-                    );
-                    // assert!(covered + uncovered == n);
-                });
-            },
-        )
-        .as_collection()
-}
-
-fn init_nodes<G: Scope<Timestamp = usize>>(
-    edges: &Stream<G, (u32, u32, u32)>,
-) -> Collection<G, (u32, NodeState), isize> {
-    let worker = edges.scope().index();
-    let workers = edges.scope().peers();
-    let mut ns = HashMap::new();
-    edges
-        .map(|(src, dst, _w)| std::cmp::max(src, dst))
-        .accumulate(0, |max, data| {
-            *max = *data.iter().max().expect("empty collection")
-        })
-        .exchange(|_| 0)
-        .accumulate(0, |max, data| {
-            *max = *data.iter().max().expect("empty collection")
-        })
-        .broadcast()
-        .unary_notify(
-            Pipeline,
-            "nodes initializer",
-            None,
-            move |input, output, notificator| {
-                input.for_each(|t, data| {
-                    ns.entry(t.time().clone()).or_insert(data[0]);
-                    notificator.notify_at(t.retain());
-                });
-
-                notificator.for_each(|time, _, _| {
-                    let n = 1 + ns
-                        .remove(time.time())
-                        .expect("could not find n from edge stream");
-                    let n_per_worker = (n as f32 / workers as f32).ceil() as usize;
-                    let lower = (worker * n_per_worker) as u32;
-                    let upper = std::cmp::min(n, ((worker + 1) * n_per_worker) as u32);
-
-                    let mut session = output.session(&time);
-                    for i in lower..upper {
-                        session.give(((i, NodeState::default()), *time.time(), 1));
-                    }
-                });
-            },
-        )
-        .as_collection()
-}
+//                 notificator.for_each(|t, _, _| {
+//                     let uncovered = uncovered.remove(&t.time()).unwrap_or(0);
+//                     let covered = covered.remove(&t.time()).unwrap_or(0);
+//                     let identifiers = identifiers.remove(&t.time()).expect("missing identifiers");
+//                     println!(
+//                         "time {:?} covered {}, uncovered {}, sum {} (distinct {} ?= {})",
+//                         t.time(),
+//                         covered,
+//                         uncovered,
+//                         covered + uncovered,
+//                         identifiers.len(),
+//                         n
+//                     );
+//                     // assert!(covered + uncovered == n);
+//                 });
+//             },
+//         )
+//         .as_collection()
+// }
 
 fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
-    nodes: &Collection<G, (u32, NodeState), isize>,
+    nodes: &Stream<G, (u32, NodeState)>,
     n: u32,
     rand: Rc<RefCell<R>>,
-) -> Collection<G, (u32, NodeState), isize> {
-    nodes
-        .inner
-        .inspect_batch(|_t, data| {
-            println!(
-                "there are {} uncovered nodes at time {:?}",
-                data.iter().filter(|trip| (trip.0).1.is_uncovered()).count(),
-                _t
-            )
-        })
-        .map(move |((node, state), time, dist)| {
-            let p = 2_f64.powi(time.inner as i32) / n as f64;
-            if node == 0 {
-                println!(
-                    "center sampling probability is {} at time {}",
-                    p, time.inner
-                );
-            }
-            if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
-                ((node, state.as_center(node)), time, dist)
-            } else {
-                ((node, state), time, dist)
-            }
-        })
-        .as_collection()
+) -> Stream<G, (u32, NodeState)> {
+    nodes.unary(Pipeline, "sample", |_, _| {
+        move |input, output| {
+            input.for_each(|t, data| {
+                let mut out = output.session(&t);
+                let data = data.replace(Vec::new());
+                let mut cnt = 0;
+                let p = 2_f64.powi(t.time().inner as i32) / n as f64;
+                if p <= 1.0 {
+                    println!("[{:?}] probability = {}", t.time(), p);
+                    for (id, state) in data.into_iter() {
+                        if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
+                            out.give((id, state.as_center(id)));
+                            cnt += 1;
+                        } else {
+                            out.give((id, state));
+                        }
+                    }
+                } else {
+                    println!("[{:?}] probability = 1", t.time());
+                    cnt = data.len();
+                    out.give_iterator(
+                        data.into_iter()
+                            .map(|(id, state)| (id, state.as_center(id))),
+                    );
+                }
+                println!("[{:?}] sampled {} centers", t.time(), cnt);
+            });
+        }
+    })
 }
 
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
@@ -181,18 +144,23 @@ impl Default for NodeState {
 
 impl NodeState {
     fn is_uncovered(&self) -> bool {
-        self.active && self.distance.is_none()
+        self.distance.is_none()
     }
 
     fn can_send(&self) -> bool {
         self.active && self.distance.is_some()
     }
 
-    fn propagate(&self, weight: u32) -> Either {
+    fn propagate(&self, weight: u32, radius: u32) -> Option<(u32, u32)> {
         assert!(self.can_send());
-        self.distance
-            .map(|(root, distance)| Either::Message((root, distance + weight)))
-            .expect("called propagate on a non reached node")
+        let (root, d) = self
+            .distance
+            .expect("called propagate on a non reached node");
+        if d + weight > radius {
+            None
+        } else {
+            Some((root, d + weight))
+        }
     }
 
     fn as_center(&self, id: u32) -> Self {
@@ -210,76 +178,47 @@ impl NodeState {
         }
     }
 
-    fn updated(&self, distance: (u32, u32)) -> Self {
-        if self.active {
-            let dist = self
-                .distance
-                .map(|(cur_root, cur_dist)| {
-                    if distance.1 < cur_dist {
-                        distance
-                    } else {
-                        (cur_root, cur_dist)
-                    }
-                })
-                .or_else(|| Some(distance));
-            Self {
-                active: true,
-                distance: dist,
+    fn updated(&self, new_distance: (u32, u32)) -> Self {
+        if let Some((root, prev_distance)) = self.distance {
+            if new_distance.0 == root && new_distance.1 < prev_distance {
+                Self {
+                    active: true,
+                    distance: Some(new_distance),
+                }
+            } else {
+                Self {
+                    active: false,
+                    ..self.clone()
+                }
             }
         } else {
-            self.clone()
+            // the node was uncovered
+            Self {
+                active: true,
+                distance: Some(new_distance),
+            }
+        }
+    }
+
+    fn merge(msg1: &(u32, u32), msg2: &(u32, u32)) -> (u32, u32) {
+        if msg1.1 < msg2.1 {
+            *msg1
+        } else {
+            *msg2
         }
     }
 }
 
-#[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
-enum Either {
-    Message((u32, u32)),
-    State(NodeState),
-}
-
-impl Either {
-    fn is_state(&self) -> bool {
-        match self {
-            Self::State(_) => true,
-            _ => false,
-        }
-    }
-
-    fn as_state(self) -> NodeState {
-        match self {
-            Self::State(state) => state,
-            _ => panic!("attemped to get a state from a message"),
-        }
-    }
-    fn state<'a>(&'a self) -> &'a NodeState {
-        match self {
-            Self::State(state) => state,
-            _ => panic!("attemped to get a state from a message"),
-        }
-    }
-    fn message<'a>(&'a self) -> (u32, u32) {
-        match self {
-            Self::Message(pair) => *pair,
-            _ => panic!("attemped to get a message from a state"),
-        }
-    }
-}
-
-fn expand_clusters<G, Tr>(
-    nodes: &Collection<G, (u32, NodeState), isize>,
-    light_edges: &Arranged<G, Tr>,
+fn expand_clusters<G>(
+    edges: &DistributedEdges,
+    nodes: &Stream<G, (u32, NodeState)>,
     radius: u32,
     n: u32,
-) -> Collection<G, (u32, NodeState), isize>
+) -> Stream<G, (u32, NodeState)>
 where
     G: Scope<Timestamp = Product<usize, u32>>,
-    Tr: TraceReader<Key = u32, Val = (u32, u32), Time = G::Timestamp, R = isize> + Clone + 'static,
-    Tr::Batch: BatchReader<u32, Tr::Val, G::Timestamp, Tr::R>,
-    Tr::Cursor: Cursor<u32, Tr::Val, G::Timestamp, Tr::R>,
 {
     use crate::logging::CountEvent::*;
-    use differential_dataflow::operators::iterate::Variable;
 
     let l1 = nodes.scope().count_logger().expect("missing logger");
     let l2 = l1.clone();
@@ -287,216 +226,74 @@ where
     let l4 = l1.clone();
     let l5 = l1.clone();
 
-    nodes
-        .scope()
-        .iterative::<u32, _, _>(move |subscope| {
-            let edges = light_edges.enter(&subscope);
-            // let nodes = nodes.enter(&subscope);
-            let nodes = Variable::new_from(
-                nodes
-                    .enter(subscope)
-                    .map(|(id, state)| (id, Either::State(state))),
-                Product::new(Default::default(), 1_u32),
-            );
+    nodes.scope().iterative::<u32, _, _>(move |subscope| {
+        let nodes = nodes.enter(subscope);
 
-            let iter_res = count_checker(&nodes, n)
-                // Propagate distances from active nodes with actual distances
-                .filter(|(id, state)| state.state().can_send())
-                .join_core(&edges, |src, state, (dst, weight)| {
-                    Some((*dst, state.state().propagate(*weight)))
-                })
-                .concat(&nodes)
-                // Compute the closest root among the messages
-                .reduce(move |_k, inputs, outputs| {
-                    let old_state: &NodeState = inputs
-                        .iter()
-                        .find(|(either, _)| either.is_state())
-                        .unwrap_or_else(|| panic!("missing old state: {} {:?}", _k, inputs))
-                        .0
-                        .state();
-                    let closest: Option<(u32, u32)> = inputs
-                        .iter()
-                        .filter_map(move |(either, diff)| {
-                            if either.is_state() || either.message().1 > radius {
-                                None
-                            } else {
-                                Some((either.message(), diff))
-                            }
-                        })
-                        .min_by_key(|((_root, dist), _)| *dist)
-                        .map(|pair| pair.0)
-                        .clone();
-                    if let Some(closest) = closest {
-                        outputs.push((Either::State(old_state.updated(closest)), 1))
+        let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
+
+        let (output, further) = edges
+            .send(
+                &nodes.concat(&cycle),
+                |_, state| state.can_send(),
+                move |time, state, weight| {
+                    if weight < radius {
+                        state.propagate(weight, radius)
                     } else {
-                        outputs.push((Either::State(old_state.clone()), 1))
+                        None
                     }
-                })
-                .consolidate();
-            // .inspect(|t| println!("{:?}", t));
+                },
+                |d1, d2| NodeState::merge(d1, d2), // aggregate messages
+                |state, message| state.updated(*message),
+                |state| state.deactivate(), // deactivate nodes with no messages
+            )
+            .branch_all(|pair| pair.1.active);
 
-            count_checker(&iter_res, n);
+        further.connect_loop(handle);
 
-            nodes.set(&iter_res);
-
-            iter_res.leave()
-        })
-        .map(|(id, either)| (id, either.as_state()))
-}
-
-#[derive(Debug, Clone, Copy)]
-struct Distributor {
-    side: u32,
-}
-
-impl Distributor {
-    fn new<G: Scope>(scope: &G) -> Self {
-        let side = ((scope.peers() as f64).sqrt().ceil() as u32);
-        Self { side }
-    }
-
-    /// Gets the processor for an edge
-    fn proc_edge(&self, src: u32, dst: u32) -> u8 {
-        assert!(src > dst);
-        let cell_i = src % self.side;
-        let cell_j = dst % self.side;
-        let pos_i = src / self.side;
-        let pos_j = dst / self.side;
-        if pos_i >= pos_j {
-            (cell_i * self.side + cell_j) as u8
-        } else {
-            (cell_j * self.side + cell_i) as u8
-        }
-    }
-
-    fn procs_node(&self, node: u32) -> impl Iterator<Item = u8> {
-        let mut destinations = std::collections::HashSet::new();
-        let mod_p = node % self.side;
-        for j in 0..self.side {
-            let p = mod_p * self.side + j;
-            destinations.insert(p as u8);
-        }
-        for i in 0..self.side {
-            let p = i * self.side + mod_p;
-            destinations.insert(p as u8);
-        }
-        assert!(destinations.len() <= 2 * self.side as usize);
-        destinations.into_iter()
-    }
+        output.leave()
+    })
 }
 
 fn remap_edges<G: Scope>(
+    edges: &DistributedEdges,
     clustering: &Stream<G, (u32, NodeState)>,
-    edges: &Stream<G, (u32, u32, u32)>,
 ) -> Stream<G, ((u32, u32), u32)> {
-    use timely::dataflow::channels::pact::Exchange;
-    let distrib = Distributor::new(&clustering.scope());
-    let edges = edges.flat_map(move |(src, dst, weight)| {
-        if src > dst {
-            Some((distrib.proc_edge(src, dst), (src, dst, weight)))
-        } else {
-            None
-        }
-    });
-    let nodes = clustering.flat_map(move |(node, state)| {
-        distrib
-            .procs_node(node)
-            .map(move |p| (p, (node, state.clone())))
-    });
-
-    let mut stash_edges: HashMap<G::Timestamp, Vec<(u32, u32, u32)>> = HashMap::new();
-    let mut stash_nodes: HashMap<G::Timestamp, HashMap<u32, NodeState>> = HashMap::new();
-    let mut stash_deduplicator = HashMap::new();
+    use std::collections::hash_map::DefaultHasher;
+    use timely::dataflow::operators::aggregation::Aggregate;
 
     edges
-        .binary_notify(
-            &nodes,
-            // Exchange::new(|(p, _)| *p as u64),
-            // Exchange::new(|(p, _)| *p as u64),
-            Exchange::new(|(p, _)| 0),
-            Exchange::new(|(p, _)| 0),
-            "graph contraction",
-            None,
-            move |in1, in2, out, notificator| {
-                in1.for_each(|t, data| {
-                    let mut data = data.replace(Vec::new());
-                    stash_edges
-                        .entry(t.time().clone())
-                        .or_insert_with(Vec::new)
-                        .extend(data.drain(..).map(|pair| pair.1));
-                    notificator.notify_at(t.retain());
-                });
-                in2.for_each(|t, data| {
-                    let mut data = data.replace(Vec::new());
-                    stash_nodes
-                        .entry(t.time().clone())
-                        .or_insert_with(HashMap::new)
-                        .extend(data.drain(..).map(|pair| pair.1));
-                    notificator.notify_at(t.retain());
-                });
-
-                notificator.for_each(|time, _, _| {
-                    if let Some(edges) = stash_edges.remove(&time.time()) {
-                        let nodes = stash_nodes
-                            .remove(&time.time())
-                            .expect("missing time in nodes stash");
-                        println!(
-                            "remapping edges at time {:?}, with {} nodes",
-                            time,
-                            nodes.len()
-                        );
-                        let mut session = out.session(&time);
-                        for (src, dst, weight) in edges {
-                            let (center_src, distance_src) = nodes
-                                .get(&src)
-                                .expect("missing source")
-                                .distance
-                                .unwrap_or_else(|| panic!("uncovered source! {}", src));
-                            let (center_dst, distance_dst) = nodes
-                                .get(&dst)
-                                .expect("missing destination")
-                                .distance
-                                .unwrap_or_else(|| panic!("uncovered destination! {}", dst));
-                            session.give((
-                                (center_src, center_dst),
-                                distance_src + weight + distance_dst,
-                            ));
-                        }
-                    }
-                });
+        .triplets(&clustering)
+        .map(|((u, state_u), (v, state_v), w)| {
+            let (c_u, d_u) = state_u.distance.expect("missing distance u");
+            let (c_v, d_v) = state_v.distance.expect("missing distance v");
+            let out_edge = if c_u < c_v {
+                ((c_u, c_v), w + d_u + d_v)
+            } else {
+                ((c_v, c_u), w + d_u + d_v)
+            };
+            // println!("output edge {:?}", out_edge);
+            out_edge
+        })
+        .aggregate(
+            |_key, val, min_weight: &mut Option<u32>| {
+                *min_weight = min_weight.map(|min| std::cmp::min(min, val)).or(Some(val));
             },
-        )
-        // Remove duplicates keeping just the minimum weight edge for each key
-        .unary_notify(
-            Exchange::new(move |((src, dst), _weight)| distrib.proc_edge(*src, *dst) as u64),
-            "deduplicate",
-            None,
-            move |input, output, notificator| {
-                input.for_each(|t, data| {
-                    let mut data = data.replace(Vec::new());
-                    for (edge, weight) in data.drain(..) {
-                        stash_deduplicator
-                            .entry(t.time().clone())
-                            .or_insert_with(HashMap::new)
-                            .entry(edge)
-                            .and_modify(|w| *w = std::cmp::min(*w, weight))
-                            .or_insert(weight);
-                    }
-                    notificator.notify_at(t.retain());
-                });
-
-                notificator.for_each(|time, _, _| {
-                    if let Some(mut edges) = stash_deduplicator.remove(&time.time()) {
-                        output.session(&time).give_iterator(edges.drain());
-                    }
-                });
+            // we must use Option<u32> because the state is initialized according to Default,
+            // which for u32 is 0, that doesn't play well with the minimum we want to compute
+            |key, min_weight: Option<u32>| {
+                (key, min_weight.expect("no weights received for this node"))
+            },
+            move |key| {
+                let mut hasher = DefaultHasher::new();
+                key.hash(&mut hasher);
+                hasher.finish()
             },
         )
 }
 
-#[allow(dead_code)]
 pub fn rand_cluster<G: Scope<Timestamp = usize>>(
-    edges: &Stream<G, (u32, u32, u32)>,
+    edges: DistributedEdges,
+    scope: &mut G,
     radius: u32,
     n: u32,
     seed: u64,
@@ -504,60 +301,37 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     use differential_dataflow::operators::iterate::SemigroupVariable;
     use rand_xoshiro::Xoroshiro128StarStar;
 
-    println!("n is {}", n);
-
-    let nodes = (0..n)
-        .to_stream(&mut edges.scope())
-        .map(|i| ((i, NodeState::default()), 0, 1))
-        .as_collection();
-    //let nodes = init_nodes(edges);
-    let l1 = edges.scope().count_logger().expect("missing logger");
+    let nodes = edges.nodes::<_, NodeState>(scope);
+    let l1 = nodes.scope().count_logger().expect("missing logger");
     let l2 = l1.clone();
     let l3 = l1.clone();
 
     let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
-    for _ in 0..edges.scope().index() {
+    for _ in 0..nodes.scope().index() {
         rand.jump();
     }
     let rand = Rc::new(RefCell::new(rand));
 
-    // Separate light and heavy edges, and arrage them
-    let light = edges
-        .filter(move |trip| trip.2 <= radius)
-        .inspect_batch(move |_, x| l1.log((CountEvent::LightEdges, x.len().into())))
-        .map(|(src, dst, weight)| ((src, (dst, weight)), 0, 1)) // FIXME: Time
-        .as_collection()
-        .arrange_by_key();
+    let clustering = nodes.scope().iterative::<u32, _, _>(|inner_scope| {
+        let nodes = nodes.enter(&inner_scope);
 
-    let clustering = nodes
-        .scope()
-        .iterative::<u32, _, _>(|inner_scope| {
-            let light = light.enter(inner_scope);
+        let summary = Product::new(Default::default(), 1);
+        let (handle, cycle) = inner_scope.feedback(summary);
 
-            let summary = Product::new(Default::default(), 1);
-            let nodes = Variable::new_from(nodes.enter(&inner_scope), summary);
+        let (stable, further) = expand_clusters(
+            &edges,
+            &sample_centers(&nodes.concat(&cycle), n, rand),
+            radius,
+            n,
+        )
+        .branch(move |t, (id, state)| state.is_uncovered());
 
-            let updated = expand_clusters(&sample_centers(&nodes, n, rand), &light, radius, n)
-                .consolidate()
-                .map(|(node, state)| {
-                    if state.distance.is_some() {
-                        (node, state.deactivate())
-                    } else {
-                        (node, state.clone())
-                    }
-                });
+        further.connect_loop(handle);
 
-            nodes.set(&updated);
+        stable.leave()
+    });
 
-            updated.filter(|(_, state)| !state.is_uncovered()).leave()
-        })
-        .inspect(|((id, state), _, _)| {
-            if state.distance.is_none() {
-                println!("{} is uncovered", id);
-            }
-        });
-
-    let auxiliary_graph = remap_edges(&clustering.inner.map(|triplet| triplet.0), &edges);
+    let auxiliary_graph = remap_edges(&edges, &clustering);
 
     // Collect the auxiliary graph and compute the diameter on it
     let mut stash_auxiliary = HashMap::new();
@@ -574,35 +348,53 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     .entry(t.time().clone())
                     .or_insert_with(HashMap::new);
                 for ((u, v), w) in data.into_iter() {
-                    let u: u32 = *remapping.entry(u).or_insert_with(|| {
+                    let u1: u32 = *remapping.entry(u).or_insert_with(|| {
                         let x = node_count;
                         node_count += 1;
                         x
                     });
-                    let v: u32 = *remapping.entry(v).or_insert_with(|| {
+                    let v1: u32 = *remapping.entry(v).or_insert_with(|| {
                         let x = node_count;
                         node_count += 1;
                         x
                     });
-                    entry.insert((u, v), w);
+                    // println!("Edge {:?} remapped to {:?}", (u, v, w), (u1, v1, w));
+                    entry.insert((u1, v1), w);
                 }
                 notificator.notify_at(t.retain());
             });
 
             notificator.for_each(|t, _, _| {
                 if let Some(edges) = stash_auxiliary.remove(t.time()) {
-                    let n = *edges
+                    let n = 1 + *edges
                         .keys()
                         .map(|(u, v)| std::cmp::max(u, v))
                         .max()
                         .expect("could not compute n from edge stream")
                         as usize;
-                    let adj = vec![vec![std::u32::MAX; n]; n];
+                    println!(
+                        "Size of the auxiliary graph: {} nodes and {} edges",
+                        n,
+                        edges.len()
+                    );
+                    let mut adj = vec![vec![std::u32::MAX; n]; n];
+                    for i in 0..n {
+                        adj[i][i] = 0;
+                    }
+                    for ((u, v), w) in edges.into_iter() {
+                        // println!("Adding edge {:?}", (u, v, w));
+                        if u != v {
+                            adj[u as usize][v as usize] = w;
+                            adj[v as usize][u as usize] = w;
+                        }
+                    }
+                    // println!("{:#?}", adj);
                     let distances = apsp(&adj);
                     let diameter = distances
                         .into_iter()
                         .map(|row| row.into_iter())
                         .flatten()
+                        .filter(|d| *d < std::u32::MAX) // Remove infinity: we look for the diameter of the largest connected component
                         .max()
                         .expect("could not get the maximum distance");
                     output.session(&t).give(diameter);
@@ -615,8 +407,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 // Floyd-Warshall algorithm
 fn apsp(adjacency: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
     let n = adjacency.len();
-    let mut cur = vec![vec![032; n]; n];
-    let mut prev = vec![vec![0u32; n]; n];
+    let mut cur = vec![vec![std::u32::MAX; n]; n];
+    let mut prev = vec![vec![std::u32::MAX; n]; n];
     for i in 0..n {
         for j in 0..n {
             cur[i][j] = adjacency[i][j];
@@ -627,7 +419,12 @@ fn apsp(adjacency: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
         std::mem::swap(&mut cur, &mut prev);
         for i in 0..n {
             for j in 0..n {
-                cur[i][j] = std::cmp::min(prev[i][j], prev[i][k] + prev[k][j]);
+                let d = if prev[i][k] == std::u32::MAX || prev[k][j] == std::u32::MAX {
+                    std::u32::MAX
+                } else {
+                    prev[i][k] + prev[k][j]
+                };
+                cur[i][j] = std::cmp::min(prev[i][j], d);
             }
         }
     }
