@@ -21,7 +21,8 @@ use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::{AddAssign, Mul};
 use std::rc::Rc;
-use timely::dataflow::channels::pact::Pipeline;
+use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
+use timely::dataflow::operators::aggregation::Aggregate;
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
@@ -354,17 +355,29 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     });
 
     let auxiliary_graph = remap_edges(&edges, &clustering);
+    let clusters_radii = clustering
+        .map(|(id, state)| state.distance.expect("uncovered node"))
+        .aggregate(
+            |_center, distance, agg| {
+                *agg = std::cmp::max(*agg, distance);
+            },
+            |center, agg: u32| (center, agg),
+            |key| *key as u64,
+        );
 
     // Collect the auxiliary graph and compute the diameter on it
     let mut stash_auxiliary = HashMap::new();
+    let mut stash_radii = HashMap::new();
     let mut remapping = HashMap::new();
     let mut node_count = 0;
-    auxiliary_graph.exchange(|_| 0).unary_notify(
-        Pipeline,
+    auxiliary_graph.binary_notify(
+        &clusters_radii,
+        ExchangePact::new(|_| 0),
+        ExchangePact::new(|_| 0),
         "diameter computation",
         None,
-        move |input, output, notificator| {
-            input.for_each(|t, data| {
+        move |graph_input, radii_input, output, notificator| {
+            graph_input.for_each(|t, data| {
                 let mut data = data.replace(Vec::new());
                 let entry = stash_auxiliary
                     .entry(t.time().clone())
@@ -380,14 +393,31 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         node_count += 1;
                         x
                     });
-                    // println!("Edge {:?} remapped to {:?}", (u, v, w), (u1, v1, w));
                     entry.insert((u1, v1), w);
                 }
+                notificator.notify_at(t.retain());
+            });
+            radii_input.for_each(|t, data| {
+                let mut data = data.replace(Vec::new());
+                stash_radii
+                    .entry(t.time().clone())
+                    .or_insert_with(HashMap::<u32, u32>::new)
+                    .extend(data.into_iter().map(|(root, radius)| {
+                        (
+                            *remapping.entry(root).or_insert_with(|| {
+                                let x = node_count;
+                                node_count += 1;
+                                x
+                            }),
+                            radius,
+                        )
+                    }));
                 notificator.notify_at(t.retain());
             });
 
             notificator.for_each(|t, _, _| {
                 if let Some(edges) = stash_auxiliary.remove(t.time()) {
+                    let radii = stash_radii.remove(t.time()).expect("missing radii");
                     let n = 1 + *edges
                         .keys()
                         .map(|(u, v)| std::cmp::max(u, v))
@@ -412,14 +442,20 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     }
                     // println!("{:#?}", adj);
                     let distances = apsp(&adj);
-                    // TODO: Should add the radius of the clusters
-                    let diameter = distances
-                        .into_iter()
-                        .map(|row| row.into_iter())
-                        .flatten()
-                        .filter(|d| *d < std::u32::MAX) // Remove infinity: we look for the diameter of the largest connected component
-                        .max()
-                        .expect("could not get the maximum distance");
+                    let mut diameter = 0;
+                    let mut diam_i = 0;
+                    let mut diam_j = 0;
+                    for i in 0..n {
+                        for j in 0..n {
+                            if distances[i][j] > diameter {
+                                diam_i = i;
+                                diam_j = j;
+                                diameter = distances[i][j];
+                            }
+                        }
+                    }
+                    let diameter = diameter + radii[&(diam_i as u32)] + radii[&(diam_j as u32)];
+
                     output.session(&t).give(diameter);
                 }
             });
