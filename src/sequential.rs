@@ -63,10 +63,11 @@ fn sssp(adjs: &Vec<Vec<(u32, u32)>>, source: u32) -> (u32, (u32, u32)) {
     let mut max_i = 0;
     let mut max_dist = 0;
     for (i, dist) in distances.into_iter().enumerate() {
-        let dist = dist.expect("missing distance");
-        if dist > max_dist {
-            max_dist = dist;
-            max_i = i;
+        if let Some(dist) = dist {
+            if dist > max_dist {
+                max_dist = dist;
+                max_i = i;
+            }
         }
     }
     (max_dist, (source, max_i as u32))

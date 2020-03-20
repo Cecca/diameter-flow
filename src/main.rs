@@ -74,10 +74,20 @@ impl Hosts {
 
 #[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 enum Algorithm {
+    Sequential,
     DeltaStepping(u32),
     HyperBall(usize),
     RandCluster(u32),
     Bfs,
+}
+
+impl Algorithm {
+    fn is_sequential(&self) -> bool {
+        match self {
+            Self::Sequential => true,
+            _ => false,
+        }
+    }
 }
 
 impl TryFrom<&str> for Algorithm {
@@ -85,10 +95,14 @@ impl TryFrom<&str> for Algorithm {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use regex::Regex;
+        let re_sequential = Regex::new(r"sequential").unwrap();
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
         let re_rand_cluster = Regex::new(r"rand-cluster\((\d+)\)").unwrap();
         let re_bfs = Regex::new(r"bfs").unwrap();
+        if let Some(captures) = re_sequential.captures(value) {
+            return Ok(Self::Sequential);
+        }
         if let Some(captures) = re_delta_stepping.captures(value) {
             let delta = captures
                 .get(1)
@@ -307,73 +321,66 @@ fn main() {
     let meta = dataset.metadata();
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
-    println!("Graph diameter: {}", dataset.approx_diameter());
 
     let timer = std::time::Instant::now();
     let algorithm = config.algorithm;
 
-    let ret_status = config.execute(move |worker| {
-        let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
+    if algorithm.is_sequential() {
+        let edges = dataset.as_vec();
+        println!("Graph loaded in {:?}", timer.elapsed());
+        let timer = std::time::Instant::now();
+        let (diam, _) = sequential::approx_diameter(edges, n);
+        println!("Diameter {}, computed in {:?}", diam, timer.elapsed());
+    } else {
+        let ret_status = config.execute(move |worker| {
+            let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
 
-        let static_edges = dataset.load_static(worker);
+            let static_edges = dataset.load_static(worker);
 
-        let (edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
-            let mut probe = Handle::new();
-            let (edge_input, _edges) = scope.new_input::<(u32, u32, u32)>();
+            let probe = worker.dataflow::<usize, _, _>(move |scope| {
+                let mut probe = Handle::new();
 
-            let diameter_stream = match algorithm {
-                Algorithm::DeltaStepping(delta) => {
-                    delta_stepping(static_edges, scope, delta, n, 1, 123)
-                }
-                Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
-                Algorithm::RandCluster(radius) => {
-                    rand_cluster::rand_cluster(static_edges, scope, radius, n, 123)
-                }
-                Algorithm::Bfs => bfs::bfs(static_edges, scope),
-            };
+                let diameter_stream = match algorithm {
+                    Algorithm::DeltaStepping(delta) => {
+                        delta_stepping(static_edges, scope, delta, n, 1, 123)
+                    }
+                    Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
+                    Algorithm::RandCluster(radius) => {
+                        rand_cluster::rand_cluster(static_edges, scope, radius, n, 123)
+                    }
+                    Algorithm::Bfs => bfs::bfs(static_edges, scope),
+                    Algorithm::Sequential => {
+                        panic!("sequential algorithm not supported in dataflow")
+                    }
+                };
 
-            diameter_stream
-                .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-                .probe_with(&mut probe);
+                diameter_stream
+                    .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+                    .probe_with(&mut probe);
 
-            (edge_input, probe)
+                probe
+            });
+
+            worker.step_while(|| {
+                // probe.with_frontier(|f| println!("frontier {:?}", f.to_vec()));
+                !probe.done()
+            });
+            println!("{:?}\tcomputed diameter", timer.elapsed());
+
+            // close the logging input and perform any outstanding work
+            logging_input_handle
+                .replace(None)
+                .expect("missing logging input handle")
+                .close();
+            worker.step_while(|| {
+                // logging_probe.with_frontier(|f| println!("logging vfrontier {:?}", f.to_vec()));
+                logging_probe.done()
+            })
         });
-
-        if worker.index() == 0 {
-            // dataset.load_stream(&mut edges);
-            // edges.send((0, 1, 1));
-            // edges.send((0, 2, 2));
-            // edges.send((0, 3, 3));
-            // edges.send((0, 4, 4));
-            // edges.send((1, 5, 1));
-            // edges.send((2, 5, 1));
-            // edges.send((3, 5, 1));
-            // edges.send((4, 5, 1));
-            // edges.send((0, 10, 10));
-            // edges.send((10, 11, 1));
-
-            // println!("{:?}\tread data from file", timer.elapsed());
+        match ret_status {
+            Ok(_) => println!(""),
+            Err(ExecError::RemoteExecution) => println!(""),
+            Err(e) => panic!("{:?}", e),
         }
-        edges.close();
-        worker.step_while(|| {
-            // probe.with_frontier(|f| println!("frontier {:?}", f.to_vec()));
-            !probe.done()
-        });
-        println!("{:?}\tcomputed diameter", timer.elapsed());
-
-        // close the logging input and perform any outstanding work
-        logging_input_handle
-            .replace(None)
-            .expect("missing logging input handle")
-            .close();
-        worker.step_while(|| {
-            // logging_probe.with_frontier(|f| println!("logging vfrontier {:?}", f.to_vec()));
-            logging_probe.done()
-        })
-    });
-    match ret_status {
-        Ok(_) => println!(""),
-        Err(ExecError::RemoteExecution) => println!(""),
-        Err(e) => panic!("{:?}", e),
     }
 }

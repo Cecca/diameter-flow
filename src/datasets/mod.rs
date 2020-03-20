@@ -55,13 +55,12 @@ impl Dataset {
         Self::WebGraph(s.into())
     }
 
-    pub fn approx_diameter(&self) -> u32 {
+    pub fn as_vec(&self) -> Vec<((u32, u32), u32)> {
         let mut edges = Vec::new();
         self.for_each(|u, v, w| {
             edges.push(((u, v), w));
         });
-        let (diam, (src, dst)) = approx_diameter(edges, self.metadata().num_nodes);
-        diam
+        edges
     }
 
     fn metadata_key(&self) -> String {

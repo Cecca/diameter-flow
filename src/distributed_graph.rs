@@ -54,10 +54,8 @@ pub struct DistributedEdgesBuilder {
 
 impl DistributedEdgesBuilder {
     pub fn new<G: Scope>(stream: &Stream<G, (u32, u32, u32)>) -> Self {
-        
         use timely::dataflow::channels::pact::Exchange;
         use timely::dataflow::operators::generic::operator::Operator;
-        
 
         let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
@@ -126,7 +124,6 @@ impl DistributedEdges {
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
         use timely::dataflow::operators::aggregation::aggregate::Aggregate;
-        
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
@@ -154,7 +151,7 @@ impl DistributedEdges {
         &self,
         nodes: &Stream<G, (u32, S)>,
     ) -> Stream<G, ((u32, S), (u32, S), u32)> {
-        use timely::dataflow::channels::pact::{Pipeline};
+        use timely::dataflow::channels::pact::Pipeline;
         use timely::dataflow::operators::{Exchange, Map, Operator};
 
         let distributor = self.distributor();
@@ -271,11 +268,11 @@ impl DistributedEdges {
                                     }
                                 }
                             });
-                            println!(
-                                "[{:?}] propagating {} messages",
-                                t.time(),
-                                output_messages.len()
-                            );
+                            // println!(
+                            //     "[{:?}] propagating {} messages",
+                            //     t.time(),
+                            //     output_messages.len()
+                            // );
 
                             // Output the aggregated messages
                             output
@@ -318,12 +315,12 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                            println!(
-                                "[{:?}] got {} messages, and {} nodes",
-                                t.time(),
-                                msgs.len(),
-                                nodes.len()
-                            );
+                            // println!(
+                            //     "[{:?}] got {} messages, and {} nodes",
+                            //     t.time(),
+                            //     msgs.len(),
+                            //     nodes.len()
+                            // );
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
                             for (id, state) in nodes.into_iter() {
@@ -335,12 +332,12 @@ impl DistributedEdges {
                                     cnt_no_messaged += 1;
                                 }
                             }
-                            println!(
-                                "[{:?}], messaged: {}, no messaged: {}",
-                                t.time(),
-                                cnt_messaged,
-                                cnt_no_messaged
-                            );
+                            // println!(
+                            //     "[{:?}], messaged: {}, no messaged: {}",
+                            //     t.time(),
+                            //     cnt_messaged,
+                            //     cnt_no_messaged
+                            // );
                         }
                     });
                 },

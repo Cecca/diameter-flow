@@ -131,7 +131,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let mut cnt = 0;
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
-                        println!("[{:?}] probability = {}", t.time(), p);
+                        // println!("[{:?}] probability = {}", t.time(), p);
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                                 out.give((id, state.as_center(id)));
@@ -141,7 +141,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }
                     } else {
-                        println!("[{:?}] probability = 1", t.time());
+                        // println!("[{:?}] probability = 1", t.time());
                         cnt = nodes.len();
                         out.give_iterator(
                             nodes
@@ -149,7 +149,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                                 .map(|(id, state)| (id, state.as_center(id))),
                         );
                     }
-                    println!("[{:?}] sampled {} centers", t.time(), cnt);
+                    // println!("[{:?}] sampled {} centers", t.time(), cnt);
                 }
             });
         },
@@ -349,34 +349,39 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         n,
                         edges.len()
                     );
-                    let mut adj = vec![vec![std::u32::MAX; n]; n];
-                    for i in 0..n {
-                        adj[i][i] = 0;
-                    }
-                    for ((u, v), w) in edges.into_iter() {
-                        // println!("Adding edge {:?}", (u, v, w));
-                        if u != v {
-                            adj[u as usize][v as usize] = w;
-                            adj[v as usize][u as usize] = w;
-                        }
-                    }
-                    // println!("{:#?}", adj);
-                    let distances = apsp(&adj);
-                    let mut diameter = 0;
-                    let mut diam_i = 0;
-                    let mut diam_j = 0;
-                    for i in 0..n {
-                        for j in 0..n {
-                            if distances[i][j] > diameter {
-                                diam_i = i;
-                                diam_j = j;
-                                diameter = distances[i][j];
-                            }
-                        }
-                    }
-                    let diameter = diameter + radii[&(diam_i as u32)] + radii[&(diam_j as u32)];
 
+                    let (aux_diam, (u, v)) = approx_diameter(edges, n as u32);
+                    let diameter = aux_diam + radii[&(u as u32)] + radii[&(v as u32)];
                     output.session(&t).give(diameter);
+
+                    // let mut adj = vec![vec![std::u32::MAX; n]; n];
+                    // for i in 0..n {
+                    //     adj[i][i] = 0;
+                    // }
+                    // for ((u, v), w) in edges.into_iter() {
+                    //     // println!("Adding edge {:?}", (u, v, w));
+                    //     if u != v {
+                    //         adj[u as usize][v as usize] = w;
+                    //         adj[v as usize][u as usize] = w;
+                    //     }
+                    // }
+                    // // println!("{:#?}", adj);
+                    // let distances = apsp(&adj);
+                    // let mut diameter = 0;
+                    // let mut diam_i = 0;
+                    // let mut diam_j = 0;
+                    // for i in 0..n {
+                    //     for j in 0..n {
+                    //         if distances[i][j] > diameter {
+                    //             diam_i = i;
+                    //             diam_j = j;
+                    //             diameter = distances[i][j];
+                    //         }
+                    //     }
+                    // }
+                    // let diameter = diameter + radii[&(diam_i as u32)] + radii[&(diam_j as u32)];
+
+                    // output.session(&t).give(diameter);
                 }
             });
         },
