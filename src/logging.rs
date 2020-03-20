@@ -76,7 +76,7 @@ where
             .consolidate()
             .inner
             .exchange(|_| 0)
-            .inspect(|((tag, value), time, diff)| {
+            .inspect(|((_tag, _value), _time, _diff)| {
                 // println!("[{:?}] {:?} {:?} ({:?})", time, tag, value.0, diff)
             })
             .probe_with(&mut probe);

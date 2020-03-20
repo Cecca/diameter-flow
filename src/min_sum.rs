@@ -7,7 +7,7 @@ use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
-use timely::progress::Timestamp;
+
 
 #[derive(Abomonation, Copy, Ord, PartialOrd, Eq, PartialEq, Debug, Clone, Hash)]
 pub struct MinSum {

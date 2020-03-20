@@ -18,7 +18,7 @@ impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
     where
         P: Fn(&D) -> bool + 'static,
     {
-        use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
+        
         use timely::dataflow::operators::*;
 
         let stash = Rc::new(RefCell::new(HashMap::new()));

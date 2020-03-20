@@ -1,6 +1,6 @@
 use crate::distributed_graph::*;
-use differential_dataflow::difference::Monoid;
-use differential_dataflow::difference::Semigroup;
+
+
 use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::*;
@@ -9,14 +9,14 @@ use differential_dataflow::Collection;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::ops::{AddAssign, Mul};
+
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
-use timely::progress::Timestamp;
+
 
 #[derive(Clone, PartialOrd, Ord, Eq, PartialEq, Abomonation, Debug, Hash)]
 struct HyperLogLogCounter {
@@ -84,7 +84,7 @@ impl HyperLogLogCounter {
 fn init_nodes<G: Scope<Timestamp = usize>>(
     edges: &Stream<G, (u32, u32, u32)>,
     p: usize,
-    seed: u64,
+    _seed: u64,
 ) -> Collection<G, (u32, HyperLogLogCounter), isize> {
     let worker = edges.scope().index();
     let workers = edges.scope().peers();
@@ -166,7 +166,7 @@ pub fn hyperball_old<G: Scope<Timestamp = usize>>(
                     (*node, counter, stabilized)
                 })
                 .inner
-                .branch(|time, ((node, counter, stabilized), _, _)| *stabilized);
+                .branch(|_time, ((_node, _counter, stabilized), _, _)| *stabilized);
 
             unstable.set(
                 &unstable_result
@@ -176,7 +176,7 @@ pub fn hyperball_old<G: Scope<Timestamp = usize>>(
             );
 
             stable_result
-                .map(|((node, counter, _), time, delta)| ((node, time.inner as u32), time, delta))
+                .map(|((node, _counter, _), time, delta)| ((node, time.inner as u32), time, delta))
                 .as_collection()
                 .leave()
         })
@@ -229,7 +229,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
     edges: DistributedEdges,
     scope: &mut G,
     p: usize,
-    seed: u64,
+    _seed: u64,
 ) -> Stream<G, u32> {
     // Init nodes
     let nodes = edges
@@ -254,7 +254,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
                 // Update the state for nodes without messages
                 |state| state.deactivate(),
             )
-            .branch(|t, (_id, state)| state.updated);
+            .branch(|_t, (_id, state)| state.updated);
 
         updated.connect_loop(handle);
 

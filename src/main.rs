@@ -25,19 +25,19 @@ mod rand_cluster;
 use argh::FromArgs;
 use datasets::*;
 use delta_stepping::*;
-use differential_dataflow::input::Input;
-use differential_dataflow::operators::arrange::ArrangeByKey;
-use min_sum::*;
+
+
+
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::process::Command;
 use timely::communication::{
-    allocator::AllocateBuilder, initialize_from, Allocator, Configuration as TimelyConfig,
+    Allocator, Configuration as TimelyConfig,
     WorkerGuards,
 };
 use timely::dataflow::operators::probe::Handle;
-use timely::dataflow::operators::Accumulate;
-use timely::dataflow::operators::Filter;
+
+
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Probe;
@@ -128,7 +128,7 @@ impl TryFrom<&str> for Algorithm {
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
             return Ok(Self::RandCluster(radius));
         }
-        if let Some(captures) = re_bfs.captures(value) {
+        if let Some(_captures) = re_bfs.captures(value) {
             return Ok(Self::Bfs);
         }
         Err(format!("Unrecognized algorithm: {}", value))
@@ -321,9 +321,9 @@ fn main() {
 
         let static_edges = dataset.load_static(worker);
 
-        let (mut edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
+        let (edges, probe) = worker.dataflow::<usize, _, _>(move |scope| {
             let mut probe = Handle::new();
-            let (edge_input, edges) = scope.new_input::<(u32, u32, u32)>();
+            let (edge_input, _edges) = scope.new_input::<(u32, u32, u32)>();
 
             let diameter_stream = match algorithm {
                 Algorithm::DeltaStepping(delta) => {

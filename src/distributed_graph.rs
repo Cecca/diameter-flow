@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
-use timely::progress::Timestamp;
+
 use timely::ExchangeData;
 
 #[derive(Debug, Clone, Copy)]
@@ -13,7 +13,7 @@ struct Distributor {
 
 impl Distributor {
     fn new<G: Scope>(scope: &G) -> Self {
-        let side = ((scope.peers() as f64).sqrt().ceil() as u32);
+        let side = (scope.peers() as f64).sqrt().ceil() as u32;
         Self { side }
     }
 
@@ -54,12 +54,12 @@ pub struct DistributedEdgesBuilder {
 
 impl DistributedEdgesBuilder {
     pub fn new<G: Scope>(stream: &Stream<G, (u32, u32, u32)>) -> Self {
-        use std::collections::HashMap;
+        
         use timely::dataflow::channels::pact::Exchange;
         use timely::dataflow::operators::generic::operator::Operator;
-        use timely::dataflow::operators::FrontierNotificator;
+        
 
-        let mut edges_ref = Rc::new(RefCell::new(None));
+        let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
         let distributor = Distributor::new(&stream.scope());
 
@@ -69,7 +69,7 @@ impl DistributedEdgesBuilder {
             }),
             "edges_builder",
             move |input| {
-                input.for_each(|t, data| {
+                input.for_each(|_t, data| {
                     let data = data.replace(Vec::new());
                     edges_ref
                         .borrow_mut()
@@ -126,7 +126,7 @@ impl DistributedEdges {
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
         use timely::dataflow::operators::aggregation::aggregate::Aggregate;
-        use timely::dataflow::operators::exchange::Exchange;
+        
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
@@ -154,8 +154,8 @@ impl DistributedEdges {
         &self,
         nodes: &Stream<G, (u32, S)>,
     ) -> Stream<G, ((u32, S), (u32, S), u32)> {
-        use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
-        use timely::dataflow::operators::{Exchange, Filter, Map, Operator};
+        use timely::dataflow::channels::pact::{Pipeline};
+        use timely::dataflow::operators::{Exchange, Map, Operator};
 
         let distributor = self.distributor();
         let mut stash = HashMap::new();

@@ -1,25 +1,25 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::operators::*;
-use differential_dataflow::difference::Monoid;
-use differential_dataflow::difference::Semigroup;
-use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::arrange::ArrangeByKey;
-use differential_dataflow::operators::arrange::{Arranged, TraceAgent};
-use differential_dataflow::operators::iterate::Variable;
-use differential_dataflow::operators::reduce::ReduceCore;
-use differential_dataflow::operators::*;
-use differential_dataflow::trace::implementations::ord::OrdKeySpine;
+
+
+
+
+
+
+
+
+
 use differential_dataflow::trace::*;
-use differential_dataflow::AsCollection;
-use differential_dataflow::Collection;
+
+
 use rand::Rng;
 use rand::SeedableRng;
 use std::cell::RefCell;
-use std::collections::hash_map::DefaultHasher;
+
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::ops::{AddAssign, Mul};
+
 use std::rc::Rc;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
@@ -28,7 +28,7 @@ use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
-use timely::progress::Timestamp;
+
 
 // fn count_checker<G: Scope>(
 //     nodes: &Collection<G, (u32, Either), isize>,
@@ -236,18 +236,18 @@ fn expand_clusters<G>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, NodeState)>,
     radius: u32,
-    n: u32,
+    _n: u32,
 ) -> Stream<G, (u32, NodeState)>
 where
     G: Scope<Timestamp = Product<usize, u32>>,
 {
-    use crate::logging::CountEvent::*;
+    
 
     let l1 = nodes.scope().count_logger().expect("missing logger");
-    let l2 = l1.clone();
-    let l3 = l1.clone();
-    let l4 = l1.clone();
-    let l5 = l1.clone();
+    let _l2 = l1.clone();
+    let _l3 = l1.clone();
+    let _l4 = l1.clone();
+    let _l5 = l1.clone();
 
     nodes.scope().iterative::<u32, _, _>(move |subscope| {
         let nodes = nodes.enter(subscope);
@@ -258,7 +258,7 @@ where
             .send(
                 &nodes.concat(&cycle),
                 |_, state| state.can_send(),
-                move |time, state, weight| {
+                move |_time, state, weight| {
                     if weight < radius {
                         state.propagate(weight, radius)
                     } else {
@@ -286,7 +286,7 @@ fn remap_edges<G: Scope>(
 
     edges
         .triplets(&clustering)
-        .map(|((u, state_u), (v, state_v), w)| {
+        .map(|((_u, state_u), (_v, state_v), w)| {
             let (c_u, d_u) = state_u.distance.expect("missing distance u");
             let (c_v, d_v) = state_v.distance.expect("missing distance v");
             let out_edge = if c_u < c_v {
@@ -321,13 +321,13 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     n: u32,
     seed: u64,
 ) -> Stream<G, u32> {
-    use differential_dataflow::operators::iterate::SemigroupVariable;
+    
     use rand_xoshiro::Xoroshiro128StarStar;
 
     let nodes = edges.nodes::<_, NodeState>(scope);
     let l1 = nodes.scope().count_logger().expect("missing logger");
-    let l2 = l1.clone();
-    let l3 = l1.clone();
+    let _l2 = l1.clone();
+    let _l3 = l1.clone();
 
     let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
     for _ in 0..nodes.scope().index() {
@@ -347,7 +347,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        .branch(move |t, (id, state)| state.is_uncovered());
+        .branch(move |_t, (_id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 
@@ -356,7 +356,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 
     let auxiliary_graph = remap_edges(&edges, &clustering);
     let clusters_radii = clustering
-        .map(|(id, state)| state.distance.expect("uncovered node"))
+        .map(|(_id, state)| state.distance.expect("uncovered node"))
         .aggregate(
             |_center, distance, agg| {
                 *agg = std::cmp::max(*agg, distance);
@@ -378,7 +378,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         None,
         move |graph_input, radii_input, output, notificator| {
             graph_input.for_each(|t, data| {
-                let mut data = data.replace(Vec::new());
+                let data = data.replace(Vec::new());
                 let entry = stash_auxiliary
                     .entry(t.time().clone())
                     .or_insert_with(HashMap::new);
@@ -398,7 +398,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                 notificator.notify_at(t.retain());
             });
             radii_input.for_each(|t, data| {
-                let mut data = data.replace(Vec::new());
+                let data = data.replace(Vec::new());
                 stash_radii
                     .entry(t.time().clone())
                     .or_insert_with(HashMap::<u32, u32>::new)

@@ -1,6 +1,6 @@
 use crate::distributed_graph::*;
-use crate::min_sum::MinSum;
-use differential_dataflow::input::InputSession;
+
+
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -9,7 +9,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{Write};
 use std::path::PathBuf;
 use timely::communication::Allocate;
 use timely::dataflow::operators::input::Handle as InputHandle;

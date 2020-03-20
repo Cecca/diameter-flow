@@ -2,10 +2,10 @@ use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::min_sum::*;
 use crate::operators::*;
-use differential_dataflow::difference::Monoid;
+
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::ArrangeByKey;
-use differential_dataflow::operators::arrange::{Arranged, TraceAgent};
+use differential_dataflow::operators::arrange::{Arranged};
 use differential_dataflow::operators::iterate::SemigroupVariable;
 use differential_dataflow::operators::reduce::ReduceCore;
 use differential_dataflow::operators::*;
@@ -16,16 +16,16 @@ use differential_dataflow::Collection;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
+
+
+
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
-use timely::progress::timestamp::Refines;
-use timely::progress::PathSummary;
+
+
 use timely::progress::Timestamp;
 
 trait AggregateMin<G: Scope> {
@@ -142,7 +142,7 @@ where
         .scope()
         .count_logger()
         .expect("missing logger");
-    let l2 = l1.clone();
+    let _l2 = l1.clone();
     let l3 = l1.clone();
     let l4 = l1.clone();
     let l5 = l1.clone();
@@ -199,10 +199,10 @@ pub fn delta_stepping_old<G: Scope<Timestamp = usize>>(
     num_roots: usize,
     seed: u64,
 ) -> Stream<G, u32> {
-    use crate::logging::CountEvent::*;
+    
     let l1 = edges.scope().count_logger().expect("missing logger");
     let l2 = l1.clone();
-    let l3 = l1.clone();
+    let _l3 = l1.clone();
 
     // Separate light and heavy edges, and arrage them
     let light = edges
@@ -358,7 +358,7 @@ impl State {
         }
     }
 
-    fn send_heavy(step: u32, delta: u32, state: &Self, weight: u32) -> Option<u32> {
+    fn send_heavy(_step: u32, delta: u32, state: &Self, weight: u32) -> Option<u32> {
         if weight > delta {
             Some(weight + state.distance.expect("missing distance"))
         } else {
@@ -440,7 +440,7 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
         let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
 
         let (stable, further) =
-            delta_step(&edges, &nodes.concat(&cycle), delta).branch(move |t, (id, state)| {
+            delta_step(&edges, &nodes.concat(&cycle), delta).branch(move |t, (_id, state)| {
                 state
                     .distance
                     .map(|d| d > delta * (t.inner + 1))
