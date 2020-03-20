@@ -149,8 +149,57 @@ impl DistributedEdges {
         self.distributor
     }
 
+    /// Brings together the states of the endpoints of each edge with the edge itself
+    pub fn triplets<G: Scope, S: ExchangeData>(
+        &self,
+        nodes: &Stream<G, (u32, S)>,
+    ) -> Stream<G, ((u32, S), (u32, S), u32)> {
+        use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
+        use timely::dataflow::operators::{Exchange, Filter, Map, Operator};
+
+        let distributor = self.distributor();
+        let mut stash = HashMap::new();
+        let edges = Self::clone(&self);
+
+        nodes
+            .flat_map(move |(id, state)| {
+                distributor
+                    .procs_node(id)
+                    .map(move |p| (p, (id, state.clone())))
+            })
+            // Send the messages to the appropriate processors
+            .exchange(|pair| pair.0 as u64)
+            // Propagate to the destination
+            .unary_notify(
+                Pipeline,
+                "create_triplets",
+                None,
+                move |input, output, notificator| {
+                    input.for_each(|t, data| {
+                        let data = data.replace(Vec::new());
+                        stash
+                            .entry(t.time().clone())
+                            .or_insert_with(HashMap::new)
+                            .extend(data.into_iter().map(|pair| pair.1));
+                        notificator.notify_at(t.retain());
+                    });
+                    notificator.for_each(|t, _, _| {
+                        if let Some(states) = stash.remove(&t) {
+                            let mut out = output.session(&t);
+
+                            // Accumulate messages going over the edges
+                            edges.for_each(|u, v, w| {
+                                let state_u = states.get(&u).expect("missing state for u");
+                                let state_v = states.get(&v).expect("missing state for v");
+                                out.give(((u, state_u.clone()), (v, state_v.clone()), w));
+                            });
+                        }
+                    });
+                },
+            )
+    }
+
     /// Send messages that can be aggregated along the edges
-    #[allow(dead_code)]
     pub fn send<G: Scope, S: ExchangeData, M: ExchangeData, P, Fm, Fa, Fu, Fun>(
         &self,
         nodes: &Stream<G, (u32, S)>,
