@@ -1,6 +1,7 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::min_sum::*;
+use crate::operators::*;
 use differential_dataflow::difference::Monoid;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::ArrangeByKey;
@@ -366,70 +367,6 @@ impl State {
     }
 }
 
-/// Branch out when the stream of nodes has stabilized, that is,
-/// when there are no more updates in the current bucket
-fn branch_stabilized<G: Scope<Timestamp = Product<Product<usize, u32>, u32>>>(
-    nodes: &Stream<G, (u32, State)>,
-    delta: u32,
-) -> (Stream<G, (u32, State)>, Stream<G, (u32, State)>) {
-    use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
-    use timely::dataflow::operators::*;
-
-    let stash = Rc::new(RefCell::new(HashMap::new()));
-    let stash2 = Rc::clone(&stash);
-
-    let updated_counts = nodes
-        .unary(Pipeline, "count updated", move |_, _| {
-            move |input, output| {
-                input.for_each(|t, data| {
-                    let data = data.replace(Vec::new());
-                    output
-                        .session(&t)
-                        .give(data.iter().filter(|(_, state)| state.updated).count());
-                    stash
-                        .borrow_mut()
-                        .entry(t.time().clone())
-                        .or_insert_with(Vec::new)
-                        .extend(data.into_iter());
-                })
-            }
-        })
-        .broadcast();
-
-    let mut stash_counts = HashMap::new();
-    let (stable, some_updated) = updated_counts
-        .unary_notify(
-            Pipeline,
-            "splitter",
-            None,
-            move |input, output, notificator| {
-                input.for_each(|t, data| {
-                    let data = data.replace(Vec::new());
-                    let total: usize = data.into_iter().sum();
-                    stash_counts
-                        .entry(t.time().clone())
-                        .and_modify(|c| *c += total)
-                        .or_insert(total);
-                    notificator.notify_at(t.retain());
-                });
-                notificator.for_each(|time, _, _| {
-                    if let Some(updated_count) = stash_counts.remove(&time) {
-                        // println!("[{:?}] {} updated nodes", time.time(), updated_count);
-                        let branch = updated_count > 0;
-                        if let Some(nodes) = stash2.borrow_mut().remove(&time) {
-                            output
-                                .session(&time)
-                                .give_iterator(nodes.into_iter().map(|x| (branch, x)));
-                        }
-                    }
-                });
-            },
-        )
-        .branch(|_t, (some_updated, _pair)| *some_updated);
-
-    (stable.map(|pair| pair.1), some_updated.map(|pair| pair.1))
-}
-
 fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, State)>,
@@ -443,16 +380,18 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
             .map(|(id, state)| (id, state.reactivate()));
         let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
-        // FIXME: we cannot retire old configuration
-        let nodes2 = edges.send(
-            &nodes.concat(&cycle),
-            |_, state| state.should_send(),
-            move |time, state, weight| State::send_light(time.outer.inner, delta, state, weight),
-            |d1, d2| std::cmp::min(*d1, *d2), // aggregate messages
-            |state, message| state.update_distance(*message),
-            |state| state.deactivate(), // deactivate nodes with no messages
-        );
-        let (output, further) = branch_stabilized(&nodes2, delta);
+        let (output, further) = edges
+            .send(
+                &nodes.concat(&cycle),
+                |_, state| state.should_send(),
+                move |time, state, weight| {
+                    State::send_light(time.outer.inner, delta, state, weight)
+                },
+                |d1, d2| std::cmp::min(*d1, *d2), // aggregate messages
+                |state, message| state.update_distance(*message),
+                |state| state.deactivate(), // deactivate nodes with no messages
+            )
+            .branch_all(|pair| pair.1.updated);
 
         further.connect_loop(handle);
 
