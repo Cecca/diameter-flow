@@ -1,6 +1,7 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::operators::*;
+use crate::sequential::*;
 use rand::Rng;
 use rand::SeedableRng;
 use std::cell::RefCell;
@@ -380,32 +381,4 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             });
         },
     )
-}
-
-// Floyd-Warshall algorithm
-fn apsp(adjacency: &Vec<Vec<u32>>) -> Vec<Vec<u32>> {
-    let n = adjacency.len();
-    let mut cur = vec![vec![std::u32::MAX; n]; n];
-    let mut prev = vec![vec![std::u32::MAX; n]; n];
-    for i in 0..n {
-        for j in 0..n {
-            cur[i][j] = adjacency[i][j];
-        }
-    }
-
-    for k in 0..n {
-        std::mem::swap(&mut cur, &mut prev);
-        for i in 0..n {
-            for j in 0..n {
-                let d = if prev[i][k] == std::u32::MAX || prev[k][j] == std::u32::MAX {
-                    std::u32::MAX
-                } else {
-                    prev[i][k] + prev[k][j]
-                };
-                cur[i][j] = std::cmp::min(prev[i][j], d);
-            }
-        }
-    }
-
-    cur
 }

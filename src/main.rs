@@ -21,22 +21,17 @@ mod logging;
 mod min_sum;
 mod operators;
 mod rand_cluster;
+mod sequential;
 
 use argh::FromArgs;
 use datasets::*;
 use delta_stepping::*;
 
-
-
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::process::Command;
-use timely::communication::{
-    Allocator, Configuration as TimelyConfig,
-    WorkerGuards,
-};
+use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
 use timely::dataflow::operators::probe::Handle;
-
 
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::Inspect;
