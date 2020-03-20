@@ -5,13 +5,19 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     edges: I,
     n: u32,
 ) -> (u32, (u32, u32)) {
+    use std::time::Instant;
+
     let neighbourhoods = init_neighbourhoods(edges, n);
 
     println!("First run of sssp");
+    let start = Instant::now();
     let (d1, (u1, v1)) = sssp(&neighbourhoods, 0);
+    println!("elapsed {:?}", start.elapsed());
     assert!(u1 == 0);
     println!("Second run of sssp");
+    let start = Instant::now();
     let (d2, (u2, v2)) = sssp(&neighbourhoods, v1);
+    println!("elapsed {:?}", start.elapsed());
 
     if d1 > d2 {
         (d1, (u1, v1))

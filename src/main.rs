@@ -307,6 +307,7 @@ fn main() {
     let meta = dataset.metadata();
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
+    println!("Graph diameter: {}", dataset.approx_diameter());
 
     let timer = std::time::Instant::now();
     let algorithm = config.algorithm;

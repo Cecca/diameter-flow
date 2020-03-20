@@ -1,4 +1,5 @@
 use crate::distributed_graph::*;
+use crate::sequential::*;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -52,6 +53,15 @@ impl Dataset {
     }
     pub fn webgraph<S: Into<String>>(s: S) -> Self {
         Self::WebGraph(s.into())
+    }
+
+    pub fn approx_diameter(&self) -> u32 {
+        let mut edges = Vec::new();
+        self.for_each(|u, v, w| {
+            edges.push(((u, v), w));
+        });
+        let (diam, (src, dst)) = approx_diameter(edges, self.metadata().num_nodes);
+        diam
     }
 
     fn metadata_key(&self) -> String {
