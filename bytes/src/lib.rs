@@ -1,4 +1,5 @@
 mod hilbert;
+mod morton;
 mod stream;
 
 use std::io::{Read, Result as IOResult, Write};
@@ -42,7 +43,8 @@ impl CompressedPairsWriter {
     }
 
     pub fn write(&mut self, pair: (u32, u32)) {
-        self.encoded.push(self.encoder.entangle(pair));
+        // self.encoded.push(self.encoder.entangle(pair));
+        self.encoded.push(morton::pair_to_zorder(pair));
     }
 
     fn flush(&mut self) -> IOResult<()> {
@@ -82,7 +84,8 @@ fn read_pairs<R: Read, F: FnMut(u32, u32)>(reader: R, mut action: F) -> IOResult
         if x == 0 {
             return Ok(());
         }
-        let (u, v) = decoder.detangle(x);
+        // let (u, v) = decoder.detangle(x);
+        let (u, v) = morton::zorder_to_pair(x);
         action(u, v);
     }
 }
