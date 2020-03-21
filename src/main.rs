@@ -304,6 +304,10 @@ fn main() {
 
     let mut datasets = map! {
         "cnr-2000" => Dataset::webgraph("cnr-2000"),
+        "it-2004" => Dataset::webgraph("it-2004"),
+        "sk-2005" => Dataset::webgraph("sk-2005"),
+        "uk-2014-tpd" => Dataset::webgraph("uk-2014-tpd"),
+        "uk-2014-host" => Dataset::webgraph("uk-2014-host"),
         "uk-2007-05-small" => Dataset::webgraph("uk-2007-05@100000"),
         "facebook" => Dataset::snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
         "twitter" => Dataset::snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),

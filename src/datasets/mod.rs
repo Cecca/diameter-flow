@@ -173,7 +173,12 @@ impl Dataset {
                 bvconvert::maybe_download_file(&properties_url, properties_path);
 
                 // read the file
+                let mut cnt = 0;
                 bvconvert::read(&tool_graph_path, |(src, dst)| {
+                    cnt += 1;
+                    if cnt % 100000 == 0 {
+                        println!("read {} edges", cnt);
+                    }
                     action(src, dst, 1);
                 });
             }
