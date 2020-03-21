@@ -1,4 +1,3 @@
-mod hilbert;
 mod morton;
 mod stream;
 
@@ -29,7 +28,6 @@ impl CompressedEdges {
 
 pub struct CompressedPairsWriter {
     output_path: PathBuf,
-    encoder: hilbert::BytewiseHilbert,
     encoded: Vec<u64>,
 }
 
@@ -37,13 +35,11 @@ impl CompressedPairsWriter {
     pub fn to_file<P: AsRef<Path>>(path: P) -> Self {
         Self {
             output_path: path.as_ref().to_path_buf(),
-            encoder: hilbert::BytewiseHilbert::new(),
             encoded: Vec::new(),
         }
     }
 
     pub fn write(&mut self, pair: (u32, u32)) {
-        // self.encoded.push(self.encoder.entangle(pair));
         self.encoded.push(morton::pair_to_zorder(pair));
     }
 
@@ -76,7 +72,6 @@ impl Drop for CompressedPairsWriter {
 }
 
 fn read_pairs<R: Read, F: FnMut(u32, u32)>(reader: R, mut action: F) -> IOResult<()> {
-    let decoder = hilbert::BytewiseHilbert::new();
     let mut reader = stream::DifferenceStreamReader::new(reader);
 
     loop {
@@ -84,7 +79,6 @@ fn read_pairs<R: Read, F: FnMut(u32, u32)>(reader: R, mut action: F) -> IOResult
         if x == 0 {
             return Ok(());
         }
-        // let (u, v) = decoder.detangle(x);
         let (u, v) = morton::zorder_to_pair(x);
         action(u, v);
     }

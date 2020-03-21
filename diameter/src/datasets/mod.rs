@@ -199,7 +199,7 @@ impl Dataset {
                     })
                     .expect("error while iterating over the edges");
                 println!(
-                    "Iterating over the Hilbert compressed edges took {:?}",
+                    "Iterating over the z-order compressed edges took {:?}",
                     timer.elapsed()
                 );
             }
