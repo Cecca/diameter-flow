@@ -19,7 +19,7 @@ impl CompressedEdges {
         Ok(Self { raw })
     }
 
-    pub fn for_each<F: FnMut(u32, u32, u32) + 'static>(&self, mut action: F) -> IOResult<()> {
+    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) -> IOResult<()> {
         use std::io::Cursor;
         let cursor = Cursor::new(&self.raw);
         read_pairs(cursor, move |u, v| action(u, v, 1))
@@ -73,7 +73,7 @@ impl Drop for CompressedPairsWriter {
     }
 }
 
-fn read_pairs<R: Read, F: FnMut(u32, u32) + 'static>(reader: R, mut action: F) -> IOResult<()> {
+fn read_pairs<R: Read, F: FnMut(u32, u32)>(reader: R, mut action: F) -> IOResult<()> {
     let decoder = hilbert::BytewiseHilbert::new();
     let mut reader = stream::DifferenceStreamReader::new(reader);
 

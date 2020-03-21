@@ -49,6 +49,9 @@ impl<R: Read> DifferenceStreamReader<R> {
 
     pub fn read(&mut self) -> IOResult<u64> {
         let diff = self.inner.read()?;
+        if diff == 0 {
+            return Ok(0);
+        }
         let elem = self.last + diff;
         self.last = elem;
         Ok(elem)

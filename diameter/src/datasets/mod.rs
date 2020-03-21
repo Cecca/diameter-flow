@@ -173,19 +173,35 @@ impl Dataset {
                 bvconvert::maybe_download_file(&graph_url, graph_path);
                 bvconvert::maybe_download_file(&properties_url, properties_path);
 
-                // read the file
+                // Convert the file
                 let mut compressed_path = dir.clone();
                 compressed_path.push(format!("{}.edges", name));
-                let mut compressor = CompressedPairsWriter::to_file(compressed_path);
-                let mut cnt = 0;
-                bvconvert::read(&tool_graph_path, |(src, dst)| {
-                    cnt += 1;
-                    if cnt % 100000 == 0 {
-                        println!("read {} edges", cnt);
-                    }
-                    action(src, dst, 1);
-                    compressor.write((src, dst));
-                });
+                if !compressed_path.is_file() {
+                    let timer = std::time::Instant::now();
+                    let mut compressor = CompressedPairsWriter::to_file(compressed_path.clone());
+                    let mut cnt = 0;
+                    bvconvert::read(&tool_graph_path, |(src, dst)| {
+                        cnt += 1;
+                        if cnt % 100000 == 0 {
+                            println!("read {} edges", cnt);
+                        }
+                        // action(src, dst, 1);
+                        compressor.write((src, dst));
+                    });
+                    println!("Compression took {:?}", timer.elapsed());
+                }
+                let edges = CompressedEdges::from_file(compressed_path)
+                    .expect("error loading compressed edges");
+                let timer = std::time::Instant::now();
+                edges
+                    .for_each(|u, v, w| {
+                        action(u, v, w);
+                    })
+                    .expect("error while iterating over the edges");
+                println!(
+                    "Iterating over the Hilbert compressed edges took {:?}",
+                    timer.elapsed()
+                );
             }
         };
     }
