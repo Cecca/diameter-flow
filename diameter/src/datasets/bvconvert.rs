@@ -96,7 +96,7 @@ where
     }
     let mut graph_path = graph_path.clone();
     graph_path.set_extension("");
-    let java_binary = include_bytes!("../../java/BVGraphToEdges.class");
+    let java_binary = include_bytes!("../../../java/BVGraphToEdges.class");
     let file = File::create("BVGraphToEdges.class").expect("Problem creating clas file");
     let mut writer = BufWriter::new(file);
     writer
