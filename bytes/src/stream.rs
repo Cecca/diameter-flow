@@ -13,16 +13,12 @@ impl<W: Write> GammaStreamWriter<W> {
     }
 
     #[inline]
-    fn gamma_code(&mut self, elem: u64) -> Result<(), std::io::Error> {
+    pub fn write(&mut self, elem: u64) -> Result<(), std::io::Error> {
         let N = 64 - elem.leading_zeros(); // the number of bits to represent `elem`
         for _ in 0..(N - 1) {
             self.inner.write_bit(false)?;
         }
         self.inner.write(N, elem)
-    }
-
-    pub fn write(&mut self, element: u64) -> Result<(), std::io::Error> {
-        self.gamma_code(element)
     }
 
     pub fn close(mut self) -> Result<(), std::io::Error> {
@@ -46,7 +42,7 @@ impl<R: Read> GammaStreamReader<R> {
         }
     }
 
-    fn gamma_decode(&mut self) -> Result<u64, std::io::Error> {
+    pub fn read(&mut self) -> Result<u64, std::io::Error> {
         let mut N = 0;
         while !self.inner.read_bit()? {
             N += 1;
@@ -58,9 +54,6 @@ impl<R: Read> GammaStreamReader<R> {
         Ok(elem | (1 << N))
     }
 
-    pub fn read(&mut self) -> Result<u64, std::io::Error> {
-        self.gamma_decode()
-    }
 }
 
 #[cfg(test)]
@@ -77,10 +70,6 @@ mod test {
             let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
             assert!(writer.write(x).is_ok());
             writer.close().unwrap();
-            // let mut read = File::open(&file).unwrap();
-            // let mut s = Vec::new();
-            // read.read_to_end(&mut s);
-            // println!("{:?}", s);
             let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
             let res = reader.read();
             assert!(res.is_ok(), "error was: {:?}", res.unwrap_err());
