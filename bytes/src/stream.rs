@@ -1,5 +1,51 @@
 use bitstream_io::{BitReader, BitWriter};
-use std::io::{Read, Write};
+use std::io::{Read, Result as IOResult, Write};
+
+pub struct DifferenceStreamWriter<W: Write> {
+    inner: GammaStreamWriter<W>,
+    last: u64,
+}
+
+impl<W: Write> DifferenceStreamWriter<W> {
+    pub fn new(inner: W) -> Self {
+        Self {
+            inner: GammaStreamWriter::new(inner),
+            last: 0,
+        }
+    }
+
+    #[inline]
+    pub fn write(&mut self, elem: u64) -> IOResult<()> {
+        assert!(self.last < elem);
+        let diff = elem - self.last;
+        self.inner.write(diff)
+    }
+
+    pub fn close(mut self) -> IOResult<()> {
+        self.inner.close()
+    }
+}
+
+pub struct DifferenceStreamReader<R: Read> {
+    inner: GammaStreamReader<R>,
+    last: u64,
+}
+
+impl<R: Read> DifferenceStreamReader<R> {
+    pub fn new(inner: R) -> Self {
+        Self {
+            inner: GammaStreamReader::new(inner),
+            last: 0,
+        }
+    }
+
+    pub fn read(&mut self) -> IOResult<u64> {
+        let diff = self.inner.read()?;
+        let elem = self.last + diff;
+        self.last = elem;
+        Ok(elem)
+    }
+}
 
 pub struct GammaStreamWriter<W: Write> {
     inner: BitWriter<W, bitstream_io::BE>,
@@ -23,9 +69,9 @@ impl<W: Write> GammaStreamWriter<W> {
 
     pub fn close(mut self) -> Result<(), std::io::Error> {
         // Write 65 zeros to signal the end of the stream
-        // for _ in 0..=65 {
-        //     self.inner.write_bit(false)?;
-        // }
+        for _ in 0..=65 {
+            self.inner.write_bit(false)?;
+        }
         self.inner.byte_align()?;
         self.inner.into_writer().flush()
     }
@@ -46,14 +92,15 @@ impl<R: Read> GammaStreamReader<R> {
         let mut N = 0;
         while !self.inner.read_bit()? {
             N += 1;
-            // if N > 64 {
-            //     return Ok(None);
-            // }
+            if N > 64 {
+                // 0 is a value out of the domain of possible values,
+                // hence we use it to signal the end of the stream.
+                return Ok(0);
+            }
         }
         let elem: u64 = self.inner.read(N)?;
         Ok(elem | (1 << N))
     }
-
 }
 
 #[cfg(test)]
@@ -103,29 +150,34 @@ mod test {
         }
     }
 
-    // #[test]
-    // fn test_encode_decode_unspecified_length() {
-    //     use rand::distributions::Distribution;
+    #[test]
+    fn test_unspecified_length_encode_decode() {
+        use rand::distributions::Distribution;
 
-    //     let rng = rand::rngs::ThreadRng::default();
-    //     let distrib = rand::distributions::Uniform::new(1u64, std::u64::MAX);
-    //     let mut values: Vec<u64> = distrib.sample_iter(rng).take(10).collect();
-    //     values.sort();
+        let rng = rand::rngs::ThreadRng::default();
+        let distrib = rand::distributions::Uniform::new(1u64, std::u64::MAX);
+        let mut values: Vec<u64> = distrib.sample_iter(rng).take(10).collect();
+        values.sort();
 
-    //     let mut file = temp_dir();
-    //     file.push("tmp.bin");
+        let mut file = temp_dir();
+        file.push("tmp.bin");
 
-    //     let mut writer = GammaDifferenceStreamWriter::new(File::create(&file).unwrap());
-    //     for x in values.iter() {
-    //         assert!(writer.write(*x).is_ok());
-    //     }
-    //     writer.close().unwrap();
+        let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
+        for x in values.iter() {
+            assert!(writer.write(*x).is_ok());
+        }
+        writer.close().unwrap();
 
-    //     let mut reader = GammaDifferenceStreamReader::new(File::open(&file).unwrap());
-    //     let mut actual = Vec::new();
-    //     while let Some(x) = reader.read().unwrap() {
-    //         actual.push(x);
-    //     }
-    //     assert_eq!(actual, values);
-    // }
+        let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
+        let mut actual = Vec::new();
+        loop {
+            let x = reader.read().unwrap();
+            if x == 0 {
+                // end of the stream
+                break;
+            }
+            actual.push(x);
+        }
+        assert_eq!(actual, values);
+    }
 }
