@@ -4,6 +4,7 @@ use std::io::{Read, Result as IOResult, Write};
 pub struct DifferenceStreamWriter<W: Write> {
     inner: GammaStreamWriter<W>,
     last: u64,
+    // histogram: std::collections::BTreeMap<u64, u64>,
 }
 
 impl<W: Write> DifferenceStreamWriter<W> {
@@ -11,6 +12,7 @@ impl<W: Write> DifferenceStreamWriter<W> {
         Self {
             inner: GammaStreamWriter::new(inner),
             last: 0,
+            // histogram: std::collections::BTreeMap::new(),
         }
     }
 
@@ -18,10 +20,16 @@ impl<W: Write> DifferenceStreamWriter<W> {
     pub fn write(&mut self, elem: u64) -> IOResult<()> {
         assert!(self.last < elem);
         let diff = elem - self.last;
+        // self.histogram
+        //     .entry(diff)
+        //     .and_modify(|c| *c = *c + 1)
+        //     .or_insert(1);
+        self.last = elem;
         self.inner.write(diff)
     }
 
     pub fn close(mut self) -> IOResult<()> {
+        // println!("{:#?}", self.histogram);
         self.inner.close()
     }
 }

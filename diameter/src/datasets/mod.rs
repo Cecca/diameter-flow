@@ -1,5 +1,6 @@
 use crate::distributed_graph::*;
 use crate::sequential::*;
+use bytes::*;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -173,6 +174,9 @@ impl Dataset {
                 bvconvert::maybe_download_file(&properties_url, properties_path);
 
                 // read the file
+                let mut compressed_path = dir.clone();
+                compressed_path.push(format!("{}.edges", name));
+                let mut compressor = CompressedPairsWriter::to_file(compressed_path);
                 let mut cnt = 0;
                 bvconvert::read(&tool_graph_path, |(src, dst)| {
                     cnt += 1;
@@ -180,6 +184,7 @@ impl Dataset {
                         println!("read {} edges", cnt);
                     }
                     action(src, dst, 1);
+                    compressor.write((src, dst));
                 });
             }
         };

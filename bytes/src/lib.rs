@@ -55,6 +55,14 @@ impl CompressedPairsWriter {
         for &x in self.encoded.iter() {
             writer.write(x)?;
         }
+        let out_bits = self.output_path.metadata().unwrap().len() * 8;
+        let in_bits = self.encoded.len() * 64;
+        println!(
+            "Compression ratio is {}, {} bits per edge",
+            out_bits as f64 / in_bits as f64,
+            out_bits as f64 / self.encoded.len() as f64
+        );
+        writer.close()?;
         Ok(())
     }
 }
