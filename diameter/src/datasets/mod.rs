@@ -178,28 +178,32 @@ impl Dataset {
                 compressed_path.push(format!("{}.edges", name));
                 if !compressed_path.is_file() {
                     let timer = std::time::Instant::now();
-                    let mut compressor = CompressedPairsWriter::to_file(compressed_path.clone());
-                    let mut cnt = 0;
-                    bvconvert::read(&tool_graph_path, |(src, dst)| {
-                        cnt += 1;
-                        if cnt % 100000 == 0 {
-                            println!("read {} edges", cnt);
-                        }
-                        // action(src, dst, 1);
-                        compressor.write((src, dst));
-                    });
+                    bvconvert::convert(&tool_graph_path, &compressed_path);
+                    // let mut compressor = CompressedPairsWriter::to_file(compressed_path.clone());
+                    // let mut cnt = 0;
+                    // bvconvert::read(&tool_graph_path, |(src, dst)| {
+                    //     cnt += 1;
+                    //     if cnt % 100000 == 0 {
+                    //         println!("read {} edges", cnt);
+                    //     }
+                    //     // action(src, dst, 1);
+                    //     compressor.write((src, dst));
+                    // });
                     println!("Compression took {:?}", timer.elapsed());
                 }
                 let edges = CompressedEdges::from_file(compressed_path)
                     .expect("error loading compressed edges");
                 let timer = std::time::Instant::now();
+                let mut cnt = 0;
                 edges
                     .for_each(|u, v, w| {
+                        cnt += 1;
                         action(u, v, w);
                     })
                     .expect("error while iterating over the edges");
                 println!(
-                    "Iterating over the z-order compressed edges took {:?}",
+                    "Iterating over the {} z-order compressed edges took {:?}",
+                    cnt,
                     timer.elapsed()
                 );
             }
