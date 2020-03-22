@@ -1,6 +1,6 @@
 try-java-small: java/BVGraphToEdges.class
 	rm -rf /tmp/scratch
-	cd java && java -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:. BVGraphToEdges \
+	cd java && java -ea -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:. BVGraphToEdges \
 	~/.graph-datasets/51AC668FED74DC19BF9552375D5BF3428D4DC89D9EC248AC094C966711618781/cnr-2000-hc \
 	/tmp/out.bin
 

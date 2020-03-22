@@ -101,6 +101,7 @@ pub fn convert(graph_path: &PathBuf, output_path: &PathBuf) {
     get_jars(&java_dir);
     let mut child = Command::new("java")
         .args(&["-Xmx6G",
+                "-ea",
                 "-classpath",
                 ".:webgraph-3.6.3.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:slf4j-api-1.7.26.jar",
                 "BVGraphToEdges",
@@ -111,7 +112,10 @@ pub fn convert(graph_path: &PathBuf, output_path: &PathBuf) {
         // .stderr(Stdio::piped())
         .spawn()
         .expect("java command failed");
-    child.wait();
+    assert!(child
+        .wait()
+        .expect("problem waiting for child process")
+        .success());
 }
 
 pub fn read<F>(graph_path: &PathBuf, mut action: F)

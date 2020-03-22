@@ -21,6 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.PriorityQueue;
@@ -36,18 +37,15 @@ public class BVGraphToEdges {
         long totEdges = graph.numArcs();
 
         if (scratch.isDirectory()) {
-            scratch.delete();
+            deleteDirectory(scratch);
         }
         scratch.mkdir();
-
-        // final int sqrtEdgesPerBlock = 640000;
 
         NodeIterator nodes = graph.nodeIterator();
         System.out.println("Converting " + totEdges + " edges");
 
-        // HashMap<Long, DataOutputStream> outputs = new HashMap<>();
-        long[] buffer = new long[100_000_000];
-        // long[] buffer = new long[100_000];
+        // long[] buffer = new long[100_000_000];
+        long[] buffer = new long[100_000];
 
         long cnt = 0;
         System.out.println("Encoding the values... ");
@@ -60,22 +58,22 @@ public class BVGraphToEdges {
             int outdeg = nodes.outdegree();
             for (int i = 0; i < outdeg; i++) {
                 int v = neighs.nextInt();
-                // if (u != v) { // ignore self loops
-                int src = u;
-                int dst = v;
-                // We consider the graphs symmetric, and we take as canonical the
-                // order that results in the upper right triangle of the
-                // adjacency matrix.
-                if (src < dst) {
-                    src = v;
-                    dst = u;
+                if (u != v) { // ignore self loops
+                    int src = u;
+                    int dst = v;
+                    // We consider the graphs symmetric, and we take as canonical the
+                    // order that results in the upper right triangle of the
+                    // adjacency matrix.
+                    if (src > dst) {
+                        src = v;
+                        dst = u;
+                    }
+                    buffer[pos++] = zorder(src, dst);
+                    if (pos >= buffer.length) {
+                        writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
+                        pos = 0;
+                    }
                 }
-                buffer[pos++] = zorder(u, v);
-                if (pos >= buffer.length) {
-                    writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
-                    pos = 0;
-                }
-                // }
                 if (cnt++ % 10000000 == 0) {
                     System.out.print((cnt / totEdges * 100) + "%                \r");
                 }
@@ -88,19 +86,33 @@ public class BVGraphToEdges {
         mergeAndCompress(scratch, outputPath);
         System.out.println("sort and compress " + (System.currentTimeMillis() - start) / 1000.0 + "s");
 
-        // Count the number of edges in the output
+        // Check that there are no duplicate edges
         InputBitStream ibs = new InputBitStream(outputPath);
+        ArrayList<Integer> zeroNeighs = new ArrayList<>();
         long check = 0;
+        long last = 0;
         try {
             while (true) {
-                ibs.readLongGamma();
+                long diff = ibs.readLongGamma();
+                assert diff != 0 : "zero diff";
+                long z = last + diff;
+                int[] xy = zorderToPair(z);
+                last = z;
                 check++;
             }
         } catch (EOFException e) {
             // done
         }
-        System.out.println("Check count: " + check);
-        assert check == totEdges;
+    }
+
+    static boolean deleteDirectory(File directoryToBeDeleted) {
+        File[] allContents = directoryToBeDeleted.listFiles();
+        if (allContents != null) {
+            for (File file : allContents) {
+                deleteDirectory(file);
+            }
+        }
+        return directoryToBeDeleted.delete();
     }
 
     static void writePartial(long[] buffer, int until, File output) throws IOException {
@@ -108,16 +120,16 @@ public class BVGraphToEdges {
 
         long start = System.currentTimeMillis();
         Arrays.sort(buffer, 0, until);
-        // DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new
-        // FileOutputStream(output)));
         OutputBitStream out = new OutputBitStream(output);
         long last = 0;
         for (int i = 0; i < until; i++) {
-            // out.writeLong(buffer[i]);
             long diff = buffer[i] - last;
-            assert diff > 0;
-            last = buffer[i];
-            out.writeLongGamma(diff);
+            // If diff == 0 then we have a duplicate edge, which we remove
+            if (diff != 0) {
+                assert diff > 0;
+                last = buffer[i];
+                out.writeLongGamma(diff);
+            }
         }
         out.close();
         System.out.println((System.currentTimeMillis() - start) / 1000.0 + "s");
@@ -186,26 +198,41 @@ public class BVGraphToEdges {
                 if (a < b) {
                     aMore = false;
                     long diff = a - last;
-                    assert diff > 0;
                     last = a;
-                    out.writeLongGamma(diff);
-                    edgeCount++;
+                    if (diff != 0) {
+                        assert diff > 0;
+                        out.writeLongGamma(diff);
+                        edgeCount++;
+                    }
                     a = aStream.readLongGamma() + aLast;
                     aLast = a;
                     aMore = true;
                 } else if (a > b) {
                     bMore = false;
                     long diff = b - last;
-                    assert diff > 0;
                     last = b;
-                    out.writeLongGamma(diff);
-                    edgeCount++;
+                    if (diff != 0) {
+                        assert diff > 0;
+                        out.writeLongGamma(diff);
+                        edgeCount++;
+                    }
                     b = bStream.readLongGamma() + bLast;
                     bLast = b;
                     bMore = true;
                 } else {
-                    System.err.println("WARNING: duplicate edge!");
-                    throw new RuntimeException("duplicate edge");
+                    // Remove the duplicate edge
+                    bMore = false;
+                    aMore = false;
+                    long diff = a - last;
+                    last = a;
+                    out.writeLongGamma(diff);
+                    edgeCount++;
+                    a = aStream.readLongGamma() + aLast;
+                    aLast = a;
+                    aMore = true;
+                    b = bStream.readLongGamma() + bLast;
+                    bLast = b;
+                    bMore = true;
                 }
             }
         } catch (EOFException e) {
@@ -304,6 +331,33 @@ public class BVGraphToEdges {
         }
 
         return z;
+    }
+
+    static int[] zorderToPair(long z) {
+        int x = 0;
+        int y = 0;
+
+        long xMask = ((long) 1) << 63;
+        long yMask = ((long) 1) << 62;
+
+        for (int i = 0; i < 32; i++) {
+            if ((z & xMask) == 0) {
+                x = x << 1;
+            } else {
+                x = (x << 1) | 1;
+            }
+            if ((z & yMask) == 0) {
+                y = y << 1;
+            } else {
+                y = (y << 1) | 1;
+            }
+            z = z << 2;
+        }
+
+        int[] res = new int[2];
+        res[0] = x;
+        res[1] = y;
+        return res;
     }
 
 }
