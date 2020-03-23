@@ -1,8 +1,71 @@
 mod morton;
 mod stream;
 
+use std::cell::RefCell;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+pub struct CompressedEdgesBlockSet {
+    blocks: Vec<CompressedEdges>,
+    block_length: u64,
+}
+
+impl CompressedEdgesBlockSet {
+    pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        let mut metadata_path = path.as_ref().to_path_buf();
+        metadata_path.push("metadata.properties");
+        let metadata = BufReader::new(File::open(metadata_path)?);
+        let mut block_length = None;
+        for line in metadata.lines() {
+            let line = line.expect("problem reading line");
+            if line.starts_with("chunkLength") {
+                let mut tokens = line.split("=");
+                tokens.next().expect("problem splitting");
+                block_length.replace(
+                    tokens
+                        .next()
+                        .expect("problem splitting")
+                        .parse::<u64>()
+                        .expect("problem parsing"),
+                );
+            }
+        }
+        let block_length = block_length.expect("missing chunkLength in metadata");
+
+        let mut blocks = Vec::new();
+
+        let rex = regex::Regex::new(r"\d+").expect("error building regex");
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            let path = entry.path();
+            if let Some(digits) = rex.find(
+                path.file_name()
+                    .expect("unable to get file name")
+                    .to_str()
+                    .expect("unable to convert to string"),
+            ) {
+                let chunk_start: u64 = digits.as_str().parse().expect("problem parsing");
+                if filter(chunk_start) {
+                    blocks.push(CompressedEdges::from_file(path)?);
+                }
+            }
+        }
+
+        Ok(Self {
+            blocks,
+            block_length,
+        })
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
+        self.blocks
+            .iter()
+            .flat_map(|b| b.iter().map(|(u, v)| (u, v, 1)))
+    }
+}
 
 pub struct CompressedEdges {
     raw: Vec<u8>,
@@ -19,10 +82,19 @@ impl CompressedEdges {
         Ok(Self { raw })
     }
 
-    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) -> IOResult<()> {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32)> + 'a {
         use std::io::Cursor;
         let cursor = Cursor::new(&self.raw);
-        read_pairs(cursor, move |u, v| action(u, v, 1))
+        let mut reader = stream::DifferenceStreamReader::new(cursor);
+
+        std::iter::from_fn(move || {
+            let z = reader.read().expect("problem reading form the stream");
+            if z == 0 {
+                None
+            } else {
+                Some(morton::zorder_to_pair(z))
+            }
+        })
     }
 }
 
@@ -68,18 +140,5 @@ impl CompressedPairsWriter {
 impl Drop for CompressedPairsWriter {
     fn drop(&mut self) {
         self.flush().unwrap();
-    }
-}
-
-fn read_pairs<R: Read, F: FnMut(u32, u32)>(reader: R, mut action: F) -> IOResult<()> {
-    let mut reader = stream::DifferenceStreamReader::new(reader);
-
-    loop {
-        let x = reader.read()?;
-        if x == 0 {
-            return Ok(());
-        }
-        let (u, v) = morton::zorder_to_pair(x);
-        action(u, v);
     }
 }
