@@ -33,8 +33,17 @@ public class BVGraphToEdges {
         String outputPath = args[1];
         File scratch = new File("/tmp/scratch");
 
+        if (new File(outputPath).isDirectory()) {
+            System.out.println("output file already exists, exiting");
+            System.exit(1);
+        }
+
         ImmutableGraph graph = BVGraph.loadOffline(inputPath);
         long totEdges = graph.numArcs();
+
+        long chunkMaxLen = graph.numNodes() / 16;
+        chunkMaxLen *= chunkMaxLen; // take the square of it
+        System.out.println("The maximum chunk length is " + chunkMaxLen);
 
         if (scratch.isDirectory()) {
             deleteDirectory(scratch);
@@ -44,8 +53,7 @@ public class BVGraphToEdges {
         NodeIterator nodes = graph.nodeIterator();
         System.out.println("Converting " + totEdges + " edges");
 
-        // long[] buffer = new long[100_000_000];
-        long[] buffer = new long[100_000];
+        long[] buffer = new long[100_000_000];
 
         long cnt = 0;
         System.out.println("Encoding the values... ");
@@ -83,26 +91,71 @@ public class BVGraphToEdges {
 
         System.out.println("Merge sort the encoded values, writing them compressed... ");
         start = System.currentTimeMillis();
-        mergeAndCompress(scratch, outputPath);
+        File mergedFile = mergeAndCompress(scratch);
         System.out.println("sort and compress " + (System.currentTimeMillis() - start) / 1000.0 + "s");
 
-        // Check that there are no duplicate edges
-        InputBitStream ibs = new InputBitStream(outputPath);
-        ArrayList<Integer> zeroNeighs = new ArrayList<>();
-        long check = 0;
-        long last = 0;
+        System.out.println("Split the file in chunks, and check that there are no duplicates");
+        start = System.currentTimeMillis();
+        splitFiles(mergedFile, new File(outputPath), chunkMaxLen);
+        System.out.println("file split " + (System.currentTimeMillis() - start) / 1000.0 + "s");
+
+        deleteDirectory(scratch);
+    }
+
+    static void splitFiles(File mergedFile, File outputDir, long chunkMaxLen) throws IOException {
+        // TODO: write metadata
+        InputBitStream ibs = new InputBitStream(mergedFile);
+        outputDir.mkdir();
+        long writtenEdges = 0;
+        long lastRead = 0;
+        long lastWritten = 0;
+        long currentChunkBaseZ = 0;
+        long lastChunkEdges = 0;
+
+        OutputBitStream output = new OutputBitStream(new File(outputDir, "part-" + currentChunkBaseZ + ".bin"));
+
         try {
             while (true) {
                 long diff = ibs.readLongGamma();
                 assert diff != 0 : "zero diff";
-                long z = last + diff;
-                int[] xy = zorderToPair(z);
-                last = z;
-                check++;
+                long z = lastRead + diff;
+                lastRead = z;
+                if (z > currentChunkBaseZ + chunkMaxLen) {
+                    writeClosingZeros(output);
+                    while (z > currentChunkBaseZ + chunkMaxLen) {
+                        currentChunkBaseZ += chunkMaxLen;
+                    }
+                    System.out.println("Closed chunk with " + lastChunkEdges + " edges");
+                    lastChunkEdges = 0;
+                    lastWritten = 0;
+                    System.out.println("New chunk with base z coordinate " + currentChunkBaseZ + " because z=" + z + " "
+                            + Arrays.toString(zorderToPair(z)) + ", " + writtenEdges + " edges written so far");
+                    output = new OutputBitStream(new File(outputDir, "part-" + currentChunkBaseZ + ".bin"));
+                }
+                long writeDiff = z - lastWritten;
+                lastWritten = z;
+                output.writeLongGamma(z);
+                writtenEdges++;
+                lastChunkEdges++;
             }
         } catch (EOFException e) {
             // done
+        } finally {
+            System.out.println("closing last chunk");
+            writeClosingZeros(output);
         }
+        System.out.println("num edges written " + writtenEdges);
+
+        ibs.close();
+    }
+
+    // Write at least 65 zeros to mark the end of the stream for
+    // future readers (Rust relies on this)
+    static void writeClosingZeros(OutputBitStream out) throws IOException {
+        for (int i = 0; i < 66; i++) {
+            out.writeBit(false);
+        }
+        out.close();
     }
 
     static boolean deleteDirectory(File directoryToBeDeleted) {
@@ -135,7 +188,7 @@ public class BVGraphToEdges {
         System.out.println((System.currentTimeMillis() - start) / 1000.0 + "s");
     }
 
-    static void mergeAndCompress(File scratch, String outputPath) throws IOException, FileNotFoundException {
+    static File mergeAndCompress(File scratch) throws IOException, FileNotFoundException {
         File mergedir = new File(scratch, "merge");
         mergedir.mkdir();
         ArrayList<File> files = new ArrayList<>(Arrays.asList(scratch.listFiles(f -> f.isFile())));
@@ -162,17 +215,7 @@ public class BVGraphToEdges {
             outputs.clear();
         }
 
-        File complete = files.get(0);
-
-        // add at least 65 zeros to mark the end of the stream for the Rust code
-        OutputBitStream out = new OutputBitStream(new FileOutputStream(complete, true));
-        for (int i = 0; i < 66; i++) {
-            out.writeBit(false);
-        }
-        out.close();
-
-        // Copy to the output path
-        complete.renameTo(new File(outputPath));
+        return files.get(0);
     }
 
     static void merge(File aFile, File bFile, File outFile) throws IOException {
