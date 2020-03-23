@@ -42,7 +42,7 @@ public class BVGraphToEdges {
         ImmutableGraph graph = BVGraph.loadOffline(inputPath);
         long totEdges = graph.numArcs();
 
-        long chunkMaxLen = graph.numNodes() / 16;
+        long chunkMaxLen = graph.numNodes() / 2;
         chunkMaxLen *= chunkMaxLen; // take the square of it
         System.out.println("The maximum chunk length is " + chunkMaxLen);
 
@@ -117,9 +117,10 @@ public class BVGraphToEdges {
         long lastRead = 0;
         long lastWritten = 0;
         long currentChunkBaseZ = 0;
+        long currentChunk = 0;
         long lastChunkEdges = 0;
 
-        OutputBitStream output = new OutputBitStream(new File(outputDir, "part-" + currentChunkBaseZ + ".bin"));
+        OutputBitStream output = new OutputBitStream(new File(outputDir, "part-" + currentChunk + ".bin"));
 
         try {
             while (true) {
@@ -131,13 +132,15 @@ public class BVGraphToEdges {
                     writeClosingZeros(output);
                     while (z > currentChunkBaseZ + chunkMaxLen) {
                         currentChunkBaseZ += chunkMaxLen;
+                        currentChunk += 1;
                     }
                     System.out.println("Closed chunk with " + lastChunkEdges + " edges");
                     lastChunkEdges = 0;
                     lastWritten = 0;
-                    System.out.println("New chunk with base z coordinate " + currentChunkBaseZ + " because z=" + z + " "
-                            + Arrays.toString(zorderToPair(z)) + ", " + writtenEdges + " edges written so far");
-                    output = new OutputBitStream(new File(outputDir, "part-" + currentChunkBaseZ + ".bin"));
+                    System.out.println("New chunk (" + currentChunk + ") with base z coordinate " + currentChunkBaseZ
+                            + " because z=" + z + " " + Arrays.toString(zorderToPair(z)) + ", " + writtenEdges
+                            + " edges written so far");
+                    output = new OutputBitStream(new File(outputDir, "part-" + currentChunk + ".bin"));
                 }
                 long writeDiff = z - lastWritten;
                 lastWritten = z;
