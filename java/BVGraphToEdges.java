@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.PriorityQueue;
+import java.util.Properties;
 
 public class BVGraphToEdges {
 
@@ -98,6 +99,12 @@ public class BVGraphToEdges {
         start = System.currentTimeMillis();
         splitFiles(mergedFile, new File(outputPath), chunkMaxLen);
         System.out.println("file split " + (System.currentTimeMillis() - start) / 1000.0 + "s");
+
+        try (FileOutputStream fos = new FileOutputStream(new File(outputPath, "metadata.properties"))) {
+            Properties metadata = new Properties();
+            metadata.setProperty("chunkLength", Long.toString(chunkMaxLen));
+            metadata.store(fos, "");
+        }
 
         deleteDirectory(scratch);
     }
