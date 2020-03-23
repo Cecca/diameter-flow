@@ -189,13 +189,6 @@ impl Dataset {
                     cnt += 1;
                     action(u, v, w);
                 }
-                // edges
-                //     .iter()
-                //     .for_each(|u, v, w| {
-                //         cnt += 1;
-                //         action(u, v, w);
-                //     })
-                //     .expect("error while iterating over the edges");
                 println!(
                     "Iterating over the {} z-order compressed edges took {:?}",
                     cnt,
