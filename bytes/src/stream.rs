@@ -17,6 +17,11 @@ impl<W: Write> DifferenceStreamWriter<W> {
     }
 
     #[inline]
+    pub fn is_new_elem(&self, elem: u64) -> bool {
+        self.last != elem
+    }
+
+    #[inline]
     pub fn write(&mut self, elem: u64) -> IOResult<()> {
         assert!(self.last < elem);
         let diff = elem - self.last;

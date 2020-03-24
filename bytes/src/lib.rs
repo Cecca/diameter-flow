@@ -1,10 +1,8 @@
 mod morton;
 mod stream;
 
-
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
-
 
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
@@ -22,8 +20,6 @@ impl CompressedEdgesBlockSet {
     }
 
     pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
-        
-        
         // let mut metadata_path = path.as_ref().to_path_buf();
         // metadata_path.push("metadata.properties");
         // let metadata = BufReader::new(File::open(metadata_path)?);
@@ -122,13 +118,15 @@ impl CompressedEdges {
 pub struct CompressedPairsWriter {
     output_path: PathBuf,
     encoded: Vec<u64>,
+    block_size: u64,
 }
 
 impl CompressedPairsWriter {
-    pub fn to_file<P: AsRef<Path>>(path: P) -> Self {
+    pub fn to_file<P: AsRef<Path>>(path: P, block_size: u64) -> Self {
         Self {
             output_path: path.as_ref().to_path_buf(),
             encoded: Vec::new(),
+            block_size,
         }
     }
 
@@ -140,19 +138,42 @@ impl CompressedPairsWriter {
         use std::fs::File;
         use std::io::BufWriter;
 
+        println!("Flushing compressed edges in multiple files");
+
         self.encoded.sort();
-        let writer = BufWriter::new(File::create(self.output_path.clone())?);
-        let mut writer = stream::DifferenceStreamWriter::new(writer);
-        for &x in self.encoded.iter() {
-            writer.write(x)?;
+
+        if !self.output_path.is_dir() {
+            std::fs::create_dir(self.output_path.clone())?;
         }
-        let out_bits = self.output_path.metadata().unwrap().len() * 8;
-        let in_bits = self.encoded.len() * 64;
-        println!(
-            "Compression ratio is {}, {} bits per edge",
-            out_bits as f64 / in_bits as f64,
-            out_bits as f64 / self.encoded.len() as f64
-        );
+
+        let get_path = |id| {
+            let mut path = self.output_path.clone();
+            path.push(format!("part-{}.bin", id));
+            path
+        };
+
+        let mut part_id = 0;
+        let p = get_path(part_id);
+        println!("opening {:?}", p);
+        let writer = BufWriter::new(File::create(p)?);
+        let mut writer = stream::DifferenceStreamWriter::new(writer);
+        let mut cnt = 0;
+        for &x in self.encoded.iter() {
+            if cnt % self.block_size == 0 {
+                part_id += 1;
+                let p = get_path(part_id);
+                println!("opening {:?}", p);
+                let mut writer2 =
+                    stream::DifferenceStreamWriter::new(BufWriter::new(File::create(p)?));
+                std::mem::swap(&mut writer, &mut writer2);
+                writer2.close()?;
+            }
+            if writer.is_new_elem(x) {
+                // Remove duplicate edges
+                writer.write(x)?;
+            }
+            cnt += 1;
+        }
         writer.close()?;
         Ok(())
     }

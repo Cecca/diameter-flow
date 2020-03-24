@@ -129,8 +129,36 @@ impl Dataset {
 
     pub fn prepare(&self) {
         match self {
-            Self::Dimacs(_url) => unimplemented!(),
-            Self::Snap(_url) => unimplemented!(),
+            Self::Dimacs(url) => {
+                println!("Preparing Dimacs dataset");
+                // TODO: Write also the weights!!
+                let edges_dir = self.edges_directory();
+                if !edges_dir.is_dir() {
+                    println!("Remapping the file {:?}", edges_dir);
+                    std::fs::create_dir_all(&edges_dir);
+                    let mut remapper = Remapper::default();
+                    let raw = maybe_download_file(url, self.dataset_directory());
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    read_dimacs_file(&raw, |(u, v, w)| {
+                        let mut src = remapper.remap(u);
+                        let mut dst = remapper.remap(v);
+                        if src > dst {
+                            std::mem::swap(&mut src, &mut dst);
+                        }
+                        compressor.write((src, dst));
+                    });
+                }
+            }
+            Self::Snap(url) => {
+                let remapped_path = remapped_dataset_file_path(url, self.dataset_directory());
+                if !remapped_path.exists() {
+                    println!("Remapping the file");
+                    text_edge_file_remap(
+                        &maybe_download_file(url, self.dataset_directory()),
+                        &remapped_path,
+                    );
+                }
+            }
             Self::WebGraph(name) => {
                 let dir = self.dataset_directory();
                 println!("Destination directory is {:?}", dir);
@@ -157,8 +185,7 @@ impl Dataset {
                 bvconvert::maybe_download_file(&properties_url, properties_path);
 
                 // Convert the file
-                let mut compressed_path = dir.clone();
-                compressed_path.push("edges");
+                let mut compressed_path = self.edges_directory();
                 if !compressed_path.is_dir() {
                     let timer = std::time::Instant::now();
                     bvconvert::convert(&tool_graph_path, &compressed_path);
@@ -174,16 +201,18 @@ impl Dataset {
     {
         match self {
             Self::Dimacs(url) => {
+                self.prepare();
                 read_text_edge_file_weighted(
-                    &maybe_download_and_remap_dimacs_file(url),
+                    &remapped_dataset_file_path(url, self.dataset_directory()),
                     |(src, dst, w)| {
                         action(src, dst, w);
                     },
                 );
             }
             Self::Snap(url) => {
+                self.prepare();
                 read_text_edge_file_unweighted(
-                    &maybe_download_and_remap_file(url),
+                    &remapped_dataset_file_path(url, self.dataset_directory()),
                     |(src, dst)| {
                         action(src, dst, 1);
                     },
@@ -210,7 +239,12 @@ impl Dataset {
         };
     }
 
-    // TODO: Use this also in the preprocessing
+    fn edges_directory(&self) -> PathBuf {
+        let mut path = self.dataset_directory();
+        path.push("edges");
+        path
+    }
+
     pub fn dataset_directory(&self) -> PathBuf {
         use std::fmt::Write;
 
@@ -239,8 +273,7 @@ impl Dataset {
 
     fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
         let rex = regex::Regex::new(r"\d+").expect("error building regex");
-        let mut edges_directory = self.dataset_directory();
-        edges_directory.push("edges");
+        let mut edges_directory = self.edges_directory();
         std::fs::read_dir(edges_directory)
             .expect("problem reading directory")
             .flat_map(move |entry| {
@@ -317,26 +350,24 @@ fn dataset_directory(url: &str) -> PathBuf {
     path
 }
 
-fn dataset_file_path(url: &str) -> PathBuf {
+fn dataset_file_path(url: &str, mut dir: PathBuf) -> PathBuf {
     let parsed = Url::parse(url).expect("not a valid url");
     let basename = parsed
         .path_segments()
         .expect("could not get path segments")
         .last()
         .expect("empty path?");
-    let mut dir = dataset_directory(url);
     dir.push(basename);
     dir
 }
 
-fn remapped_dataset_file_path(url: &str) -> PathBuf {
+fn remapped_dataset_file_path(url: &str, mut dir: PathBuf) -> PathBuf {
     let parsed = Url::parse(url).expect("not a valid url");
     let basename = parsed
         .path_segments()
         .expect("could not get path segments")
         .last()
         .expect("empty path?");
-    let mut dir = dataset_directory(url);
     dir.push(basename);
     let dir_clone = dir.clone(); // this is to appease the borrow checker
     let orig_extension = dir_clone
@@ -347,8 +378,8 @@ fn remapped_dataset_file_path(url: &str) -> PathBuf {
     dir
 }
 
-fn maybe_download_file(url: &str) -> PathBuf {
-    let dataset_path = dataset_file_path(url);
+fn maybe_download_file(url: &str, dir: PathBuf) -> PathBuf {
+    let dataset_path = dataset_file_path(url, dir);
     if !dataset_path.exists() {
         println!("Downloading dataset");
         let mut resp = reqwest::get(url).expect("problem while getting the url");
@@ -360,22 +391,41 @@ fn maybe_download_file(url: &str) -> PathBuf {
     dataset_path
 }
 
-fn maybe_download_and_remap_file(url: &str) -> PathBuf {
-    let remapped_path = remapped_dataset_file_path(url);
+fn maybe_download_and_remap_file(url: &str, dir: PathBuf) -> PathBuf {
+    let remapped_path = remapped_dataset_file_path(url, dir.clone());
     if !remapped_path.exists() {
         println!("Remapping the file");
-        text_edge_file_remap(&maybe_download_file(url), &remapped_path);
+        text_edge_file_remap(&maybe_download_file(url, dir), &remapped_path);
     }
     remapped_path
 }
 
-fn maybe_download_and_remap_dimacs_file(url: &str) -> PathBuf {
-    let remapped_path = remapped_dataset_file_path(url);
+fn maybe_download_and_remap_dimacs_file(url: &str, dir: PathBuf) -> PathBuf {
+    let remapped_path = remapped_dataset_file_path(url, dir.clone());
     if !remapped_path.exists() {
         println!("Remapping the file");
-        dimacs_file_remap(&maybe_download_file(url), &remapped_path);
+        dimacs_file_remap(&maybe_download_file(url, dir), &remapped_path);
     }
     remapped_path
+}
+
+#[derive(Default)]
+struct Remapper {
+    cnt: u32,
+    node_map: HashMap<u32, u32>,
+}
+
+impl Remapper {
+    fn remap(&mut self, node: u32) -> u32 {
+        let mut cnt = self.cnt;
+        let remapped = *self.node_map.entry(node).or_insert_with(|| {
+            let remapped = cnt;
+            cnt += 1;
+            remapped
+        });
+        self.cnt = cnt;
+        remapped
+    }
 }
 
 fn dimacs_file_remap(input_path: &PathBuf, output_path: &PathBuf) {
