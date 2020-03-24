@@ -190,39 +190,10 @@ impl Dataset {
                 );
             }
             Self::WebGraph(name) => {
-                let graph_url = format!(
-                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
-                    name, name
-                );
-                let properties_url = format!(
-                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.properties",
-                    name, name
-                );
-                let graph_fname = format!("{}-hc.graph", name);
-                let properties_fname = format!("{}-hc.properties", name);
-                let dir = dataset_directory(&graph_url);
-                println!("Destination directory is {:?}", dir);
-
-                let mut graph_path = dir.clone();
-                let mut properties_path = dir.clone();
-                graph_path.push(graph_fname);
-                properties_path.push(properties_fname);
-                let mut tool_graph_path = dir.clone();
-                tool_graph_path.push(format!("{}-hc", name));
-
-                // Download the files
-                bvconvert::maybe_download_file(&graph_url, graph_path);
-                bvconvert::maybe_download_file(&properties_url, properties_path);
-
-                // Convert the file
-                let mut compressed_path = dir.clone();
-                compressed_path.push(format!("{}.edges", name));
-                if !compressed_path.is_dir() {
-                    let timer = std::time::Instant::now();
-                    bvconvert::convert(&tool_graph_path, &compressed_path);
-                    println!("Compression took {:?}", timer.elapsed());
-                }
-                let edges = CompressedEdgesBlockSet::from_dir(compressed_path, |_| true)
+                self.prepare();
+                let mut edges_path = self.dataset_directory();
+                edges_path.push("edges");
+                let edges = CompressedEdgesBlockSet::from_dir(edges_path, |_| true)
                     .expect("error loading compressed edges");
                 let timer = std::time::Instant::now();
                 let mut cnt = 0;
@@ -291,9 +262,7 @@ impl Dataset {
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
     pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
-        
         use timely::dataflow::operators::Input as TimelyInput;
-        
 
         if worker.index() == 0 {
             // TODO: Find a way of distributing work on the cluster
