@@ -137,14 +137,14 @@ impl Dataset {
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(url, self.dataset_directory());
-                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
                     read_dimacs_file(&raw, |(u, v, w)| {
                         let mut src = remapper.remap(u);
                         let mut dst = remapper.remap(v);
                         if src > dst {
                             std::mem::swap(&mut src, &mut dst);
                         }
-                        compressor.write((src, dst));
+                        compressor.write((src, dst, w));
                     });
                 }
             }
@@ -279,19 +279,20 @@ impl Dataset {
     }
 
     fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
-        let rex = regex::Regex::new(r"\d+").expect("error building regex");
+        let rex = regex::Regex::new(r"part-(\d+)").expect("error building regex");
         let mut edges_directory = self.edges_directory();
         std::fs::read_dir(edges_directory)
             .expect("problem reading directory")
             .flat_map(move |entry| {
                 // let entry = entry?;
                 let path = entry.expect("problem getting entry").path();
-                if let Some(digits) = rex.find(
+                if let Some(captures) = rex.captures(
                     path.file_name()
                         .expect("unable to get file name")
                         .to_str()
                         .expect("unable to convert to string"),
                 ) {
+                    let digits = captures.get(1).unwrap();
                     let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                     Some((chunk_id, path))
                 } else {

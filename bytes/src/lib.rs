@@ -1,6 +1,7 @@
 mod morton;
 mod stream;
 
+use bitstream_io::*;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
@@ -180,6 +181,89 @@ impl CompressedPairsWriter {
 }
 
 impl Drop for CompressedPairsWriter {
+    fn drop(&mut self) {
+        self.flush().unwrap();
+    }
+}
+
+pub struct CompressedTripletsWriter {
+    output_path: PathBuf,
+    encoded: Vec<(u64, u32)>,
+    block_size: u64,
+}
+
+impl CompressedTripletsWriter {
+    pub fn to_file<P: AsRef<Path>>(path: P, block_size: u64) -> Self {
+        Self {
+            output_path: path.as_ref().to_path_buf(),
+            encoded: Vec::new(),
+            block_size,
+        }
+    }
+
+    pub fn write(&mut self, (u, v, w): (u32, u32, u32)) {
+        self.encoded.push((morton::pair_to_zorder((u, v)), w));
+    }
+
+    fn flush(&mut self) -> IOResult<()> {
+        use std::fs::File;
+        use std::io::BufWriter;
+
+        println!("Flushing compressed edges and weights in multiple files");
+
+        self.encoded.sort();
+
+        if !self.output_path.is_dir() {
+            std::fs::create_dir(self.output_path.clone())?;
+        }
+
+        let get_path = |id| {
+            let mut path = self.output_path.clone();
+            path.push(format!("part-{}.bin", id));
+            path
+        };
+        let get_path_weights = |id| {
+            let mut path = self.output_path.clone();
+            path.push(format!("weights-{}.bin", id));
+            path
+        };
+
+        let mut part_id = 0;
+        let p = get_path(part_id);
+        println!("opening {:?}", p);
+        let writer = BufWriter::new(File::create(p)?);
+        let mut writer = stream::DifferenceStreamWriter::new(writer);
+        let mut weights_writer =
+            BitWriter::<_, BE>::new(BufWriter::new(File::create(get_path_weights(part_id))?));
+        let mut cnt = 0;
+        for &(x, w) in self.encoded.iter() {
+            if cnt % self.block_size == 0 {
+                part_id += 1;
+                let p = get_path(part_id);
+                println!("opening {:?}", p);
+                let mut writer2 =
+                    stream::DifferenceStreamWriter::new(BufWriter::new(File::create(p)?));
+                let mut weights_writer2 =
+                    BitWriter::new(BufWriter::new(File::create(get_path_weights(part_id))?));
+                std::mem::swap(&mut writer, &mut writer2);
+                std::mem::swap(&mut weights_writer, &mut weights_writer2);
+                writer2.close()?;
+                weights_writer2.into_writer().flush()?;
+            }
+            if writer.is_new_elem(x) {
+                // Remove duplicate edges
+                writer.write(x)?;
+                weights_writer.write(32, w);
+            }
+            cnt += 1;
+        }
+        writer.close()?;
+        weights_writer.into_writer().flush()?;
+        Ok(())
+    }
+}
+
+impl Drop for CompressedTripletsWriter {
     fn drop(&mut self) {
         self.flush().unwrap();
     }
