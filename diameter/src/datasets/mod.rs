@@ -206,45 +206,14 @@ impl Dataset {
     where
         F: FnMut(u32, u32, u32),
     {
-        unimplemented!();
-        // match self {
-        //     Self::Dimacs(url) => {
-        //         self.prepare();
-        //         read_text_edge_file_weighted(
-        //             &remapped_dataset_file_path(url, self.dataset_directory()),
-        //             |(src, dst, w)| {
-        //                 action(src, dst, w);
-        //             },
-        //         );
-        //     }
-        //     Self::Snap(url) => {
-        //         self.prepare();
-        //         read_text_edge_file_unweighted(
-        //             &remapped_dataset_file_path(url, self.dataset_directory()),
-        //             |(src, dst)| {
-        //                 action(src, dst, 1);
-        //             },
-        //         );
-        //     }
-        //     Self::WebGraph(name) => {
-        //         self.prepare();
-        //         let mut edges_path = self.dataset_directory();
-        //         edges_path.push("edges");
-        //         let edges = CompressedEdgesBlockSet::from_dir(edges_path, |_| true)
-        //             .expect("error loading compressed edges");
-        //         let timer = std::time::Instant::now();
-        //         let mut cnt = 0;
-        //         for (u, v, w) in edges.iter() {
-        //             cnt += 1;
-        //             action(u, v, w);
-        //         }
-        //         println!(
-        //             "Iterating over the {} z-order compressed edges took {:?}",
-        //             cnt,
-        //             timer.elapsed()
-        //         );
-        //     }
-        // };
+        self.prepare();
+        let files = self
+            .binary_edge_files()
+            .map(|triplet| (triplet.1, triplet.2));
+        CompressedEdgesBlockSet::from_files(files)
+            .expect("error building the edge set")
+            .iter()
+            .for_each(|(u, v, w)| action(u, v, w));
     }
 
     fn edges_directory(&self) -> PathBuf {
