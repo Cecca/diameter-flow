@@ -1,115 +1,137 @@
+use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use timely::dataflow::operators::probe::Handle as ProbeHandle;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
-
 use timely::ExchangeData;
 
-#[derive(Debug, Clone, Copy)]
-struct Distributor {
-    side: u32,
-}
-
-impl Distributor {
-    fn new<G: Scope>(scope: &G) -> Self {
-        let side = (scope.peers() as f64).sqrt().ceil() as u32;
-        Self { side }
-    }
-
-    /// Gets the processor for an edge
-    fn proc_edge(&self, src: u32, dst: u32) -> u8 {
-        assert!(src < dst, "src >= dst! {} >= {}", src, dst);
-        let cell_i = src % self.side;
-        let cell_j = dst % self.side;
-        let pos_i = src / self.side;
-        let pos_j = dst / self.side;
-        if pos_i >= pos_j {
-            (cell_i * self.side + cell_j) as u8
-        } else {
-            (cell_j * self.side + cell_i) as u8
-        }
-    }
-
-    fn procs_node(&self, node: u32) -> impl Iterator<Item = u8> {
-        let mut destinations = std::collections::HashSet::new();
-        let mod_p = node % self.side;
-        for j in 0..self.side {
-            let p = mod_p * self.side + j;
-            destinations.insert(p as u8);
-        }
-        for i in 0..self.side {
-            let p = i * self.side + mod_p;
-            destinations.insert(p as u8);
-        }
-        assert!(destinations.len() <= 2 * self.side as usize);
-        destinations.into_iter()
-    }
-}
-
 pub struct DistributedEdgesBuilder {
-    edges: Rc<RefCell<Option<Vec<(u32, u32, u32)>>>>,
-    distributor: Distributor,
+    edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
+    nodes_processors: Rc<RefCell<Option<HashMap<u32, Vec<usize>>>>>,
 }
 
 impl DistributedEdgesBuilder {
-    pub fn new<G: Scope>(stream: &Stream<G, (u32, u32, u32)>) -> Self {
-        use timely::dataflow::channels::pact::Exchange;
+    pub fn new<G: Scope>(
+        stream: &Stream<G, (String, Option<String>)>,
+    ) -> (Self, ProbeHandle<G::Timestamp>) {
+        use std::collections::HashSet;
+        use std::path::PathBuf;
+        use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::generic::operator::Operator;
+        use timely::dataflow::operators::*;
 
         let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
-        let distributor = Distributor::new(&stream.scope());
 
-        stream.sink(
-            Exchange::new(move |triplet: &(u32, u32, u32)| {
-                distributor.proc_edge(triplet.0, triplet.1) as u64
-            }),
-            "edges_builder",
-            move |input| {
-                input.for_each(|_t, data| {
-                    let data = data.replace(Vec::new());
-                    edges_ref
-                        .borrow_mut()
-                        .get_or_insert_with(Vec::new)
-                        .extend(data.into_iter());
-                });
+        let nodes_ref = Rc::new(RefCell::new(None));
+        let nodes_processors = nodes_ref.clone();
+
+        let worker_id = stream.scope().index();
+        let mut paths_stash = Vec::new();
+
+        let probe = stream
+            .unary_notify(
+                Pipeline,
+                "edges_builder",
+                None,
+                move |input, output, notificator| {
+                    input.for_each(|t, data| {
+                        let data = data.replace(Vec::new());
+                        paths_stash.extend(data.into_iter());
+                        println!("added paths to the stash");
+                        notificator.notify_at(t.retain());
+                    });
+                    notificator.for_each(|t, _, _| {
+                        let paths = paths_stash.iter().map(|(edges_path, weights_path)| {
+                            (
+                                PathBuf::from(edges_path),
+                                weights_path.as_ref().map(|s| PathBuf::from(s)),
+                            )
+                        });
+                        edges_ref.borrow_mut().replace(
+                            CompressedEdgesBlockSet::from_files(paths)
+                                .expect("problem loading blocks"),
+                        );
+                        println!("Loaded the edges locally");
+
+                        // exchange the edges to build processor targets
+                        let mut nodes = HashSet::new();
+                        edges_ref.borrow().iter().for_each(|edges| {
+                            edges.iter().for_each(|(u, v, _)| {
+                                nodes.insert(u);
+                                nodes.insert(v);
+                            });
+                        });
+                        output
+                            .session(&t)
+                            .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
+                    });
+                },
+            )
+            .unary(
+                ExchangePact::new(|pair: &(u32, usize)| pair.0.into()),
+                "nodes_builder",
+                move |_, _| {
+                    move |input, output| {
+                        input.for_each(|t, data| {
+                            let data = data.replace(Vec::new());
+                            let mut opt = nodes_ref.borrow_mut();
+                            let map = opt.get_or_insert_with(HashMap::new);
+                            for (u, proc_id) in data {
+                                map.entry(u).or_insert_with(Vec::new).push(proc_id);
+                            }
+                            output.session(&t).give(());
+                        });
+                    }
+                },
+            )
+            .probe();
+
+        (
+            Self {
+                edges,
+                nodes_processors,
             },
-        );
-
-        Self { edges, distributor }
+            probe,
+        )
     }
 
     pub fn build(self) -> DistributedEdges {
         let edges = self.edges.borrow_mut().take().expect("Missing edges!");
-        println!("Processor has {} edges", edges.len());
+        let nodes_processors = self
+            .nodes_processors
+            .borrow_mut()
+            .take()
+            .expect("Missing nodes processors");
+        let mut histogram = std::collections::BTreeMap::new();
+        for (_, procs) in nodes_processors.iter() {
+            let len = procs.len();
+            histogram
+                .entry(len)
+                .and_modify(|c| *c += len)
+                .or_insert(len);
+        }
+        println!("Distribution of destination sets {:#?}", histogram);
         DistributedEdges {
             edges: Rc::new(edges),
-            //     Rc::try_unwrap(self.edges)
-            //         .unwrap_or_else(|rc| {
-            //             panic!(
-            //                 "more than one pointer to the edges: {}",
-            //                 Rc::strong_count(&rc)
-            //             )
-            //         })
-            //         .into_inner(),
-            // ),
-            distributor: self.distributor,
+            nodes_processors: Rc::new(nodes_processors),
         }
     }
 }
 
 /// A distributed static collection of edges that can be accessed by
 pub struct DistributedEdges {
-    edges: Rc<Vec<(u32, u32, u32)>>,
-    distributor: Distributor,
+    edges: Rc<CompressedEdgesBlockSet>,
+    nodes_processors: Rc<HashMap<u32, Vec<usize>>>,
 }
 
 impl DistributedEdges {
     pub fn clone(obj: &Self) -> Self {
         Self {
             edges: Rc::clone(&obj.edges),
-            distributor: obj.distributor.clone(),
+            nodes_processors: Rc::clone(&obj.nodes_processors),
         }
     }
 
@@ -118,32 +140,27 @@ impl DistributedEdges {
         F: FnMut(u32, u32, u32),
     {
         for (u, v, w) in self.edges.iter() {
-            action(*u, *v, *w);
+            action(u, v, w);
         }
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
-        use timely::dataflow::operators::aggregation::aggregate::Aggregate;
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
-        let edges = Rc::clone(&self.edges);
-        (*edges) // we have to dereference the Rc pointer
-            .clone()
-            .to_stream(scope)
-            .flat_map(|(u, v, _weight)| vec![(u, ()), (v, ())])
-            .aggregate(
-                |_key, _val, _agg| {
-                    // do nothing, it's just for removing duplicates
-                },
-                |key, _agg: ()| key,
-                |key| *key as u64,
-            )
-            .map(|u| (u, S::default()))
+        let nodes_processors = Rc::clone(&self.nodes_processors);
+        let nodes: Vec<u32> = nodes_processors.keys().cloned().collect();
+        nodes.to_stream(scope).map(|u| (u, S::default()))
     }
 
-    fn distributor(&self) -> Distributor {
-        self.distributor
+    fn for_each_processor<F: FnMut(usize)>(&self, node: u32, mut action: F) {
+        for &p in self
+            .nodes_processors
+            .get(&node)
+            .expect("missing procesor for node")
+        {
+            action(p);
+        }
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
@@ -151,24 +168,29 @@ impl DistributedEdges {
         &self,
         nodes: &Stream<G, (u32, S)>,
     ) -> Stream<G, ((u32, S), (u32, S), u32)> {
-        use timely::dataflow::channels::pact::Pipeline;
-        use timely::dataflow::operators::{Exchange, Map, Operator};
+        use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
+        use timely::dataflow::operators::{Map, Operator};
 
-        let distributor = self.distributor();
         let mut stash = HashMap::new();
         let edges = Self::clone(&self);
+        let edges1 = Self::clone(&self);
 
         nodes
-            .flat_map(move |(id, state)| {
-                distributor
-                    .procs_node(id)
-                    .map(move |p| (p, (id, state.clone())))
+            .unary(Pipeline, "send states", move |_, _| {
+                move |input, output| {
+                    input.for_each(|t, data| {
+                        let mut session = output.session(&t);
+                        let data = data.replace(Vec::new());
+                        for (id, state) in data.into_iter() {
+                            edges1
+                                .for_each_processor(id, |p| session.give((p, (id, state.clone()))));
+                        }
+                    })
+                }
             })
-            // Send the messages to the appropriate processors
-            .exchange(|pair| pair.0 as u64)
             // Propagate to the destination
             .unary_notify(
-                Pipeline,
+                ExchangePact::new(|pair: &(usize, (u32, S))| pair.0 as u64),
                 "create_triplets",
                 None,
                 move |input, output, notificator| {
@@ -214,26 +236,34 @@ impl DistributedEdges {
         Fun: Fn(&S) -> S + 'static,
     {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
-        use timely::dataflow::operators::{Exchange, Filter, Map, Operator};
+        use timely::dataflow::operators::*;
 
-        let distributor = self.distributor();
         let mut stash = HashMap::new();
         let mut node_stash = HashMap::new();
         let mut msg_stash = HashMap::new();
         let edges = Self::clone(&self);
+        let edges1 = Self::clone(&self);
 
         nodes
-            .filter(move |(id, state)| should_send(*id, state))
-            .flat_map(move |(id, state)| {
-                distributor
-                    .procs_node(id)
-                    .map(move |p| (p, (id, state.clone())))
+            // Send states if needed
+            .unary(Pipeline, "send states", move |_, _| {
+                move |input, output| {
+                    input.for_each(|t, data| {
+                        let mut session = output.session(&t);
+                        let data = data.replace(Vec::new());
+                        for (id, state) in data.into_iter() {
+                            if should_send(id, &state) {
+                                edges1.for_each_processor(id, |p| {
+                                    session.give((p, (id, state.clone())))
+                                });
+                            }
+                        }
+                    })
+                }
             })
-            // Send the messages to the appropriate processors
-            .exchange(|pair| pair.0 as u64)
             // Propagate to the destination
             .unary_notify(
-                Pipeline,
+                ExchangePact::new(|pair: &(usize, (u32, S))| pair.0 as u64),
                 "msg_propagate",
                 None,
                 move |input, output, notificator| {

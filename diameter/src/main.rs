@@ -33,7 +33,7 @@ use std::process::Command;
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
 use timely::dataflow::operators::probe::Handle;
 
-use timely::dataflow::operators::Input as TimelyInput;
+
 use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Probe;
 use timely::worker::Worker;
@@ -100,7 +100,7 @@ impl TryFrom<&str> for Algorithm {
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
         let re_rand_cluster = Regex::new(r"rand-cluster\((\d+)\)").unwrap();
         let re_bfs = Regex::new(r"bfs").unwrap();
-        if let Some(captures) = re_sequential.captures(value) {
+        if let Some(_captures) = re_sequential.captures(value) {
             return Ok(Self::Sequential);
         }
         if let Some(captures) = re_delta_stepping.captures(value) {

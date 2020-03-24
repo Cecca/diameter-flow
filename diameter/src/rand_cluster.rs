@@ -142,7 +142,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         }
                     } else {
                         // println!("[{:?}] probability = 1", t.time());
-                        cnt = nodes.len();
+                        // cnt = nodes.len();
                         out.give_iterator(
                             nodes
                                 .into_iter()
