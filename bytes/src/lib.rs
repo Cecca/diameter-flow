@@ -23,30 +23,6 @@ impl CompressedEdgesBlockSet {
         Ok(Self { blocks })
     }
 
-    pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
-        let mut paths = Vec::new();
-
-        let rex = regex::Regex::new(r"\d+").expect("error building regex");
-        for entry in std::fs::read_dir(path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if let Some(digits) = rex.find(
-                path.file_name()
-                    .expect("unable to get file name")
-                    .to_str()
-                    .expect("unable to convert to string"),
-            ) {
-                let chunk_start: u64 = digits.as_str().parse().expect("problem parsing");
-                if filter(chunk_start) {
-                    unimplemented!("read the weights, if present");
-                    paths.push((path, None));
-                }
-            }
-        }
-
-        Self::from_files(paths)
-    }
-
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
         self.blocks.iter().flat_map(|b| b.iter())
     }
