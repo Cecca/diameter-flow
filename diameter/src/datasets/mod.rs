@@ -130,11 +130,10 @@ impl Dataset {
     pub fn prepare(&self) {
         match self {
             Self::Dimacs(url) => {
-                println!("Preparing Dimacs dataset");
                 // TODO: Write also the weights!!
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
-                    println!("Remapping the file {:?}", edges_dir);
+                    println!("Compressing into {:?}", edges_dir);
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(url, self.dataset_directory());
@@ -150,13 +149,21 @@ impl Dataset {
                 }
             }
             Self::Snap(url) => {
-                let remapped_path = remapped_dataset_file_path(url, self.dataset_directory());
-                if !remapped_path.exists() {
-                    println!("Remapping the file");
-                    text_edge_file_remap(
-                        &maybe_download_file(url, self.dataset_directory()),
-                        &remapped_path,
-                    );
+                let edges_dir = self.edges_directory();
+                if !edges_dir.is_dir() {
+                    println!("Compressing into {:?}", edges_dir);
+                    std::fs::create_dir_all(&edges_dir);
+                    let mut remapper = Remapper::default();
+                    let raw = maybe_download_file(url, self.dataset_directory());
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    read_text_edge_file_unweighted(&raw, |(u, v)| {
+                        let mut src = remapper.remap(u);
+                        let mut dst = remapper.remap(v);
+                        if src > dst {
+                            std::mem::swap(&mut src, &mut dst);
+                        }
+                        compressor.write((src, dst));
+                    });
                 }
             }
             Self::WebGraph(name) => {
