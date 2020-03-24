@@ -311,7 +311,6 @@ impl Dataset {
         println!("loading input");
         self.binary_edge_files().for_each(|(id, path)| {
             if id % worker.peers() == worker.index() {
-                println!("Sending {:?} to worker {}", path, id);
                 input.send(
                     path.to_str()
                         .expect("couldn't convert path to string")
