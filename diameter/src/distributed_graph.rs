@@ -13,7 +13,9 @@ pub struct DistributedEdgesBuilder {
 }
 
 impl DistributedEdgesBuilder {
-    pub fn new<G: Scope>(stream: &Stream<G, String>) -> (Self, ProbeHandle<G::Timestamp>) {
+    pub fn new<G: Scope>(
+        stream: &Stream<G, (String, Option<String>)>,
+    ) -> (Self, ProbeHandle<G::Timestamp>) {
         use std::collections::HashSet;
         use std::path::PathBuf;
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
@@ -42,7 +44,12 @@ impl DistributedEdgesBuilder {
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
-                        let paths = paths_stash.iter().map(|p| PathBuf::from(p));
+                        let paths = paths_stash.iter().map(|(edges_path, weights_path)| {
+                            (
+                                PathBuf::from(edges_path),
+                                weights_path.as_ref().map(|s| PathBuf::from(s)),
+                            )
+                        });
                         edges_ref.borrow_mut().replace(
                             CompressedEdgesBlockSet::from_files(paths)
                                 .expect("problem loading blocks"),

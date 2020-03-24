@@ -206,44 +206,45 @@ impl Dataset {
     where
         F: FnMut(u32, u32, u32),
     {
-        match self {
-            Self::Dimacs(url) => {
-                self.prepare();
-                read_text_edge_file_weighted(
-                    &remapped_dataset_file_path(url, self.dataset_directory()),
-                    |(src, dst, w)| {
-                        action(src, dst, w);
-                    },
-                );
-            }
-            Self::Snap(url) => {
-                self.prepare();
-                read_text_edge_file_unweighted(
-                    &remapped_dataset_file_path(url, self.dataset_directory()),
-                    |(src, dst)| {
-                        action(src, dst, 1);
-                    },
-                );
-            }
-            Self::WebGraph(name) => {
-                self.prepare();
-                let mut edges_path = self.dataset_directory();
-                edges_path.push("edges");
-                let edges = CompressedEdgesBlockSet::from_dir(edges_path, |_| true)
-                    .expect("error loading compressed edges");
-                let timer = std::time::Instant::now();
-                let mut cnt = 0;
-                for (u, v, w) in edges.iter() {
-                    cnt += 1;
-                    action(u, v, w);
-                }
-                println!(
-                    "Iterating over the {} z-order compressed edges took {:?}",
-                    cnt,
-                    timer.elapsed()
-                );
-            }
-        };
+        unimplemented!();
+        // match self {
+        //     Self::Dimacs(url) => {
+        //         self.prepare();
+        //         read_text_edge_file_weighted(
+        //             &remapped_dataset_file_path(url, self.dataset_directory()),
+        //             |(src, dst, w)| {
+        //                 action(src, dst, w);
+        //             },
+        //         );
+        //     }
+        //     Self::Snap(url) => {
+        //         self.prepare();
+        //         read_text_edge_file_unweighted(
+        //             &remapped_dataset_file_path(url, self.dataset_directory()),
+        //             |(src, dst)| {
+        //                 action(src, dst, 1);
+        //             },
+        //         );
+        //     }
+        //     Self::WebGraph(name) => {
+        //         self.prepare();
+        //         let mut edges_path = self.dataset_directory();
+        //         edges_path.push("edges");
+        //         let edges = CompressedEdgesBlockSet::from_dir(edges_path, |_| true)
+        //             .expect("error loading compressed edges");
+        //         let timer = std::time::Instant::now();
+        //         let mut cnt = 0;
+        //         for (u, v, w) in edges.iter() {
+        //             cnt += 1;
+        //             action(u, v, w);
+        //         }
+        //         println!(
+        //             "Iterating over the {} z-order compressed edges took {:?}",
+        //             cnt,
+        //             timer.elapsed()
+        //         );
+        //     }
+        // };
     }
 
     fn edges_directory(&self) -> PathBuf {
@@ -278,27 +279,64 @@ impl Dataset {
         path
     }
 
-    fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
+    fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf, Option<PathBuf>)> {
         let rex = regex::Regex::new(r"part-(\d+)").expect("error building regex");
-        let mut edges_directory = self.edges_directory();
-        std::fs::read_dir(edges_directory)
-            .expect("problem reading directory")
-            .flat_map(move |entry| {
-                // let entry = entry?;
-                let path = entry.expect("problem getting entry").path();
-                if let Some(captures) = rex.captures(
-                    path.file_name()
-                        .expect("unable to get file name")
-                        .to_str()
-                        .expect("unable to convert to string"),
-                ) {
-                    let digits = captures.get(1).unwrap();
-                    let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
-                    Some((chunk_id, path))
-                } else {
-                    None
-                }
-            })
+        let rex_weights = regex::Regex::new(r"weights-(\d+)").expect("error building regex");
+        let edges_directory = self.edges_directory().clone();
+        let mut edges_files = HashMap::new();
+        let mut weights_files = HashMap::new();
+        for entry in std::fs::read_dir(edges_directory).expect("problem reading files") {
+            let path = entry.expect("problem getting entry").path();
+            let str_name = path
+                .file_name()
+                .expect("unable to get file name")
+                .to_str()
+                .expect("unable to convert to string");
+            if let Some(captures) = rex.captures(str_name) {
+                let digits = captures.get(1).unwrap();
+                let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
+                edges_files.insert(chunk_id, path);
+            } else if let Some(captures) = rex_weights.captures(str_name) {
+                let digits = captures.get(1).unwrap();
+                let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
+                weights_files.insert(chunk_id, path);
+            }
+        }
+
+        edges_files.into_iter().map(move |(id, edge_path)| {
+            if weights_files.len() == 0 {
+                (id, edge_path, None)
+            } else {
+                (
+                    id,
+                    edge_path,
+                    Some(
+                        weights_files
+                            .remove(&id)
+                            .expect("missing weights for chunk"),
+                    ),
+                )
+            }
+        })
+
+        // std::fs::read_dir(edges_directory)
+        //     .expect("problem reading directory")
+        //     .flat_map(move |entry| {
+        //         // let entry = entry?;
+        //         let path = entry.expect("problem getting entry").path();
+        //         if let Some(captures) = rex.captures(
+        //             path.file_name()
+        //                 .expect("unable to get file name")
+        //                 .to_str()
+        //                 .expect("unable to convert to string"),
+        //         ) {
+        //             let digits = captures.get(1).unwrap();
+        //             let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
+        //             Some((chunk_id, path))
+        //         } else {
+        //             None
+        //         }
+        //     })
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
@@ -319,15 +357,21 @@ impl Dataset {
         });
 
         println!("loading input");
-        self.binary_edge_files().for_each(|(id, path)| {
-            if id % worker.peers() == worker.index() {
-                input.send(
-                    path.to_str()
-                        .expect("couldn't convert path to string")
-                        .to_owned(),
-                );
-            }
-        });
+        self.binary_edge_files()
+            .for_each(|(id, path, weights_path)| {
+                if id % worker.peers() == worker.index() {
+                    input.send((
+                        path.to_str()
+                            .expect("couldn't convert path to string")
+                            .to_owned(),
+                        weights_path.map(|p| {
+                            p.to_str()
+                                .expect("couldn't convert path to string")
+                                .to_owned()
+                        }),
+                    ));
+                }
+            });
         input.close();
         worker.step_while(|| !probe.done());
         println!("loaded input {:?}", worker.timer().elapsed());

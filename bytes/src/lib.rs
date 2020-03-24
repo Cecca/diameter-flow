@@ -2,59 +2,28 @@ mod morton;
 mod stream;
 
 use bitstream_io::*;
+use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
-    // block_length: u64,
-    // num_node_groups: u64,
 }
 
 impl CompressedEdgesBlockSet {
-    pub fn from_files<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> IOResult<Self> {
+    pub fn from_files<P, I>(paths: I) -> IOResult<Self>
+    where
+        P: AsRef<Path> + Debug,
+        I: IntoIterator<Item = (P, Option<P>)>,
+    {
         let mut blocks = Vec::new();
-        for path in paths.into_iter() {
-            blocks.push(CompressedEdges::from_file(path)?);
+        for (path, weights_path) in paths.into_iter() {
+            blocks.push(CompressedEdges::from_file(path, weights_path)?);
         }
         Ok(Self { blocks })
     }
 
     pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
-        // let mut metadata_path = path.as_ref().to_path_buf();
-        // metadata_path.push("metadata.properties");
-        // let metadata = BufReader::new(File::open(metadata_path)?);
-        // let mut block_length = None;
-        // let mut num_node_groups = None;
-        // let rex_block_length =
-        //     regex::Regex::new(r"blockLength=(\d+)").expect("problem building regex");
-        // let rex_node_groups =
-        //     regex::Regex::new(r"numNodeGroups=(\d+)").expect("problem building regex");
-        // for line in metadata.lines() {
-        //     let line = line.expect("problem reading line");
-        //     if let Some(caps) = rex_block_length.captures(&line) {
-        //         block_length.replace(
-        //             caps.get(1)
-        //                 .unwrap()
-        //                 .as_str()
-        //                 .parse::<u64>()
-        //                 .expect("problem parsing"),
-        //         );
-        //     }
-        //     if let Some(caps) = rex_node_groups.captures(&line) {
-        //         num_node_groups.replace(
-        //             caps.get(1)
-        //                 .unwrap()
-        //                 .as_str()
-        //                 .parse::<u64>()
-        //                 .expect("problem parsing"),
-        //         );
-        //     }
-        // }
-        // let block_length = block_length.expect("missing chunkLength in metadata");
-        // let num_node_groups = num_node_groups.expect("missing numNodeGroups in metadata");
-
-        // let mut blocks = Vec::new();
         let mut paths = Vec::new();
 
         let rex = regex::Regex::new(r"\d+").expect("error building regex");
@@ -69,8 +38,8 @@ impl CompressedEdgesBlockSet {
             ) {
                 let chunk_start: u64 = digits.as_str().parse().expect("problem parsing");
                 if filter(chunk_start) {
-                    // blocks.push(CompressedEdges::from_file(path)?);
-                    paths.push(path);
+                    unimplemented!("read the weights, if present");
+                    paths.push((path, None));
                 }
             }
         }
@@ -79,38 +48,64 @@ impl CompressedEdgesBlockSet {
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
-        self.blocks
-            .iter()
-            .flat_map(|b| b.iter().map(|(u, v)| (u, v, 1)))
+        self.blocks.iter().flat_map(|b| b.iter())
     }
 }
 
 pub struct CompressedEdges {
     raw: Vec<u8>,
+    weights: Option<Vec<u32>>,
 }
 
 impl CompressedEdges {
     /// Loads the contents of the file in memory, for doing multiple iterations faster
-    pub fn from_file<P: AsRef<Path>>(path: P) -> IOResult<Self> {
+    pub fn from_file<P: AsRef<Path> + Debug>(path: P, weights_path: Option<P>) -> IOResult<Self> {
         use std::fs::File;
         use std::io::BufReader;
+        use std::io::Error;
+        use std::io::ErrorKind::UnexpectedEof;
         let mut reader = BufReader::new(File::open(path)?);
         let mut raw = Vec::new();
         reader.read_to_end(&mut raw)?;
-        Ok(Self { raw })
+        let weights = weights_path.map(|path| {
+            println!("reading weights from {:?}", path);
+            let mut weights = Vec::new();
+            let mut reader = BitReader::<_, BE>::new(BufReader::new(
+                File::open(path).expect("failed to open the weights file"),
+            ));
+            loop {
+                match reader.read(32) {
+                    Ok(w) => weights.push(w),
+                    Err(e) => match e.kind() {
+                        UnexpectedEof => break,
+                        _ => panic!("{:?}", e),
+                    },
+                }
+            }
+
+            weights
+        });
+        Ok(Self { raw, weights })
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32)> + 'a {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
         use std::io::Cursor;
         let cursor = Cursor::new(&self.raw);
         let mut reader = stream::DifferenceStreamReader::new(cursor);
+        let mut weights = self.weights.as_ref().map(|vec| vec.iter());
 
         std::iter::from_fn(move || {
             let z = reader.read().expect("problem reading form the stream");
             if z == 0 {
                 None
             } else {
-                Some(morton::zorder_to_pair(z))
+                let (u, v) = morton::zorder_to_pair(z);
+                let w = if let Some(iter) = weights.as_mut() {
+                    *iter.next().expect("weights exhausted too soon!")
+                } else {
+                    1
+                };
+                Some((u, v, w))
             }
         })
     }
