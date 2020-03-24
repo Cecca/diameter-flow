@@ -88,26 +88,35 @@ impl CompressedEdges {
         Ok(Self { raw, weights })
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
+    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (u32, u32, u32)> + 'a> {
         use std::io::Cursor;
         let cursor = Cursor::new(&self.raw);
         let mut reader = stream::DifferenceStreamReader::new(cursor);
         let mut weights = self.weights.as_ref().map(|vec| vec.iter());
 
-        std::iter::from_fn(move || {
-            let z = reader.read().expect("problem reading form the stream");
-            if z == 0 {
-                None
-            } else {
-                let (u, v) = morton::zorder_to_pair(z);
-                let w = if let Some(iter) = weights.as_mut() {
-                    *iter.next().expect("weights exhausted too soon!")
+        if let Some(weights) = self.weights.as_ref() {
+            let mut weights = weights.iter();
+            Box::new(std::iter::from_fn(move || {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    None
                 } else {
-                    1
-                };
-                Some((u, v, w))
-            }
-        })
+                    let (u, v) = morton::zorder_to_pair(z);
+                    let w = *weights.next().expect("weights exhausted too soon!");
+                    Some((u, v, w))
+                }
+            }))
+        } else {
+            Box::new(std::iter::from_fn(move || {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    None
+                } else {
+                    let (u, v) = morton::zorder_to_pair(z);
+                    Some((u, v, 1))
+                }
+            }))
+        }
     }
 }
 
