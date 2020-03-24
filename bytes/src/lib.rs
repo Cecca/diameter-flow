@@ -24,38 +24,38 @@ impl CompressedEdgesBlockSet {
     pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
-        let mut metadata_path = path.as_ref().to_path_buf();
-        metadata_path.push("metadata.properties");
-        let metadata = BufReader::new(File::open(metadata_path)?);
-        let mut block_length = None;
-        let mut num_node_groups = None;
-        let rex_block_length =
-            regex::Regex::new(r"blockLength=(\d+)").expect("problem building regex");
-        let rex_node_groups =
-            regex::Regex::new(r"numNodeGroups=(\d+)").expect("problem building regex");
-        for line in metadata.lines() {
-            let line = line.expect("problem reading line");
-            if let Some(caps) = rex_block_length.captures(&line) {
-                block_length.replace(
-                    caps.get(1)
-                        .unwrap()
-                        .as_str()
-                        .parse::<u64>()
-                        .expect("problem parsing"),
-                );
-            }
-            if let Some(caps) = rex_node_groups.captures(&line) {
-                num_node_groups.replace(
-                    caps.get(1)
-                        .unwrap()
-                        .as_str()
-                        .parse::<u64>()
-                        .expect("problem parsing"),
-                );
-            }
-        }
-        let block_length = block_length.expect("missing chunkLength in metadata");
-        let num_node_groups = num_node_groups.expect("missing numNodeGroups in metadata");
+        // let mut metadata_path = path.as_ref().to_path_buf();
+        // metadata_path.push("metadata.properties");
+        // let metadata = BufReader::new(File::open(metadata_path)?);
+        // let mut block_length = None;
+        // let mut num_node_groups = None;
+        // let rex_block_length =
+        //     regex::Regex::new(r"blockLength=(\d+)").expect("problem building regex");
+        // let rex_node_groups =
+        //     regex::Regex::new(r"numNodeGroups=(\d+)").expect("problem building regex");
+        // for line in metadata.lines() {
+        //     let line = line.expect("problem reading line");
+        //     if let Some(caps) = rex_block_length.captures(&line) {
+        //         block_length.replace(
+        //             caps.get(1)
+        //                 .unwrap()
+        //                 .as_str()
+        //                 .parse::<u64>()
+        //                 .expect("problem parsing"),
+        //         );
+        //     }
+        //     if let Some(caps) = rex_node_groups.captures(&line) {
+        //         num_node_groups.replace(
+        //             caps.get(1)
+        //                 .unwrap()
+        //                 .as_str()
+        //                 .parse::<u64>()
+        //                 .expect("problem parsing"),
+        //         );
+        //     }
+        // }
+        // let block_length = block_length.expect("missing chunkLength in metadata");
+        // let num_node_groups = num_node_groups.expect("missing numNodeGroups in metadata");
 
         // let mut blocks = Vec::new();
         let mut paths = Vec::new();

@@ -40,11 +40,13 @@ public class BVGraphToEdges {
         ImmutableGraph graph = BVGraph.loadOffline(inputPath);
         long totEdges = graph.numArcs();
 
-        long numNodeGroups = 16;
-        long nodeGroupLen = nextPower(graph.numNodes()) / numNodeGroups;
-        System.out.println("Partitioning nodes in " + numNodeGroups + " groups of " + nodeGroupLen + " nodes each");
-        long chunkMaxLen = nodeGroupLen * nodeGroupLen; // take the square of it
-        System.out.println("The maximum chunk length is " + chunkMaxLen);
+        // long numNodeGroups = 16;
+        // long nodeGroupLen = nextPower(graph.numNodes()) / numNodeGroups;
+        // System.out.println("Partitioning nodes in " + numNodeGroups + " groups of " +
+        // nodeGroupLen + " nodes each");
+        // long chunkMaxLen = nodeGroupLen * nodeGroupLen; // take the square of it
+        // System.out.println("The maximum chunk length is " + chunkMaxLen);
+        long chunkLen = 100000;
 
         if (scratch.isDirectory()) {
             deleteDirectory(scratch);
@@ -97,15 +99,16 @@ public class BVGraphToEdges {
 
         System.out.println("Split the file in chunks, and check that there are no duplicates");
         start = System.currentTimeMillis();
-        splitFiles(mergedFile, new File(outputPath), chunkMaxLen, (int) nodeGroupLen);
+        splitFiles(mergedFile, new File(outputPath), chunkLen);
         System.out.println("file split " + (System.currentTimeMillis() - start) / 1000.0 + "s");
 
-        try (FileOutputStream fos = new FileOutputStream(new File(outputPath, "metadata.properties"))) {
-            Properties metadata = new Properties();
-            metadata.setProperty("chunkLength", Long.toString(chunkMaxLen));
-            metadata.setProperty("numNodeGroups", Long.toString(numNodeGroups));
-            metadata.store(fos, "");
-        }
+        // try (FileOutputStream fos = new FileOutputStream(new File(outputPath,
+        // "metadata.properties"))) {
+        // Properties metadata = new Properties();
+        // metadata.setProperty("chunkLength", Long.toString(chunkMaxLen));
+        // metadata.setProperty("numNodeGroups", Long.toString(numNodeGroups));
+        // metadata.store(fos, "");
+        // }
 
         deleteDirectory(scratch);
     }
@@ -121,12 +124,11 @@ public class BVGraphToEdges {
         return x;
     }
 
-    static void splitFiles(File mergedFile, File outputDir, long chunkMaxLen, int nodeGroupLen) throws IOException {
+    static void splitFiles(File mergedFile, File outputDir, long chunkLen) throws IOException {
         InputDifferenceStream input = new InputDifferenceStream(mergedFile);
         outputDir.mkdir();
         long writtenEdges = 0;
         long currentChunk = 0;
-        long lastChunkEdges = 0;
 
         OutputDifferenceStream output = new OutputDifferenceStream(
                 new File(outputDir, "part-" + currentChunk + ".bin"));
@@ -135,23 +137,14 @@ public class BVGraphToEdges {
             while (true) {
                 long z = input.read();
 
-                int[] baseXY = zorderToPair(z);
-                int baseX = (int) Math.floor(baseXY[0] / (double) nodeGroupLen);
-                int baseY = (int) Math.floor(baseXY[1] / (double) nodeGroupLen);
-                long thisChunk = zorder(baseX, baseY);
-                assert thisChunk >= currentChunk : "going backward from " + currentChunk + " to " + thisChunk + " ("
-                        + Arrays.toString(zorderToPair(currentChunk)) + " to "
-                        + Arrays.toString(zorderToPair(thisChunk)) + ")" + " " + Arrays.toString(baseXY);
-                if (thisChunk > currentChunk) {
-                    currentChunk = thisChunk;
+                if (writtenEdges % chunkLen == 0) {
+                    currentChunk++;
                     output.close();
-                    lastChunkEdges = 0;
                     output = new OutputDifferenceStream(new File(outputDir, "part-" + currentChunk + ".bin"));
                 }
 
                 output.write(z);
                 writtenEdges++;
-                lastChunkEdges++;
             }
         } catch (EOFException e) {
             // done

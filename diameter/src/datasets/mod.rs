@@ -266,8 +266,7 @@ impl Dataset {
         path
     }
 
-    pub fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
-        self.prepare();
+    fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
         let rex = regex::Regex::new(r"\d+").expect("error building regex");
         let mut edges_directory = self.dataset_directory();
         edges_directory.push("edges");
@@ -295,6 +294,11 @@ impl Dataset {
         use timely::dataflow::operators::probe::Handle as ProbeHandle;
         use timely::dataflow::operators::Input as TimelyInput;
         use timely::dataflow::operators::Probe;
+
+        if worker.index() == 0 {
+            // TODO: Find a way of distributing work on the cluster
+            self.prepare();
+        }
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
