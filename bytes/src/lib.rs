@@ -1,10 +1,10 @@
 mod morton;
 mod stream;
 
-use std::cell::RefCell;
+
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+
 
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
@@ -22,8 +22,8 @@ impl CompressedEdgesBlockSet {
     }
 
     pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
-        use std::fs::File;
-        use std::io::{BufRead, BufReader};
+        
+        
         // let mut metadata_path = path.as_ref().to_path_buf();
         // metadata_path.push("metadata.properties");
         // let metadata = BufReader::new(File::open(metadata_path)?);

@@ -28,7 +28,7 @@ impl<W: Write> DifferenceStreamWriter<W> {
         self.inner.write(diff)
     }
 
-    pub fn close(mut self) -> IOResult<()> {
+    pub fn close(self) -> IOResult<()> {
         // println!("{:#?}", self.histogram);
         self.inner.close()
     }

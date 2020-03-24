@@ -1,5 +1,5 @@
 use crate::distributed_graph::*;
-use crate::sequential::*;
+
 use bytes::*;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
@@ -129,8 +129,8 @@ impl Dataset {
 
     pub fn prepare(&self) {
         match self {
-            Self::Dimacs(url) => unimplemented!(),
-            Self::Snap(url) => unimplemented!(),
+            Self::Dimacs(_url) => unimplemented!(),
+            Self::Snap(_url) => unimplemented!(),
             Self::WebGraph(name) => {
                 let dir = self.dataset_directory();
                 println!("Destination directory is {:?}", dir);
@@ -291,9 +291,9 @@ impl Dataset {
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
     pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
-        use timely::dataflow::operators::probe::Handle as ProbeHandle;
+        
         use timely::dataflow::operators::Input as TimelyInput;
-        use timely::dataflow::operators::Probe;
+        
 
         if worker.index() == 0 {
             // TODO: Find a way of distributing work on the cluster

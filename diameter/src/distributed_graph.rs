@@ -190,7 +190,7 @@ impl DistributedEdges {
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
-        use timely::dataflow::operators::aggregation::aggregate::Aggregate;
+        
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
@@ -219,9 +219,9 @@ impl DistributedEdges {
         nodes: &Stream<G, (u32, S)>,
     ) -> Stream<G, ((u32, S), (u32, S), u32)> {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
-        use timely::dataflow::operators::{Exchange, Map, Operator};
+        use timely::dataflow::operators::{Map, Operator};
 
-        let distributor = self.distributor();
+        let _distributor = self.distributor();
         let mut stash = HashMap::new();
         let edges = Self::clone(&self);
         let edges1 = Self::clone(&self);
@@ -287,9 +287,9 @@ impl DistributedEdges {
         Fun: Fn(&S) -> S + 'static,
     {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
-        use timely::dataflow::operators::{Exchange, Filter, Map, Operator};
+        use timely::dataflow::operators::{Map, Operator};
 
-        let distributor = self.distributor();
+        let _distributor = self.distributor();
         let mut stash = HashMap::new();
         let mut node_stash = HashMap::new();
         let mut msg_stash = HashMap::new();

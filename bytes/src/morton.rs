@@ -26,7 +26,7 @@ pub fn zorder_to_pair(mut z: u64) -> (u32, u32) {
     let x_mask = 1_u64 << 63;
     let y_mask = 1_u64 << 62;
 
-    for i in 0..32 {
+    for _i in 0..32 {
         if z & x_mask == 0 {
             x = x << 1;
         } else {
