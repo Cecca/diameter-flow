@@ -9,6 +9,7 @@ use std::rc::Rc;
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
     block_length: u64,
+    num_node_groups: u64,
 }
 
 impl CompressedEdgesBlockSet {
@@ -19,21 +20,34 @@ impl CompressedEdgesBlockSet {
         metadata_path.push("metadata.properties");
         let metadata = BufReader::new(File::open(metadata_path)?);
         let mut block_length = None;
+        let mut num_node_groups = None;
+        let rex_block_length =
+            regex::Regex::new(r"blockLength=(\d+)").expect("problem building regex");
+        let rex_node_groups =
+            regex::Regex::new(r"numNodeGroups=(\d+)").expect("problem building regex");
         for line in metadata.lines() {
             let line = line.expect("problem reading line");
-            if line.starts_with("chunkLength") {
-                let mut tokens = line.split("=");
-                tokens.next().expect("problem splitting");
+            if let Some(caps) = rex_block_length.captures(&line) {
                 block_length.replace(
-                    tokens
-                        .next()
-                        .expect("problem splitting")
+                    caps.get(1)
+                        .unwrap()
+                        .as_str()
+                        .parse::<u64>()
+                        .expect("problem parsing"),
+                );
+            }
+            if let Some(caps) = rex_node_groups.captures(&line) {
+                num_node_groups.replace(
+                    caps.get(1)
+                        .unwrap()
+                        .as_str()
                         .parse::<u64>()
                         .expect("problem parsing"),
                 );
             }
         }
         let block_length = block_length.expect("missing chunkLength in metadata");
+        let num_node_groups = num_node_groups.expect("missing numNodeGroups in metadata");
 
         let mut blocks = Vec::new();
 
@@ -57,6 +71,7 @@ impl CompressedEdgesBlockSet {
         Ok(Self {
             blocks,
             block_length,
+            num_node_groups,
         })
     }
 

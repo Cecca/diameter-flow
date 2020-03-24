@@ -103,6 +103,7 @@ public class BVGraphToEdges {
         try (FileOutputStream fos = new FileOutputStream(new File(outputPath, "metadata.properties"))) {
             Properties metadata = new Properties();
             metadata.setProperty("chunkLength", Long.toString(chunkMaxLen));
+            metadata.setProperty("numNodeGroups", Long.toString(numNodeGroups));
             metadata.store(fos, "");
         }
 
