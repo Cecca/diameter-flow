@@ -127,6 +127,47 @@ impl Dataset {
         }
     }
 
+    pub fn prepare(&self) {
+        match self {
+            Self::Dimacs(url) => unimplemented!(),
+            Self::Snap(url) => unimplemented!(),
+            Self::WebGraph(name) => {
+                let dir = self.dataset_directory();
+                println!("Destination directory is {:?}", dir);
+                let graph_url = format!(
+                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
+                    name, name
+                );
+                let properties_url = format!(
+                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.properties",
+                    name, name
+                );
+                let graph_fname = format!("{}-hc.graph", name);
+                let properties_fname = format!("{}-hc.properties", name);
+
+                let mut graph_path = dir.clone();
+                let mut properties_path = dir.clone();
+                graph_path.push(graph_fname);
+                properties_path.push(properties_fname);
+                let mut tool_graph_path = dir.clone();
+                tool_graph_path.push(format!("{}-hc", name));
+
+                // Download the files
+                bvconvert::maybe_download_file(&graph_url, graph_path);
+                bvconvert::maybe_download_file(&properties_url, properties_path);
+
+                // Convert the file
+                let mut compressed_path = dir.clone();
+                compressed_path.push("edges");
+                if !compressed_path.is_dir() {
+                    let timer = std::time::Instant::now();
+                    bvconvert::convert(&tool_graph_path, &compressed_path);
+                    println!("Compression took {:?}", timer.elapsed());
+                }
+            }
+        }
+    }
+
     pub fn for_each<F>(&self, mut action: F)
     where
         F: FnMut(u32, u32, u32),
@@ -198,6 +239,57 @@ impl Dataset {
         };
     }
 
+    // TODO: Use this also in the preprocessing
+    pub fn dataset_directory(&self) -> PathBuf {
+        use std::fmt::Write;
+
+        let to_hash = match self {
+            Self::Dimacs(url) => url.clone(),
+            Self::Snap(url) => url.clone(),
+            Self::WebGraph(name) => {
+                let graph_url = format!(
+                    "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
+                    name, name
+                );
+                graph_url
+            }
+        };
+
+        let mut hasher = Sha256::new();
+        hasher.input(to_hash);
+        let result = hasher.result();
+        let mut hash_string = String::new();
+        write!(hash_string, "{:X}", result).expect("problem writing hash string");
+        let mut path = global_dataset_directory();
+        path.push(hash_string);
+        fs::create_dir_all(&path).expect("problem creating directory");
+        path
+    }
+
+    pub fn binary_edge_files(&self) -> impl Iterator<Item = (usize, PathBuf)> {
+        self.prepare();
+        let rex = regex::Regex::new(r"\d+").expect("error building regex");
+        let mut edges_directory = self.dataset_directory();
+        edges_directory.push("edges");
+        std::fs::read_dir(edges_directory)
+            .expect("problem reading directory")
+            .flat_map(move |entry| {
+                // let entry = entry?;
+                let path = entry.expect("problem getting entry").path();
+                if let Some(digits) = rex.find(
+                    path.file_name()
+                        .expect("unable to get file name")
+                        .to_str()
+                        .expect("unable to convert to string"),
+                ) {
+                    let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
+                    Some((chunk_id, path))
+                } else {
+                    None
+                }
+            })
+    }
+
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
     pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
         use timely::dataflow::operators::probe::Handle as ProbeHandle;
@@ -206,24 +298,23 @@ impl Dataset {
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
-            let mut probe = ProbeHandle::new();
 
-            let builder = DistributedEdgesBuilder::new(&stream.probe_with(&mut probe));
+            let (builder, probe) = DistributedEdgesBuilder::new(&stream);
 
             (input, probe, builder)
         });
 
         println!("loading input");
-        if worker.index() == 0 {
-            self.for_each(|u, v, w| {
-                // Skip self loops
-                if u > v {
-                    input.send((v, u, w));
-                } else if u < v {
-                    input.send((u, v, w));
-                }
-            });
-        }
+        self.binary_edge_files().for_each(|(id, path)| {
+            if id % worker.peers() == worker.index() {
+                println!("Sending {:?} to worker {}", path, id);
+                input.send(
+                    path.to_str()
+                        .expect("couldn't convert path to string")
+                        .to_owned(),
+                );
+            }
+        });
         input.close();
         worker.step_while(|| !probe.done());
         println!("loaded input {:?}", worker.timer().elapsed());

@@ -8,11 +8,19 @@ use std::rc::Rc;
 
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
-    block_length: u64,
-    num_node_groups: u64,
+    // block_length: u64,
+    // num_node_groups: u64,
 }
 
 impl CompressedEdgesBlockSet {
+    pub fn from_files<P: AsRef<Path>, I: IntoIterator<Item = P>>(paths: I) -> IOResult<Self> {
+        let mut blocks = Vec::new();
+        for path in paths.into_iter() {
+            blocks.push(CompressedEdges::from_file(path)?);
+        }
+        Ok(Self { blocks })
+    }
+
     pub fn from_dir<P: AsRef<Path>, F: Fn(u64) -> bool>(path: P, filter: F) -> IOResult<Self> {
         use std::fs::File;
         use std::io::{BufRead, BufReader};
@@ -49,7 +57,8 @@ impl CompressedEdgesBlockSet {
         let block_length = block_length.expect("missing chunkLength in metadata");
         let num_node_groups = num_node_groups.expect("missing numNodeGroups in metadata");
 
-        let mut blocks = Vec::new();
+        // let mut blocks = Vec::new();
+        let mut paths = Vec::new();
 
         let rex = regex::Regex::new(r"\d+").expect("error building regex");
         for entry in std::fs::read_dir(path)? {
@@ -63,16 +72,13 @@ impl CompressedEdgesBlockSet {
             ) {
                 let chunk_start: u64 = digits.as_str().parse().expect("problem parsing");
                 if filter(chunk_start) {
-                    blocks.push(CompressedEdges::from_file(path)?);
+                    // blocks.push(CompressedEdges::from_file(path)?);
+                    paths.push(path);
                 }
             }
         }
 
-        Ok(Self {
-            blocks,
-            block_length,
-            num_node_groups,
-        })
+        Self::from_files(paths)
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {

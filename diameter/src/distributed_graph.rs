@@ -1,6 +1,8 @@
+use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use timely::dataflow::operators::probe::Handle as ProbeHandle;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 
@@ -48,52 +50,114 @@ impl Distributor {
 }
 
 pub struct DistributedEdgesBuilder {
-    edges: Rc<RefCell<Option<Vec<(u32, u32, u32)>>>>,
+    edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
+    nodes_processors: Rc<RefCell<Option<HashMap<u32, Vec<usize>>>>>,
     distributor: Distributor,
 }
 
 impl DistributedEdgesBuilder {
-    pub fn new<G: Scope>(stream: &Stream<G, (u32, u32, u32)>) -> Self {
-        use timely::dataflow::channels::pact::Exchange;
+    pub fn new<G: Scope>(stream: &Stream<G, String>) -> (Self, ProbeHandle<G::Timestamp>) {
+        use std::collections::HashSet;
+        use std::path::PathBuf;
+        use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::generic::operator::Operator;
+        use timely::dataflow::operators::*;
 
         let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
         let distributor = Distributor::new(&stream.scope());
 
-        stream.sink(
-            Exchange::new(move |triplet: &(u32, u32, u32)| {
-                distributor.proc_edge(triplet.0, triplet.1) as u64
-            }),
-            "edges_builder",
-            move |input| {
-                input.for_each(|_t, data| {
-                    let data = data.replace(Vec::new());
-                    edges_ref
-                        .borrow_mut()
-                        .get_or_insert_with(Vec::new)
-                        .extend(data.into_iter());
-                });
-            },
-        );
+        let nodes_ref = Rc::new(RefCell::new(None));
+        let nodes_processors = nodes_ref.clone();
 
-        Self { edges, distributor }
+        let worker_id = stream.scope().index();
+        let mut paths_stash = Vec::new();
+        // let mut notificator = FrontierNotificator::new();
+
+        // TODO: load node IDs
+        let probe = stream
+            .unary_notify(
+                Pipeline,
+                "edges_builder",
+                None,
+                move |input, output, notificator| {
+                    input.for_each(|t, data| {
+                        let data = data.replace(Vec::new());
+                        paths_stash.extend(data.into_iter());
+                        println!("added paths to the stash");
+                        notificator.notify_at(t.retain());
+                    });
+                    notificator.for_each(|t, _, _| {
+                        let paths = paths_stash.iter().map(|p| PathBuf::from(p));
+                        edges_ref.borrow_mut().replace(
+                            CompressedEdgesBlockSet::from_files(paths)
+                                .expect("problem loading blocks"),
+                        );
+                        println!("Loaded the edges locally");
+
+                        // exchange the edges to build processor targets
+                        let mut nodes = HashSet::new();
+                        edges_ref.borrow().iter().for_each(|edges| {
+                            edges.iter().for_each(|(u, v, _)| {
+                                nodes.insert(u);
+                                nodes.insert(v);
+                            });
+                        });
+                        output
+                            .session(&t)
+                            .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
+                    });
+                },
+            )
+            .unary(
+                ExchangePact::new(|pair: &(u32, usize)| pair.0.into()),
+                "nodes_builder",
+                move |_, _| {
+                    move |input, output| {
+                        input.for_each(|t, data| {
+                            let data = data.replace(Vec::new());
+                            let mut opt = nodes_ref.borrow_mut();
+                            let map = opt.get_or_insert_with(HashMap::new);
+                            for (u, proc_id) in data {
+                                map.entry(u).or_insert_with(Vec::new).push(proc_id);
+                            }
+                            output.session(&t).give(());
+                        });
+                    }
+                },
+            )
+            .probe();
+
+        // stream.sink(Pipeline, "edges_builder", move |input| {});
+
+        (
+            Self {
+                edges,
+                nodes_processors,
+                distributor,
+            },
+            probe,
+        )
     }
 
     pub fn build(self) -> DistributedEdges {
         let edges = self.edges.borrow_mut().take().expect("Missing edges!");
-        println!("Processor has {} edges", edges.len());
+        let nodes_processors = self
+            .nodes_processors
+            .borrow_mut()
+            .take()
+            .expect("Missing nodes processors");
+        let mut histogram = std::collections::BTreeMap::new();
+        for (_, procs) in nodes_processors.iter() {
+            let len = procs.len();
+            histogram
+                .entry(len)
+                .and_modify(|c| *c += len)
+                .or_insert(len);
+        }
+        println!("Distribution of destination sets {:#?}", histogram);
         DistributedEdges {
             edges: Rc::new(edges),
-            //     Rc::try_unwrap(self.edges)
-            //         .unwrap_or_else(|rc| {
-            //             panic!(
-            //                 "more than one pointer to the edges: {}",
-            //                 Rc::strong_count(&rc)
-            //             )
-            //         })
-            //         .into_inner(),
-            // ),
             distributor: self.distributor,
         }
     }
@@ -101,7 +165,8 @@ impl DistributedEdgesBuilder {
 
 /// A distributed static collection of edges that can be accessed by
 pub struct DistributedEdges {
-    edges: Rc<Vec<(u32, u32, u32)>>,
+    // edges: Rc<Vec<(u32, u32, u32)>>,
+    edges: Rc<CompressedEdgesBlockSet>,
     distributor: Distributor,
 }
 
@@ -118,7 +183,7 @@ impl DistributedEdges {
         F: FnMut(u32, u32, u32),
     {
         for (u, v, w) in self.edges.iter() {
-            action(*u, *v, *w);
+            action(u, v, w);
         }
     }
 
@@ -127,19 +192,20 @@ impl DistributedEdges {
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
-        let edges = Rc::clone(&self.edges);
-        (*edges) // we have to dereference the Rc pointer
-            .clone()
-            .to_stream(scope)
-            .flat_map(|(u, v, _weight)| vec![(u, ()), (v, ())])
-            .aggregate(
-                |_key, _val, _agg| {
-                    // do nothing, it's just for removing duplicates
-                },
-                |key, _agg: ()| key,
-                |key| *key as u64,
-            )
-            .map(|u| (u, S::default()))
+        unimplemented!()
+        // let edges = Rc::clone(&self.edges);
+        // (*edges) // we have to dereference the Rc pointer
+        //     .clone()
+        //     .to_stream(scope)
+        //     .flat_map(|(u, v, _weight)| vec![(u, ()), (v, ())])
+        //     .aggregate(
+        //         |_key, _val, _agg| {
+        //             // do nothing, it's just for removing duplicates
+        //         },
+        //         |key, _agg: ()| key,
+        //         |key| *key as u64,
+        //     )
+        //     .map(|u| (u, S::default()))
     }
 
     fn distributor(&self) -> Distributor {
