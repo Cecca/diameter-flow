@@ -21,20 +21,23 @@ mod logging;
 mod min_sum;
 mod operators;
 mod rand_cluster;
+mod reporter;
 mod sequential;
 
 use argh::FromArgs;
 use datasets::*;
 use delta_stepping::*;
-
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::process::Command;
+use std::rc::Rc;
+use std::time::Instant;
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
+use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::probe::Handle;
-
-
 use timely::dataflow::operators::Inspect;
+use timely::dataflow::operators::Operator;
 use timely::dataflow::operators::Probe;
 use timely::worker::Worker;
 
@@ -86,6 +89,26 @@ impl Algorithm {
         match self {
             Self::Sequential => true,
             _ => false,
+        }
+    }
+
+    pub fn name(&self) -> String {
+        match self {
+            Self::Sequential => "Sequential".to_owned(),
+            Self::DeltaStepping(_) => "DeltaStepping".to_owned(),
+            Self::HyperBall(_) => "HyperBall".to_owned(),
+            Self::RandCluster(_) => "RandCluster".to_owned(),
+            Self::Bfs => "Bfs".to_owned(),
+        }
+    }
+
+    pub fn parameters_string(&self) -> String {
+        match self {
+            Self::Sequential => "".to_owned(),
+            Self::DeltaStepping(delta) => format!("{}", delta),
+            Self::HyperBall(p) => format!("{}", p),
+            Self::RandCluster(radius) => format!("{}", radius),
+            Self::Bfs => "".to_owned(),
         }
     }
 }
@@ -146,7 +169,7 @@ impl TryFrom<&str> for Algorithm {
 
 #[derive(Debug, FromArgs, Serialize, Deserialize, Clone)]
 #[argh(description = "")]
-struct Config {
+pub struct Config {
     #[argh(option, description = "number of threads per process")]
     threads: Option<usize>,
     #[argh(
@@ -165,6 +188,15 @@ struct Config {
     algorithm: Algorithm,
     #[argh(positional, description = "dataset to use")]
     dataset: String,
+}
+
+impl Config {
+    pub fn hosts_string(&self) -> String {
+        self.hosts
+            .as_ref()
+            .map(|hosts| hosts.to_strings().join("__"))
+            .unwrap_or(String::new())
+    }
 }
 
 fn parse_algorithm(arg: &str) -> Result<Algorithm, String> {
@@ -326,20 +358,24 @@ fn main() {
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
 
-    let timer = std::time::Instant::now();
     let algorithm = config.algorithm;
+    let config2 = config.clone();
 
     if algorithm.is_sequential() {
         let edges = dataset.as_vec();
-        println!("Graph loaded in {:?}", timer.elapsed());
         let timer = std::time::Instant::now();
         let (diam, _) = sequential::approx_diameter(edges, n);
         println!("Diameter {}, computed in {:?}", diam, timer.elapsed());
     } else {
         let ret_status = config.execute(move |worker| {
-            let (logging_probe, logging_input_handle) = logging::init_count_logging(worker);
+            let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
+
+            let (logging_probe, logging_input_handle) =
+                logging::init_count_logging(worker, Rc::clone(&reporter));
 
             let static_edges = dataset.load_static(worker);
+            let diameter_result = Rc::new(RefCell::new(None));
+            let diameter_result_ref = Rc::clone(&diameter_result);
 
             let probe = worker.dataflow::<usize, _, _>(move |scope| {
                 let mut probe = Handle::new();
@@ -360,26 +396,35 @@ fn main() {
 
                 diameter_stream
                     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-                    .probe_with(&mut probe);
+                    .probe_with(&mut probe)
+                    .sink(Pipeline, "diameter collect", move |input| {
+                        input.for_each(|t, data| {
+                            //
+                            diameter_result_ref.borrow_mut().replace(data[0]);
+                        });
+                    });
 
                 probe
             });
 
-            worker.step_while(|| {
-                // probe.with_frontier(|f| println!("frontier {:?}", f.to_vec()));
-                !probe.done()
-            });
+            // Run the dataflow and record the time
+            let timer = Instant::now();
+            worker.step_while(|| !probe.done());
             println!("{:?}\tcomputed diameter", timer.elapsed());
+            let elapsed = timer.elapsed();
 
             // close the logging input and perform any outstanding work
             logging_input_handle
                 .replace(None)
                 .expect("missing logging input handle")
                 .close();
-            worker.step_while(|| {
-                // logging_probe.with_frontier(|f| println!("logging vfrontier {:?}", f.to_vec()));
-                logging_probe.done()
-            })
+            worker.step_while(|| !logging_probe.done());
+
+            if worker.index() == 0 {
+                let diameter: u32 = diameter_result.borrow().expect("missing result");
+                reporter.borrow_mut().set_result(diameter, elapsed);
+                reporter.borrow().report("reports");
+            }
         });
         match ret_status {
             Ok(_) => println!(""),
