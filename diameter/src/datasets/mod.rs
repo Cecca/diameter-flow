@@ -330,8 +330,9 @@ impl Dataset {
 }
 
 pub fn global_dataset_directory() -> PathBuf {
-    let mut path = dirs::home_dir().expect("could not find home directory");
-    path.push(".graph-datasets");
+    let path = std::env::var("GRAPH_DATA_DIR")
+        .map(|p| PathBuf::from(p))
+        .unwrap_or_else(|_| std::env::home_dir().unwrap().join(".graph-datasets"));
     if !path.exists() {
         fs::create_dir_all(&path).expect("Problem creating dataset directory");
     }
