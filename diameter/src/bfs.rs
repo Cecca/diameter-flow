@@ -1,4 +1,5 @@
 use crate::distributed_graph::*;
+use crate::logging::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 
@@ -23,7 +24,7 @@ impl State {
     }
 }
 
-pub fn bfs<G: Scope>(edges: DistributedEdges, scope: &mut G) -> Stream<G, u32> {
+pub fn bfs<G: Scope<Timestamp = usize>>(edges: DistributedEdges, scope: &mut G) -> Stream<G, u32> {
     use timely::dataflow::operators::*;
     use timely::order::Product;
 

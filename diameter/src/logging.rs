@@ -8,12 +8,15 @@ use timely::dataflow::operators::*;
 use timely::dataflow::InputHandle;
 use timely::dataflow::ProbeHandle;
 use timely::logging::Logger;
+use timely::order::Product;
 use timely::worker::{AsWorker, Worker};
 
 #[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]
 pub enum CountEvent {
     Active(u32),
     Centers(u32),
+    LoadStateExchange(u32, u32),
+    LoadMessageExchange(u32, u32),
 }
 
 impl CountEvent {
@@ -21,6 +24,8 @@ impl CountEvent {
         match self {
             Self::Active(iter) => (*iter, 0),
             Self::Centers(iter) => (*iter, 0),
+            Self::LoadMessageExchange(outer, inner) => (*outer, *inner),
+            Self::LoadStateExchange(outer, inner) => (*outer, *inner),
         }
     }
 
@@ -28,7 +33,35 @@ impl CountEvent {
         match self {
             Self::Active(_) => "Active".to_owned(),
             Self::Centers(_) => "Centers".to_owned(),
+            Self::LoadMessageExchange(_, _) => "LoadMessageExchange".to_owned(),
+            Self::LoadStateExchange(_, _) => "LoadStateExchange".to_owned(),
         }
+    }
+
+    pub fn load_state_exchange<T: ToPair>(t: T) -> Self {
+        let (outer, inner) = t.to_pair();
+        Self::LoadStateExchange(outer, inner)
+    }
+
+    pub fn load_message_exchange<T: ToPair>(t: T) -> Self {
+        let (outer, inner) = t.to_pair();
+        Self::LoadMessageExchange(outer, inner)
+    }
+}
+
+pub trait ToPair {
+    fn to_pair(&self) -> (u32, u32);
+}
+
+impl ToPair for Product<usize, u32> {
+    fn to_pair(&self) -> (u32, u32) {
+        (self.inner, 0)
+    }
+}
+
+impl ToPair for Product<Product<usize, u32>, u32> {
+    fn to_pair(&self) -> (u32, u32) {
+        (self.outer.inner, self.inner)
     }
 }
 

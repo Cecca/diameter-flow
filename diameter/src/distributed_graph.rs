@@ -1,3 +1,4 @@
+use crate::logging::*;
 use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -229,6 +230,7 @@ impl DistributedEdges {
         update_no_msg: Fun,
     ) -> Stream<G, (u32, S)>
     where
+        G::Timestamp: ToPair,
         P: Fn(u32, &S) -> bool + 'static,
         Fm: Fn(G::Timestamp, &S, u32) -> Option<M> + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
@@ -237,6 +239,9 @@ impl DistributedEdges {
     {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::*;
+
+        let l1 = nodes.scope().count_logger().expect("Missing logger");
+        let l2 = l1.clone();
 
         let mut stash = HashMap::new();
         let mut node_stash = HashMap::new();
@@ -269,6 +274,10 @@ impl DistributedEdges {
                 move |input, output, notificator| {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
+                        l1.log((
+                            CountEvent::load_state_exchange(t.time().clone()),
+                            data.len() as u64,
+                        ));
                         stash
                             .entry(t.time().clone())
                             .or_insert_with(HashMap::new)
@@ -322,6 +331,10 @@ impl DistributedEdges {
                 move |message_input, node_input, output, notificator| {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
+                        l2.log((
+                            CountEvent::load_message_exchange(t.time().clone()),
+                            data.len() as u64,
+                        ));
                         let map = msg_stash
                             .entry(t.time().clone())
                             .or_insert_with(HashMap::new);
