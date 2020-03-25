@@ -387,7 +387,7 @@ fn main() {
         .expect("missing dataset in configuration");
 
     dataset.prepare();
-    if config.hosts.is_some() {
+    if config.hosts.is_some() && config.process_id.is_none() {
         println!("Syncing the dataset to the other hosts, if needed");
         config
             .hosts
