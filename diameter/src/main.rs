@@ -368,28 +368,29 @@ macro_rules! map(
 fn main() {
     let config = Config::create();
 
+    let builder = DatasetBuilder::new(config.ddir.clone());
     let mut datasets = map! {
-        "cnr-2000" => Dataset::webgraph("cnr-2000"),
-        "it-2004" => Dataset::webgraph("it-2004"),
-        "sk-2005" => Dataset::webgraph("sk-2005"),
-        "uk-2014-tpd" => Dataset::webgraph("uk-2014-tpd"),
-        "uk-2014-host" => Dataset::webgraph("uk-2014-host"),
-        "uk-2007-05-small" => Dataset::webgraph("uk-2007-05@100000"),
-        "facebook" => Dataset::snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
-        "twitter" => Dataset::snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
-        "livejournal" => Dataset::snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
-        "colorado" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
-        "USA" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
-        "USA-east" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
-        "rome" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
-        "ny" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
+        "cnr-2000" => builder.webgraph("cnr-2000"),
+        "it-2004" => builder.webgraph("it-2004"),
+        "sk-2005" => builder.webgraph("sk-2005"),
+        "uk-2014-tpd" => builder.webgraph("uk-2014-tpd"),
+        "uk-2014-host" => builder.webgraph("uk-2014-host"),
+        "uk-2007-05-small" => builder.webgraph("uk-2007-05@100000"),
+        "facebook" => builder.snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
+        "twitter" => builder.snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
+        "livejournal" => builder.snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
+        "colorado" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
+        "USA" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
+        "USA-east" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
+        "rome" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
+        "ny" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
     };
 
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
 
-    dataset.prepare(&config.ddir);
+    dataset.prepare();
     if config.hosts.is_some() && config.process_id.is_none() {
         println!("Syncing the dataset to the other hosts, if needed");
         config.hosts.as_ref().unwrap().rsync(config.ddir.clone());

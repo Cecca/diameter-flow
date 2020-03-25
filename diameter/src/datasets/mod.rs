@@ -38,24 +38,49 @@ pub struct Metadata {
     pub max_weight: u32,
 }
 
+pub struct DatasetBuilder {
+    data_dir: PathBuf,
+}
+
+impl DatasetBuilder {
+    pub fn new(data_dir: PathBuf) -> Self {
+        Self { data_dir }
+    }
+
+    pub fn snap<S: Into<String>>(&self, s: S) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::Snap(s.into()),
+        }
+    }
+    pub fn dimacs<S: Into<String>>(&self, s: S) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::Dimacs(s.into()),
+        }
+    }
+    pub fn webgraph<S: Into<String>>(&self, s: S) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::WebGraph(s.into()),
+        }
+    }
+}
+
 #[derive(Debug)]
-pub enum Dataset {
+pub struct Dataset {
+    data_dir: PathBuf,
+    kind: DatasetKind,
+}
+
+#[derive(Debug)]
+pub enum DatasetKind {
     Snap(String),
     Dimacs(String),
     WebGraph(String),
 }
 
 impl Dataset {
-    pub fn snap<S: Into<String>>(s: S) -> Self {
-        Self::Snap(s.into())
-    }
-    pub fn dimacs<S: Into<String>>(s: S) -> Self {
-        Self::Dimacs(s.into())
-    }
-    pub fn webgraph<S: Into<String>>(s: S) -> Self {
-        Self::WebGraph(s.into())
-    }
-
     pub fn as_vec(&self) -> Vec<((u32, u32), u32)> {
         let mut edges = Vec::new();
         self.for_each(|u, v, w| {
@@ -65,16 +90,16 @@ impl Dataset {
     }
 
     fn metadata_key(&self) -> String {
-        match self {
-            Self::Dimacs(url) => format!("dimacs::{}", url),
-            Self::Snap(url) => format!("snap::{}", url),
-            Self::WebGraph(name) => format!("webgraph::{}", name),
+        match &self.kind {
+            DatasetKind::Dimacs(url) => format!("dimacs::{}", url),
+            DatasetKind::Snap(url) => format!("snap::{}", url),
+            DatasetKind::WebGraph(name) => format!("webgraph::{}", name),
         }
     }
 
-    fn metadata_map() -> HashMap<String, Metadata> {
+    fn metadata_map(&self) -> HashMap<String, Metadata> {
         let mut map = HashMap::new();
-        let mut metadata_file = global_dataset_directory();
+        let mut metadata_file = self.data_dir.clone();
         metadata_file.push("metadata.bin");
         if metadata_file.exists() {
             let reader = File::open(metadata_file).expect("error opening metadata file");
@@ -85,8 +110,8 @@ impl Dataset {
         map
     }
 
-    fn update_metadata(new_map: HashMap<String, Metadata>) {
-        let mut metadata_file = global_dataset_directory();
+    fn update_metadata(&self, new_map: HashMap<String, Metadata>) {
+        let mut metadata_file = self.data_dir.clone();
         metadata_file.push("metadata.bin");
         let writer = File::create(metadata_file).expect("error creating metadata file");
         let values: Vec<(String, Metadata)> = new_map.into_iter().collect();
@@ -95,7 +120,7 @@ impl Dataset {
 
     pub fn metadata(&self) -> Metadata {
         let key = self.metadata_key();
-        let mut meta_map = Self::metadata_map();
+        let mut meta_map = self.metadata_map();
         if meta_map.contains_key(&key) {
             meta_map.get(&key).unwrap().clone()
         } else {
@@ -121,21 +146,21 @@ impl Dataset {
 
             // Add it to the map and update the file
             meta_map.insert(key, meta.clone());
-            Self::update_metadata(meta_map);
+            self.update_metadata(meta_map);
 
             meta
         }
     }
 
     pub fn prepare(&self) {
-        match self {
-            Self::Dimacs(url) => {
+        match &self.kind {
+            DatasetKind::Dimacs(url) => {
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
                     println!("Compressing into {:?}", edges_dir);
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
-                    let raw = maybe_download_file(url, self.dataset_directory());
+                    let raw = maybe_download_file(&url, self.dataset_directory());
                     let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
                     read_dimacs_file(&raw, |(u, v, w)| {
                         let mut src = remapper.remap(u);
@@ -147,13 +172,13 @@ impl Dataset {
                     });
                 }
             }
-            Self::Snap(url) => {
+            DatasetKind::Snap(url) => {
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
                     println!("Compressing into {:?}", edges_dir);
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
-                    let raw = maybe_download_file(url, self.dataset_directory());
+                    let raw = maybe_download_file(&url, self.dataset_directory());
                     let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
                     read_text_edge_file_unweighted(&raw, |(u, v)| {
                         let mut src = remapper.remap(u);
@@ -165,7 +190,7 @@ impl Dataset {
                     });
                 }
             }
-            Self::WebGraph(name) => {
+            DatasetKind::WebGraph(name) => {
                 let dir = self.dataset_directory();
                 println!("Destination directory is {:?}", dir);
                 let graph_url = format!(
@@ -224,10 +249,10 @@ impl Dataset {
     pub fn dataset_directory(&self) -> PathBuf {
         use std::fmt::Write;
 
-        let to_hash = match self {
-            Self::Dimacs(url) => url.clone(),
-            Self::Snap(url) => url.clone(),
-            Self::WebGraph(name) => {
+        let to_hash = match &self.kind {
+            DatasetKind::Dimacs(url) => url.clone(),
+            DatasetKind::Snap(url) => url.clone(),
+            DatasetKind::WebGraph(name) => {
                 let graph_url = format!(
                     "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
                     name, name
@@ -241,7 +266,7 @@ impl Dataset {
         let result = hasher.result();
         let mut hash_string = String::new();
         write!(hash_string, "{:X}", result).expect("problem writing hash string");
-        let mut path = global_dataset_directory();
+        let mut path = self.data_dir.clone();
         path.push(hash_string);
         fs::create_dir_all(&path).expect("problem creating directory");
         path
@@ -329,32 +354,19 @@ impl Dataset {
     }
 }
 
-pub fn global_dataset_directory() -> PathBuf {
-    let path = std::env::var("GRAPH_DATA_DIR")
-        .map(|p| PathBuf::from(p))
-        .unwrap_or_else(|e| {
-            println!("error getting graph data dir from env: {:?}", e);
-            std::env::home_dir().unwrap().join(".graph-datasets")
-        });
-    println!("Graph data directory is {:?}", path);
-    if !path.exists() {
-        fs::create_dir_all(&path).expect("Problem creating dataset directory");
-    }
-    path
-}
-
-fn dataset_directory(url: &str) -> PathBuf {
-    use std::fmt::Write;
-    let mut hasher = Sha256::new();
-    hasher.input(url);
-    let result = hasher.result();
-    let mut hash_string = String::new();
-    write!(hash_string, "{:X}", result).expect("problem writing hash string");
-    let mut path = global_dataset_directory();
-    path.push(hash_string);
-    fs::create_dir_all(&path).expect("problem creating directory");
-    path
-}
+// pub fn global_dataset_directory() -> PathBuf {
+//     let path = std::env::var("GRAPH_DATA_DIR")
+//         .map(|p| PathBuf::from(p))
+//         .unwrap_or_else(|e| {
+//             println!("error getting graph data dir from env: {:?}", e);
+//             std::env::home_dir().unwrap().join(".graph-datasets")
+//         });
+//     println!("Graph data directory is {:?}", path);
+//     if !path.exists() {
+//         fs::create_dir_all(&path).expect("Problem creating dataset directory");
+//     }
+//     path
+// }
 
 fn dataset_file_path(url: &str, mut dir: PathBuf) -> PathBuf {
     let parsed = Url::parse(url).expect("not a valid url");
