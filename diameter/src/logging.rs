@@ -1,8 +1,5 @@
 use differential_dataflow::difference::Semigroup;
 
-
-
-
 use std::cell::RefCell;
 use std::hash::Hash;
 
@@ -30,36 +27,15 @@ pub enum CountEvent {
     // IterationInput(u64),
 }
 
-#[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Copy, Hash, Default, Debug)]
-pub struct CountValue(u64);
-
-impl std::convert::From<usize> for CountValue {
-    fn from(value: usize) -> CountValue {
-        CountValue(value as u64)
-    }
-}
-
-impl<'a> AddAssign<&'a Self> for CountValue {
-    fn add_assign(&mut self, rhs: &'a Self) {
-        self.0 = self.0 + rhs.0
-    }
-}
-
-impl Semigroup for CountValue {
-    fn is_zero(&self) -> bool {
-        self.0 == 0
-    }
-}
-
 pub trait AsCountLogger {
-    fn count_logger(&self) -> Option<Logger<(CountEvent, CountValue)>>;
+    fn count_logger(&self) -> Option<Logger<(CountEvent, u64)>>;
 }
 
 impl<T> AsCountLogger for T
 where
     T: AsWorker,
 {
-    fn count_logger(&self) -> Option<Logger<(CountEvent, CountValue)>> {
+    fn count_logger(&self) -> Option<Logger<(CountEvent, u64)>> {
         self.log_register().get("counts")
     }
 }
@@ -73,8 +49,6 @@ pub fn init_count_logging<A>(
 where
     A: timely::communication::Allocate,
 {
-    
-
     let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
         let mut probe = ProbeHandle::new();
@@ -98,12 +72,12 @@ where
 
     worker
         .log_register()
-        .insert::<(CountEvent, CountValue), _>("counts", move |_time, data| {
+        .insert::<(CountEvent, u64), _>("counts", move |_time, data| {
             for (_time_bound, worker_id, (key, value)) in data.drain(..) {
                 input
                     .borrow_mut()
                     .as_mut()
-                    .map(|input| input.send(((key, worker_id), value.0)));
+                    .map(|input| input.send(((key, worker_id), value)));
             }
         });
 

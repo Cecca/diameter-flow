@@ -128,7 +128,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
             notificator.for_each(|t, _, _| {
                 if let Some(mut nodes) = stash.remove(&t) {
                     nodes.sort_by_key(|pair| pair.0);
-                    l1.log((CountEvent::Active(t.inner), nodes.len().into()));
+                    l1.log((CountEvent::Active(t.inner), nodes.len() as u64));
                     let mut out = output.session(&t);
                     let mut cnt = 0;
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
@@ -149,7 +149,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                                 .map(|(id, state)| (id, state.as_center(id))),
                         );
                     }
-                    l1.log((CountEvent::Centers(t.inner), cnt.into()));
+                    l1.log((CountEvent::Centers(t.inner), cnt as u64));
                 }
             });
         },
