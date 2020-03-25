@@ -14,7 +14,8 @@ use timely::worker::{AsWorker, Worker};
 
 #[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]
 pub enum CountEvent {
-    LightEdges,
+    Active(u32),
+    Centers(u32),
     // HeavyEdges,
     // LightIterInput(u64, u64),
     // LightIterActive(u64, u64),
@@ -76,8 +77,8 @@ where
             .consolidate()
             .inner
             .exchange(|_| 0)
-            .inspect(|((_tag, _value), _time, _diff)| {
-                // println!("[{:?}] {:?} {:?} ({:?})", time, tag, value.0, diff)
+            .inspect(|((tag, value), time, diff)| {
+                println!("[{:?}] {:?} {:?} ({:?})", time, tag, value.0, diff)
             })
             .probe_with(&mut probe);
 

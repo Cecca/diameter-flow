@@ -108,6 +108,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
     rand: Rc<RefCell<R>>,
 ) -> Stream<G, (u32, NodeState)> {
     let mut stash = HashMap::new();
+    let l1 = nodes.scope().count_logger().expect("missing logger");
 
     // we have to stash the nodes and sort them to make the center sampling
     // deterministic, for a fixed random generator.
@@ -127,11 +128,11 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
             notificator.for_each(|t, _, _| {
                 if let Some(mut nodes) = stash.remove(&t) {
                     nodes.sort_by_key(|pair| pair.0);
+                    l1.log((CountEvent::Active(t.inner), nodes.len().into()));
                     let mut out = output.session(&t);
                     let mut cnt = 0;
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
-                        // println!("[{:?}] probability = {}", t.time(), p);
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                                 out.give((id, state.as_center(id)));
@@ -141,15 +142,14 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }
                     } else {
-                        // println!("[{:?}] probability = 1", t.time());
-                        // cnt = nodes.len();
+                        cnt = nodes.len();
                         out.give_iterator(
                             nodes
                                 .into_iter()
                                 .map(|(id, state)| (id, state.as_center(id))),
                         );
                     }
-                    // println!("[{:?}] sampled {} centers", t.time(), cnt);
+                    l1.log((CountEvent::Centers(t.inner), cnt.into()));
                 }
             });
         },
@@ -245,9 +245,6 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     use rand_xoshiro::Xoroshiro128StarStar;
 
     let nodes = edges.nodes::<_, NodeState>(scope);
-    let l1 = nodes.scope().count_logger().expect("missing logger");
-    let _l2 = l1.clone();
-    let _l3 = l1.clone();
 
     let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
     for _ in 0..nodes.scope().index() {
