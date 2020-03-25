@@ -4,10 +4,15 @@ use differential_dataflow::input::InputSession;
 use differential_dataflow::operators::consolidate::Consolidate;
 use differential_dataflow::operators::Count;
 use std::cell::RefCell;
+use std::hash::Hash;
+use std::hash::Hasher;
 use std::ops::AddAssign;
 use std::rc::Rc;
 use std::time::Duration;
+use timely::dataflow::operators::aggregation::Aggregate;
+use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::*;
+use timely::dataflow::InputHandle;
 use timely::dataflow::ProbeHandle;
 use timely::logging::Logger;
 use timely::worker::{AsWorker, Worker};
@@ -25,7 +30,7 @@ pub enum CountEvent {
     // IterationInput(u64),
 }
 
-#[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]
+#[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Copy, Hash, Default, Debug)]
 pub struct CountValue(u64);
 
 impl std::convert::From<usize> for CountValue {
@@ -62,24 +67,27 @@ where
 pub fn init_count_logging<A>(
     worker: &mut Worker<A>,
 ) -> (
-    ProbeHandle<Duration>,
-    Rc<RefCell<Option<InputSession<Duration, CountEvent, CountValue>>>>,
+    ProbeHandle<()>,
+    Rc<RefCell<Option<InputHandle<(), ((CountEvent, usize), u64)>>>>,
 )
 where
     A: timely::communication::Allocate,
 {
-    let (input, probe) = worker.dataflow::<Duration, _, _>(move |scope| {
-        let (input, stream) = scope.new_collection::<CountEvent, CountValue>();
+    use std::collections::hash_map::DefaultHasher;
+
+    let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
+        let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
         let mut probe = ProbeHandle::new();
 
         stream
-            .count()
-            .consolidate()
-            .inner
-            .exchange(|_| 0)
-            .inspect(|((tag, value), time, diff)| {
-                println!("[{:?}] {:?} {:?} ({:?})", time, tag, value.0, diff)
-            })
+            .aggregate(
+                |_key, val, agg| {
+                    *agg += val;
+                },
+                |key, agg: u64| (key, agg),
+                |_key| 0,
+            )
+            // .inspect(|(tag, value)| println!("{:?}, {:?}", tag, value))
             .probe_with(&mut probe);
 
         (input, probe)
@@ -91,21 +99,12 @@ where
     worker
         .log_register()
         .insert::<(CountEvent, CountValue), _>("counts", move |time, data| {
-            for (time_bound, _worker_id, (key, value)) in data.drain(..) {
-                // println!("{:?} <? {:?}", time_bound, time);
-                // Round the duration one second up
-                let time = Duration::from_secs(time.as_secs() + 1);
+            for (_time_bound, worker_id, (key, value)) in data.drain(..) {
                 input
                     .borrow_mut()
                     .as_mut()
-                    .map(|input| input.update_at(key, time, value));
-
-                input
-                    .borrow_mut()
-                    .as_mut()
-                    .map(|input| input.advance_to(time_bound));
+                    .map(|input| input.send(((key, worker_id), value.0)));
             }
-            input.borrow_mut().as_mut().map(|input| input.flush());
         });
 
     (probe, input_2)
