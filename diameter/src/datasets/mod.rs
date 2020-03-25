@@ -130,7 +130,6 @@ impl Dataset {
     pub fn prepare(&self) {
         match self {
             Self::Dimacs(url) => {
-                // TODO: Write also the weights!!
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
                     println!("Compressing into {:?}", edges_dir);
@@ -287,25 +286,6 @@ impl Dataset {
                 )
             }
         })
-
-        // std::fs::read_dir(edges_directory)
-        //     .expect("problem reading directory")
-        //     .flat_map(move |entry| {
-        //         // let entry = entry?;
-        //         let path = entry.expect("problem getting entry").path();
-        //         if let Some(captures) = rex.captures(
-        //             path.file_name()
-        //                 .expect("unable to get file name")
-        //                 .to_str()
-        //                 .expect("unable to convert to string"),
-        //         ) {
-        //             let digits = captures.get(1).unwrap();
-        //             let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
-        //             Some((chunk_id, path))
-        //         } else {
-        //             None
-        //         }
-        //     })
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
@@ -349,7 +329,7 @@ impl Dataset {
     }
 }
 
-fn global_dataset_directory() -> PathBuf {
+pub fn global_dataset_directory() -> PathBuf {
     let mut path = dirs::home_dir().expect("could not find home directory");
     path.push(".graph-datasets");
     if !path.exists() {

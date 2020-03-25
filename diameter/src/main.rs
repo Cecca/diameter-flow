@@ -30,7 +30,9 @@ use delta_stepping::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::convert::TryFrom;
-use std::process::Command;
+use std::fmt::Debug;
+use std::path::Path;
+use std::process::{Child, Command};
 use std::rc::Rc;
 use std::time::Instant;
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
@@ -50,6 +52,21 @@ struct Host {
 impl Host {
     fn to_string(&self) -> String {
         format!("{}:{}", self.name, self.port)
+    }
+
+    fn rsync<P: AsRef<Path>>(&self, path: P) -> Child {
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .expect("problem converting path to string");
+        Command::new("rsync")
+            .arg("--ignore-existing")
+            .arg("-r")
+            .arg("--progress")
+            .arg(path_str)
+            .arg(format!("{}:{}", self.name, path_str))
+            .spawn()
+            .expect("error spawning rsync")
     }
 }
 
@@ -72,6 +89,15 @@ struct Hosts {
 impl Hosts {
     fn to_strings(&self) -> Vec<String> {
         self.hosts.iter().map(|h| h.to_string()).collect()
+    }
+
+    fn rsync<P: AsRef<Path> + Debug>(&self, path: P) -> () {
+        let p = path.as_ref().to_path_buf();
+        let procs: Vec<Child> = self.hosts.iter().map(|h| h.rsync(p.clone())).collect();
+        procs.into_iter().for_each(|mut p| {
+            let status = p.wait().expect("Problem waiting the rsync process");
+            assert!(status.success(), "rsync command failed");
+        });
     }
 }
 
@@ -354,6 +380,17 @@ fn main() {
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
+
+    dataset.prepare();
+    if config.hosts.is_some() {
+        println!("Syncing the dataset to the other hosts, if needed");
+        config
+            .hosts
+            .as_ref()
+            .unwrap()
+            .rsync(datasets::global_dataset_directory());
+    }
+
     let meta = dataset.metadata();
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
