@@ -58,6 +58,12 @@ impl Host {
             .as_ref()
             .to_str()
             .expect("problem converting path to string");
+        let parent_path_str = path
+            .as_ref()
+            .parent()
+            .expect("missing parent")
+            .to_str()
+            .expect("problem converting path to string");
         Command::new("rsync")
             .arg("--ignore-existing")
             .arg("-r")
