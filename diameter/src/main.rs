@@ -3,7 +3,6 @@ extern crate abomonation;
 extern crate abomonation_derive;
 extern crate base64;
 extern crate differential_dataflow;
-extern crate dirs;
 extern crate flate2;
 extern crate regex;
 extern crate reqwest;
