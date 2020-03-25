@@ -1,14 +1,14 @@
 use differential_dataflow::difference::Semigroup;
-use differential_dataflow::input::Input;
-use differential_dataflow::input::InputSession;
-use differential_dataflow::operators::consolidate::Consolidate;
-use differential_dataflow::operators::Count;
+
+
+
+
 use std::cell::RefCell;
 use std::hash::Hash;
-use std::hash::Hasher;
+
 use std::ops::AddAssign;
 use std::rc::Rc;
-use std::time::Duration;
+
 use timely::dataflow::operators::aggregation::Aggregate;
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::*;
@@ -73,7 +73,7 @@ pub fn init_count_logging<A>(
 where
     A: timely::communication::Allocate,
 {
-    use std::collections::hash_map::DefaultHasher;
+    
 
     let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
@@ -98,7 +98,7 @@ where
 
     worker
         .log_register()
-        .insert::<(CountEvent, CountValue), _>("counts", move |time, data| {
+        .insert::<(CountEvent, CountValue), _>("counts", move |_time, data| {
             for (_time_bound, worker_id, (key, value)) in data.drain(..) {
                 input
                     .borrow_mut()

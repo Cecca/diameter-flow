@@ -38,7 +38,7 @@ impl CompressedEdges {
     pub fn from_file<P: AsRef<Path> + Debug>(path: P, weights_path: Option<P>) -> IOResult<Self> {
         use std::fs::File;
         use std::io::BufReader;
-        use std::io::Error;
+        
         use std::io::ErrorKind::UnexpectedEof;
         let mut reader = BufReader::new(File::open(path)?);
         let mut raw = Vec::new();
@@ -68,7 +68,7 @@ impl CompressedEdges {
         use std::io::Cursor;
         let cursor = Cursor::new(&self.raw);
         let mut reader = stream::DifferenceStreamReader::new(cursor);
-        let mut weights = self.weights.as_ref().map(|vec| vec.iter());
+        let _weights = self.weights.as_ref().map(|vec| vec.iter());
 
         if let Some(weights) = self.weights.as_ref() {
             let mut weights = weights.iter();

@@ -192,7 +192,7 @@ impl Dataset {
                 bvconvert::maybe_download_file(&properties_url, properties_path);
 
                 // Convert the file
-                let mut compressed_path = self.edges_directory();
+                let compressed_path = self.edges_directory();
                 if !compressed_path.is_dir() {
                     let timer = std::time::Instant::now();
                     bvconvert::convert(&tool_graph_path, &compressed_path);
