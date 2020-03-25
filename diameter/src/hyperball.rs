@@ -1,9 +1,5 @@
 use crate::distributed_graph::*;
-
-
-
-
-
+use crate::logging::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -100,13 +96,17 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
         .nodes::<_, ()>(scope)
         .map(move |(id, ())| (id, State::new(p, id)));
 
+    let l1 = nodes.scope().count_logger().expect("missing logger");
+
     let stop_times: Stream<G, u32> = nodes.scope().iterative::<u32, _, _>(|subscope| {
         let nodes = nodes.enter(subscope);
         let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
         let (stable, updated) = edges
             .send(
-                &nodes.concat(&cycle),
+                &nodes.concat(&cycle).inspect_batch(move |t, data| {
+                    l1.log((CountEvent::Active(t.inner), data.len() as u64))
+                }),
                 // Should send?
                 |_, _| true,
                 // create message

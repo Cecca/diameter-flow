@@ -1,4 +1,5 @@
 use crate::distributed_graph::*;
+use crate::logging::*;
 use crate::operators::*;
 use rand::distributions::Uniform;
 use rand::prelude::*;
@@ -148,6 +149,7 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
     let rng = Xoshiro256StarStar::seed_from_u64(seed);
     let dist = Uniform::new(0u32, n + 1);
     let roots: HashSet<u32> = dist.sample_iter(rng).take(num_roots).collect();
+    let l1 = scope.count_logger().expect("missing logger");
 
     // Initialize nodes
     let nodes = edges.nodes::<_, State>(scope).map(move |(id, state)| {
@@ -164,13 +166,19 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
         let nodes = nodes.enter(inner_scope);
         let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
 
-        let (stable, further) =
-            delta_step(&edges, &nodes.concat(&cycle), delta).branch(move |t, (_id, state)| {
-                state
-                    .distance
-                    .map(|d| d > delta * (t.inner + 1))
-                    .unwrap_or(true)
-            });
+        let (stable, further) = delta_step(
+            &edges,
+            &nodes.concat(&cycle).inspect_batch(move |t, data| {
+                l1.log((CountEvent::Active(t.inner), data.len() as u64))
+            }),
+            delta,
+        )
+        .branch(move |t, (_id, state)| {
+            state
+                .distance
+                .map(|d| d > delta * (t.inner + 1))
+                .unwrap_or(true)
+        });
 
         further.connect_loop(handle);
 
