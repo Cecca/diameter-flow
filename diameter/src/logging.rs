@@ -1,9 +1,9 @@
-use differential_dataflow::difference::Semigroup;
+
 
 use std::cell::RefCell;
 use std::hash::Hash;
 
-use std::ops::AddAssign;
+
 use std::rc::Rc;
 
 use timely::dataflow::operators::aggregation::Aggregate;
