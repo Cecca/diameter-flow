@@ -31,6 +31,7 @@ use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::rc::Rc;
 use std::time::Instant;
@@ -211,6 +212,8 @@ pub struct Config {
     hosts: Option<Hosts>,
     #[argh(option, description = "set automatically. Don't set manually")]
     process_id: Option<usize>,
+    #[argh(option, description = "the data directory")]
+    ddir: PathBuf,
     #[argh(
         positional,
         description = "algortihm to use",
@@ -386,14 +389,10 @@ fn main() {
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
 
-    dataset.prepare();
+    dataset.prepare(&config.ddir);
     if config.hosts.is_some() && config.process_id.is_none() {
         println!("Syncing the dataset to the other hosts, if needed");
-        config
-            .hosts
-            .as_ref()
-            .unwrap()
-            .rsync(datasets::global_dataset_directory());
+        config.hosts.as_ref().unwrap().rsync(config.ddir.clone());
     }
 
     let meta = dataset.metadata();
