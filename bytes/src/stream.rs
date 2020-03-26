@@ -52,6 +52,7 @@ impl<R: Read> DifferenceStreamReader<R> {
         }
     }
 
+    #[inline]
     pub fn read(&mut self) -> IOResult<u64> {
         let diff = self.inner.read()?;
         if diff == 0 {
@@ -104,6 +105,7 @@ impl<R: Read> GammaStreamReader<R> {
         }
     }
 
+    #[inline]
     pub fn read(&mut self) -> Result<u64, std::io::Error> {
         let mut N = 0;
         while !self.inner.read_bit()? {
