@@ -150,6 +150,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         );
                     }
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
+                    println!("{} centers sampled at iteration {}", cnt, t.inner);
                 }
             });
         },

@@ -59,6 +59,7 @@ impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
                     notificator.for_each(|time, _, _| {
                         if let Some(updated_count) = stash_counts.remove(&time) {
                             let branch = updated_count > 0;
+                            println!("{} nodes updated at time {:?}", updated_count, time);
                             if let Some(nodes) = stash2.borrow_mut().remove(&time) {
                                 output
                                     .session(&time)
