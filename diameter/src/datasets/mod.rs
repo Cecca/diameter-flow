@@ -230,7 +230,6 @@ impl Dataset {
     where
         F: FnMut(u32, u32, u32),
     {
-        self.prepare();
         let files = self
             .binary_edge_files()
             .map(|triplet| (triplet.1, triplet.2));
@@ -316,11 +315,6 @@ impl Dataset {
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
     pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
         use timely::dataflow::operators::Input as TimelyInput;
-
-        if worker.index() == 0 {
-            // TODO: Find a way of distributing work on the cluster
-            self.prepare();
-        }
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
