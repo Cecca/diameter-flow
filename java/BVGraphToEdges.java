@@ -24,6 +24,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.PriorityQueue;
 import java.util.Properties;
+import it.unimi.dsi.logging.ProgressLogger;
 
 public class BVGraphToEdges {
 
@@ -39,6 +40,8 @@ public class BVGraphToEdges {
 
         ImmutableGraph graph = BVGraph.loadOffline(inputPath);
         long totEdges = graph.numArcs();
+        ProgressLogger pl = new ProgressLogger();
+        pl.expectedUpdates = totEdges;
 
         // long numNodeGroups = 16;
         // long nodeGroupLen = nextPower(graph.numNodes()) / numNodeGroups;
@@ -60,6 +63,7 @@ public class BVGraphToEdges {
 
         long cnt = 0;
         System.out.println("Encoding the values... ");
+        pl.start();
         int pos = 0;
         int chunksCount = 0;
         long start = System.currentTimeMillis();
@@ -85,12 +89,14 @@ public class BVGraphToEdges {
                         pos = 0;
                     }
                 }
-                if (cnt++ % 10000000 == 0) {
-                    System.out.print((cnt / totEdges * 100) + "%                \r");
-                }
+                pl.lightUpdate();
+                // if (cnt++ % 10000000 == 0) {
+                // System.out.print((cnt / totEdges * 100) + "% \r");
+                // }
             }
         }
         writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
+        pl.stop();
 
         System.out.println("Merge sort the encoded values, writing them compressed... ");
         start = System.currentTimeMillis();
