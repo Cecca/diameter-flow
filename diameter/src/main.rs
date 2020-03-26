@@ -59,13 +59,21 @@ impl Host {
             .as_ref()
             .to_str()
             .expect("problem converting path to string");
-        let path_str_no_slash = if path_str.ends_with("/") {
+        let path_with_slash = if path_str.ends_with("/") {
+            path_str.to_owned().clone()
+        } else {
+            let mut p = path_str.clone().to_owned();
+            p.push('/');
+            p
+        };
+        let path_no_slash = if path_str.ends_with("/") {
             let mut p = path_str.clone().to_owned();
             p.pop().unwrap();
             p
         } else {
             path_str.to_owned().clone()
         };
+        println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
         let parent_path_str = path
             .as_ref()
             .parent()
@@ -76,8 +84,8 @@ impl Host {
             .arg("--ignore-existing")
             .arg("-r")
             .arg("--progress")
-            .arg(path_str)
-            .arg(format!("{}:{}", self.name, path_str_no_slash))
+            .arg(path_with_slash)
+            .arg(format!("{}:{}", self.name, path_no_slash))
             .spawn()
             .expect("error spawning rsync")
     }
