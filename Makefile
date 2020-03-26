@@ -1,3 +1,9 @@
+.PHONY: deps
+build-java: deps java/BVGraphToEdges.class
+
+.PHONY: deps
+deps: java/webgraph-3.6.3.jar java/dsiutils-2.6.2.jar
+
 try-java-small: java/BVGraphToEdges.class
 	rm -rf /tmp/out.bin
 	cd java && java -ea -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:. BVGraphToEdges \
@@ -12,3 +18,20 @@ try-java: java/BVGraphToEdges.class
 
 java/BVGraphToEdges.class: java/BVGraphToEdges.java
 	cd java && javac -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar BVGraphToEdges.java
+
+java/webgraph-3.6.3-bin.tar.gz:
+	cd java && curl -O http://webgraph.di.unimi.it/webgraph-3.6.3-bin.tar.gz
+
+java/webgraph-deps.tar.gz:
+	cd java && curl -O http://webgraph.di.unimi.it/webgraph-deps.tar.gz
+
+java/webgraph-3.6.3.jar: java/webgraph-3.6.3-bin.tar.gz
+	cd java && tar -xvf webgraph-3.6.3-bin.tar.gz --strip-components=1 \
+	 webgraph-3.6.3/webgraph-3.6.3.jar
+
+java/dsiutils-2.6.2.jar: java/webgraph-deps.tar.gz
+	cd java && tar -xvf webgraph-deps.tar.gz \
+	 dsiutils-2.6.2.jar \
+	 fastutil-8.3.0.jar \
+	 jsap-2.1.jar \
+	 slf4j-api-1.7.26.jar
