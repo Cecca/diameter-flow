@@ -130,6 +130,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     nodes.sort_by_key(|pair| pair.0);
                     l1.log((CountEvent::Active(t.inner), nodes.len() as u64));
                     let mut out = output.session(&t);
+                    let population_size = nodes.len();
                     let mut cnt = 0;
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
@@ -150,7 +151,10 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         );
                     }
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
-                    println!("{} centers sampled at iteration {}", cnt, t.inner);
+                    println!(
+                        "{} centers out of {} sampled at iteration {}",
+                        cnt, population_size, t.inner
+                    );
                 }
             });
         },
