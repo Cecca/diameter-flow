@@ -1,4 +1,5 @@
 // interleave the bits
+#[inline]
 pub fn pair_to_zorder((mut x, mut y): (u32, u32)) -> u64 {
     let mut z = 0;
     let msb_mask = 1_u32 << 31;
@@ -19,6 +20,7 @@ pub fn pair_to_zorder((mut x, mut y): (u32, u32)) -> u64 {
     z
 }
 
+#[inline]
 pub fn zorder_to_pair(mut z: u64) -> (u32, u32) {
     let mut x = 0;
     let mut y = 0;
