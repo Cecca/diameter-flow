@@ -74,7 +74,7 @@ impl Host {
             path_str.to_owned().clone()
         };
         println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
-        let parent_path_str = path
+        let _parent_path_str = path
             .as_ref()
             .parent()
             .expect("missing parent")
@@ -458,7 +458,7 @@ fn main() {
                     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                     .probe_with(&mut probe)
                     .sink(Pipeline, "diameter collect", move |input| {
-                        input.for_each(|t, data| {
+                        input.for_each(|_t, data| {
                             //
                             diameter_result_ref.borrow_mut().replace(data[0]);
                         });

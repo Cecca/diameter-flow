@@ -1,12 +1,12 @@
 use crate::logging::*;
 use crate::Config;
 use chrono::prelude::*;
-use sha2::{Digest, Sha256, Sha512};
-use std::collections::HashMap;
-use std::fmt::Display;
+use sha2::{Digest, Sha256};
+
+
 use std::fs::File;
 use std::io::{Result as IOResult, Write};
-use std::path::{Path, PathBuf};
+use std::path::{Path};
 use std::time::Duration;
 
 pub struct Reporter {

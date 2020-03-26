@@ -94,7 +94,7 @@ where
     let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
         let mut probe = ProbeHandle::new();
-        let reporting_worker = scope.index();
+        let _reporting_worker = scope.index();
 
         stream
             .aggregate(
