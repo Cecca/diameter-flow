@@ -389,6 +389,7 @@ fn main() {
     let mut datasets = map! {
         "cnr-2000" => builder.webgraph("cnr-2000"),
         "it-2004" => builder.webgraph("it-2004"),
+        "uk-2005" => builder.webgraph("uk-2005"),
         "sk-2005" => builder.webgraph("sk-2005"),
         "uk-2014-tpd" => builder.webgraph("uk-2014-tpd"),
         "uk-2014-host" => builder.webgraph("uk-2014-host"),
