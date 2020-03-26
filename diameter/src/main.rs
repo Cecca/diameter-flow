@@ -2,7 +2,6 @@ extern crate abomonation;
 #[macro_use]
 extern crate abomonation_derive;
 extern crate base64;
-extern crate differential_dataflow;
 extern crate flate2;
 extern crate regex;
 extern crate reqwest;
@@ -17,7 +16,6 @@ mod delta_stepping;
 mod distributed_graph;
 mod hyperball;
 mod logging;
-mod min_sum;
 mod operators;
 mod rand_cluster;
 mod reporter;
