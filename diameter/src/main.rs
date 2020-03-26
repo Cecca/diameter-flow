@@ -264,8 +264,10 @@ fn parse_hosts(arg: &str) -> Result<Hosts, String> {
         let mut hosts = Vec::new();
         for line in reader.lines() {
             let line = line.or(Err("error reading line"))?;
-            let host = Host::try_from(line.as_str())?;
-            hosts.push(host);
+            if line.len() > 0 {
+                let host = Host::try_from(line.as_str())?;
+                hosts.push(host);
+            }
         }
         Ok(Hosts { hosts })
     } else {
