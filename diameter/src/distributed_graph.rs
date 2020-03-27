@@ -141,10 +141,9 @@ impl DistributedEdges {
     where
         F: FnMut(u32, u32, u32),
     {
-        // for (u, v, w) in self.edges.iter() {
-        //     action(u, v, w);
-        // }
+        let timer = std::time::Instant::now();
         self.edges.for_each(action);
+        println!("time to iterate over all the edges {:?}", timer.elapsed());
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
@@ -280,13 +279,6 @@ impl DistributedEdges {
                             CountEvent::load_state_exchange(t.time().clone()),
                             data.len() as u64,
                         ));
-                        // let node_map = stash
-                        //     .entry(t.time().clone())
-                        //     .or_insert_with(|| edges.edges.node_map());
-                        // for (_, (u, state)) in data.into_iter() {
-                        //     node_map.set(u, state);
-                        // }
-                        // .extend(data.into_iter().map(|pair| pair.1));
                         stash
                             .entry(t.time().clone())
                             .or_insert_with(HashMap::new)
@@ -296,16 +288,10 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
                             let mut output_messages = HashMap::new();
-                            // let mut output_messages = edges.edges.node_map();
-                            // println!(
-                            //     "Allocated vector for {} destination nodes",
-                            //     output_messages.allocated_size()
-                            // );
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
-                                // if let Entry::Occupied(state_u) = states.get(u) {
                                 if let Some(state_u) = states.get(&u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         output_messages
@@ -323,16 +309,6 @@ impl DistributedEdges {
                                     }
                                 }
                             });
-                            // println!(
-                            //     "Occupancy of node states: {}\nOccupancy of messages: {}",
-                            //     states.occupancy(),
-                            //     output_messages.occupancy()
-                            // );
-                            // println!(
-                            //     "[{:?}] propagating {} messages",
-                            //     t.time(),
-                            //     output_messages.len()
-                            // );
 
                             // Output the aggregated messages
                             output
@@ -379,12 +355,6 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                            // println!(
-                            //     "[{:?}] got {} messages, and {} nodes",
-                            //     t.time(),
-                            //     msgs.len(),
-                            //     nodes.len()
-                            // );
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
                             for (id, state) in nodes.into_iter() {
@@ -396,12 +366,6 @@ impl DistributedEdges {
                                     cnt_no_messaged += 1;
                                 }
                             }
-                            // println!(
-                            //     "[{:?}], messaged: {}, no messaged: {}",
-                            //     t.time(),
-                            //     cnt_messaged,
-                            //     cnt_no_messaged
-                            // );
                         }
                     });
                 },

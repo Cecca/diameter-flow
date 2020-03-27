@@ -104,6 +104,7 @@ impl CompressedEdgesBlockSet {
         P: AsRef<Path> + Debug,
         I: IntoIterator<Item = (P, Option<P>)>,
     {
+        let timer = std::time::Instant::now();
         let mut blocks = Vec::new();
         for (path, weights_path) in paths.into_iter() {
             blocks.push(CompressedEdges::from_file(path, weights_path)?);
@@ -119,6 +120,13 @@ impl CompressedEdgesBlockSet {
                 max_node = std::cmp::max(dst, max_node);
             });
         }
+
+        println!(
+            "edge block set spanning from {} to {} created in {:?}",
+            min_node,
+            max_node,
+            timer.elapsed()
+        );
 
         Ok(Self {
             blocks,
