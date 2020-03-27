@@ -9,6 +9,50 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::ExchangeData;
 
+struct View<D> {
+    data: Rc<Vec<(u32, D)>>,
+    current_key: u32,
+    current_index: usize,
+}
+
+impl<D> View<D> {
+    fn new(data: Rc<Vec<(u32, D)>>) -> Self {
+        let current_key: u32 = data[0].0;
+        Self {
+            data,
+            current_key,
+            current_index: 0,
+        }
+    }
+
+    fn get<'a>(&'a mut self, key: u32) -> Option<&'a D> {
+        if key == self.current_key {
+            return Some(&self.data[self.current_index].1);
+        } else if self.current_key < key {
+            while self.current_index < self.data.len() - 1 {
+                self.current_index += 1;
+                self.current_key = self.data[self.current_index].0;
+                if self.current_key == key {
+                    return Some(&self.data[self.current_index].1);
+                } else if key < self.current_key {
+                    break;
+                }
+            }
+        } else {
+            while self.current_index > 0 {
+                self.current_index -= 1;
+                self.current_key = self.data[self.current_index].0;
+                if self.current_key == key {
+                    return Some(&self.data[self.current_index].1);
+                } else if self.current_key < key {
+                    break;
+                }
+            }
+        }
+        None
+    }
+}
+
 pub struct DistributedEdgesBuilder {
     edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
     nodes_processors: Rc<RefCell<Option<HashMap<u32, Vec<usize>>>>>,
@@ -281,18 +325,22 @@ impl DistributedEdges {
                         ));
                         stash
                             .entry(t.time().clone())
-                            .or_insert_with(HashMap::new)
+                            .or_insert_with(Vec::new)
                             .extend(data.into_iter().map(|pair| pair.1));
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
-                        if let Some(states) = stash.remove(&t) {
+                        if let Some(mut states) = stash.remove(&t) {
+                            states.sort_by_key(|pair| pair.0);
+                            let states = Rc::new(states);
+                            let mut view_u = View::new(Rc::clone(&states));
+                            let mut view_v = View::new(Rc::clone(&states));
                             let mut output_messages = HashMap::new();
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
-                                if let Some(state_u) = states.get(&u) {
+                                if let Some(state_u) = view_u.get(u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         output_messages
                                             .entry(v)
@@ -300,7 +348,7 @@ impl DistributedEdges {
                                             .or_insert(msg);
                                     }
                                 }
-                                if let Some(state_v) = states.get(&v) {
+                                if let Some(state_v) = view_v.get(v) {
                                     if let Some(msg) = message(t.time().clone(), state_v, w) {
                                         output_messages
                                             .entry(u)
