@@ -217,6 +217,8 @@ impl TryFrom<&str> for Algorithm {
 pub struct Config {
     #[argh(option, description = "number of threads per process")]
     threads: Option<usize>,
+    #[argh(option, description = "random seed for the algorithm")]
+    seed: Option<u64>,
     #[argh(
         option,
         description = "hosts: either a file or a comma separated list of strings",
@@ -315,6 +317,10 @@ impl Config {
             },
             None => argh::from_env(),
         }
+    }
+
+    fn seed(&self) -> u64 {
+        self.seed.unwrap_or(1234u64)
     }
 
     fn execute<T, F>(&self, func: F) -> Result<WorkerGuards<T>, ExecError>
@@ -419,6 +425,7 @@ fn main() {
     println!("Input graph stats: {:?}", meta);
 
     let algorithm = config.algorithm;
+    let seed = config.seed();
     let config2 = config.clone();
 
     if algorithm.is_sequential() {

@@ -3,10 +3,9 @@ use crate::Config;
 use chrono::prelude::*;
 use sha2::{Digest, Sha256};
 
-
 use std::fs::File;
 use std::io::{Result as IOResult, Write};
-use std::path::{Path};
+use std::path::Path;
 use std::time::Duration;
 
 pub struct Reporter {
@@ -76,12 +75,13 @@ impl Reporter {
         main_path.push("main.csv");
         let mut writer = Self::with_header(
             main_path,
-            "sha,threads,hosts,dataset,algorithm,main,diameter,total_time_ms",
+            "sha,seed,threads,hosts,dataset,algorithm,main,diameter,total_time_ms",
         )?;
         writeln!(
             writer,
-            "{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{}",
             sha,
+            self.config.seed(),
             self.config.threads.unwrap_or(1),
             self.config.hosts_string(),
             self.config.dataset,
