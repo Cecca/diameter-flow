@@ -323,6 +323,8 @@ impl Config {
         F: Fn(&mut Worker<Allocator>) -> T + Send + Sync + 'static,
     {
         if self.hosts.is_some() && self.process_id.is_none() {
+            let exec = std::env::args().nth(0).unwrap();
+            println!("spawning executable {:?}", exec);
             // This is the top level invocation, which should spawn the processes with ssh
             let handles: Vec<std::process::Child> = self
                 .hosts
@@ -336,7 +338,7 @@ impl Config {
                     println!("Connecting to {}", host.name);
                     Command::new("ssh")
                         .arg(&host.name)
-                        .arg("diameter-flow")
+                        .arg(&exec)
                         .arg(encoded_config)
                         .spawn()
                         .expect("problem spawning the ssh process")
