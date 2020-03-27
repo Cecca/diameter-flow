@@ -324,10 +324,24 @@ impl Dataset {
             (input, probe, builder)
         });
 
+        let mut identifiers: Vec<usize> =
+            self.binary_edge_files().map(|triplet| triplet.0).collect();
+        identifiers.sort();
+        let mut groups = identifiers.chunks(1 + identifiers.len() / worker.peers());
+        let this_identifiers: &[usize] = groups
+            .nth(worker.index())
+            .expect("no parts to load for this worker, possibly there are too few parts");
+        println!(
+            "worker {} will load parts {:?}",
+            worker.index(),
+            this_identifiers
+        );
+
         println!("loading input");
         self.binary_edge_files()
             .for_each(|(id, path, weights_path)| {
-                if id % worker.peers() == worker.index() {
+                // if id % worker.peers() == worker.index() {
+                if this_identifiers.contains(&id) {
                     input.send((
                         path.to_str()
                             .expect("couldn't convert path to string")
