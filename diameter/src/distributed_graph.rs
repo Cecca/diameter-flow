@@ -1,5 +1,6 @@
 use crate::logging::*;
-use bytes::CompressedEdgesBlockSet;
+use bytes::*;
+// use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -278,19 +279,32 @@ impl DistributedEdges {
                             CountEvent::load_state_exchange(t.time().clone()),
                             data.len() as u64,
                         ));
-                        stash
+                        let node_map = stash
                             .entry(t.time().clone())
-                            .or_insert_with(HashMap::new)
-                            .extend(data.into_iter().map(|pair| pair.1));
+                            .or_insert_with(|| edges.edges.node_map());
+                        for (_, (u, state)) in data.into_iter() {
+                            node_map.set(u, state);
+                        }
+                        // .extend(data.into_iter().map(|pair| pair.1));
+                        // stash
+                        //     .entry(t.time().clone())
+                        //     .or_insert_with(HashMap::new)
+                        //     .extend(data.into_iter().map(|pair| pair.1));
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
-                            let mut output_messages = HashMap::new();
+                            // let mut output_messages = HashMap::new();
+                            let mut output_messages = edges.edges.node_map();
+                            println!(
+                                "Allocated vector for {} destination nodes",
+                                output_messages.allocated_size()
+                            );
 
                             // Accumulate messages going over the edges
+                            // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
-                                if let Some(state_u) = states.get(&u) {
+                                if let Entry::Occupied(state_u) = states.get(u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         output_messages
                                             .entry(v)
@@ -298,7 +312,7 @@ impl DistributedEdges {
                                             .or_insert(msg);
                                     }
                                 }
-                                if let Some(state_v) = states.get(&v) {
+                                if let Entry::Occupied(state_v) = states.get(v) {
                                     if let Some(msg) = message(t.time().clone(), state_v, w) {
                                         output_messages
                                             .entry(u)

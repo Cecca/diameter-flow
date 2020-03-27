@@ -6,8 +6,91 @@ use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
+// Modelled after Rust's HashMap entry
+#[derive(Clone)]
+pub enum Entry<D: Clone> {
+    /// An occupied entry.
+    Occupied(D),
+    /// A vacant entry.
+    Vacant,
+}
+
+impl<D: Clone> Entry<D> {
+    pub fn is_occupied(&self) -> bool {
+        match &self {
+            Self::Occupied(_) => true,
+            _ => false,
+        }
+    }
+
+    pub fn and_modify<F: Fn(&mut D)>(&mut self, f: F) -> &mut Self {
+        match self {
+            Self::Occupied(val) => f(val),
+            Self::Vacant => (), //do nothing
+        }
+        self
+    }
+
+    pub fn or_insert(&mut self, d: D) -> &mut Self {
+        match self {
+            Self::Occupied(val) => (),
+            Self::Vacant => *self = Self::Occupied(d),
+        }
+
+        self
+    }
+
+    pub fn unwrap(self) -> D {
+        match self {
+            Self::Occupied(v) => v,
+            Self::Vacant => panic!("empty entry"),
+        }
+    }
+}
+
+pub struct OffsetArrayMap<D: Clone> {
+    offset: usize,
+    data: Vec<Entry<D>>,
+}
+
+impl<D: Clone + 'static> OffsetArrayMap<D> {
+    fn new(offset: u32, len: u32) -> Self {
+        Self {
+            offset: offset as usize,
+            data: vec![Entry::Vacant; len as usize],
+        }
+    }
+
+    pub fn allocated_size(&self) -> usize {
+        self.data.len()
+    }
+
+    pub fn set(&mut self, index: u32, value: D) {
+        self.data[index as usize - self.offset] = Entry::Occupied(value);
+    }
+
+    pub fn entry<'a>(&'a mut self, index: u32) -> &'a mut Entry<D> {
+        &mut self.data[index as usize - self.offset]
+    }
+
+    pub fn get<'a>(&'a self, index: u32) -> &'a Entry<D> {
+        &self.data[index as usize - self.offset]
+    }
+
+    pub fn into_iter(self) -> impl Iterator<Item = (u32, D)> {
+        let offset = self.offset;
+        self.data
+            .into_iter()
+            .filter(|e| e.is_occupied())
+            .enumerate()
+            .map(move |(i, val)| ((i + offset) as u32, val.unwrap()))
+    }
+}
+
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
+    min_node: u32,
+    max_node: u32,
 }
 
 impl CompressedEdgesBlockSet {
@@ -20,11 +103,35 @@ impl CompressedEdgesBlockSet {
         for (path, weights_path) in paths.into_iter() {
             blocks.push(CompressedEdges::from_file(path, weights_path)?);
         }
-        Ok(Self { blocks })
+
+        let mut min_node = std::u32::MAX;
+        let mut max_node = std::u32::MIN;
+        for block in blocks.iter() {
+            block.iter().for_each(|(src, dst, _)| {
+                min_node = std::cmp::min(src, min_node);
+                min_node = std::cmp::min(dst, min_node);
+                max_node = std::cmp::max(src, max_node);
+                max_node = std::cmp::max(dst, max_node);
+            });
+        }
+
+        Ok(Self {
+            blocks,
+            min_node,
+            max_node,
+        })
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
         self.blocks.iter().flat_map(|b| b.iter())
+    }
+
+    pub fn node_map<D: Clone + 'static>(&self) -> OffsetArrayMap<D> {
+        println!(
+            "Creating OffsetArrayMap for nodes between {} and {}",
+            self.min_node, self.max_node
+        );
+        OffsetArrayMap::new(self.min_node, self.max_node - self.min_node + 1)
     }
 }
 
@@ -38,7 +145,6 @@ impl CompressedEdges {
     pub fn from_file<P: AsRef<Path> + Debug>(path: P, weights_path: Option<P>) -> IOResult<Self> {
         use std::fs::File;
         use std::io::BufReader;
-        
         use std::io::ErrorKind::UnexpectedEof;
         let mut reader = BufReader::new(File::open(path)?);
         let mut raw = Vec::new();
@@ -247,4 +353,16 @@ impl Drop for CompressedTripletsWriter {
     fn drop(&mut self) {
         self.flush().unwrap();
     }
+}
+
+#[test]
+fn test_entry() {
+    let mut arr = OffsetArrayMap::new(4, 10);
+    arr.entry(5).or_insert(5u32);
+    let actual = arr.get(5).clone();
+    assert!(actual.unwrap() == 5);
+
+    arr.entry(5).and_modify(|v| *v = 4);
+    let actual = arr.get(5).clone();
+    assert!(actual.unwrap() == 4);
 }
