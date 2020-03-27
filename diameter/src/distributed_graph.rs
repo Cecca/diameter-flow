@@ -141,9 +141,10 @@ impl DistributedEdges {
     where
         F: FnMut(u32, u32, u32),
     {
-        for (u, v, w) in self.edges.iter() {
-            action(u, v, w);
-        }
+        // for (u, v, w) in self.edges.iter() {
+        //     action(u, v, w);
+        // }
+        self.edges.for_each(action);
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
@@ -321,6 +322,11 @@ impl DistributedEdges {
                                     }
                                 }
                             });
+                            println!(
+                                "Occupancy of node states: {}\nOccupancy of messages: {}",
+                                states.occupancy(),
+                                output_messages.occupancy()
+                            );
                             // println!(
                             //     "[{:?}] propagating {} messages",
                             //     t.time(),

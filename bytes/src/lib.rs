@@ -61,6 +61,11 @@ impl<D: Clone + 'static> OffsetArrayMap<D> {
         }
     }
 
+    pub fn occupancy(&self) -> f64 {
+        let occupied = self.data.iter().filter(|x| !x.is_occupied()).count();
+        occupied as f64 / self.allocated_size() as f64
+    }
+
     pub fn allocated_size(&self) -> usize {
         self.data.len()
     }
@@ -133,6 +138,12 @@ impl CompressedEdgesBlockSet {
         );
         OffsetArrayMap::new(self.min_node, self.max_node - self.min_node + 1)
     }
+
+    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) {
+        for block in self.blocks.iter() {
+            block.for_each(&mut action);
+        }
+    }
 }
 
 pub struct CompressedEdges {
@@ -168,6 +179,37 @@ impl CompressedEdges {
             weights
         });
         Ok(Self { raw, weights })
+    }
+
+    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, action: &mut F) {
+        use std::io::Cursor;
+        let cursor = Cursor::new(&self.raw);
+        let mut reader = stream::DifferenceStreamReader::new(cursor);
+        let _weights = self.weights.as_ref().map(|vec| vec.iter());
+
+        if let Some(weights) = self.weights.as_ref() {
+            let mut weights = weights.iter();
+            loop {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    return;
+                } else {
+                    let (u, v) = morton::zorder_to_pair(z);
+                    let w = *weights.next().expect("weights exhausted too soon!");
+                    action(u, v, w);
+                }
+            }
+        } else {
+            loop {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    return;
+                } else {
+                    let (u, v) = morton::zorder_to_pair(z);
+                    action(u, v, 1);
+                }
+            }
+        }
     }
 
     pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (u32, u32, u32)> + 'a> {
