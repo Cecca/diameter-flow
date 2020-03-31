@@ -109,6 +109,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
 ) -> Stream<G, (u32, NodeState)> {
     let mut stash = HashMap::new();
     let l1 = nodes.scope().count_logger().expect("missing logger");
+    let logn = (n as f64).log(10.0);
 
     // we have to stash the nodes and sort them to make the center sampling
     // deterministic, for a fixed random generator.
@@ -132,7 +133,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let mut out = output.session(&t);
                     let population_size = nodes.len();
                     let mut cnt = 0;
-                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
+                    let p = logn * 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
