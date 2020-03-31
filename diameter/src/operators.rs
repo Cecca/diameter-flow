@@ -1,3 +1,4 @@
+use crate::logging::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -12,13 +13,17 @@ pub trait BranchAll<G: Scope, D: Data> {
         P: Fn(&D) -> bool + 'static;
 }
 
-impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
+impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D>
+where
+    G::Timestamp: ToPair,
+{
     fn branch_all<P>(&self, condition: P) -> (Stream<G, D>, Stream<G, D>)
     where
         P: Fn(&D) -> bool + 'static,
     {
         use timely::dataflow::operators::*;
 
+        let logger = self.scope().count_logger().expect("missing logger");
         let worker_id = self.scope().index();
         let stash = Rc::new(RefCell::new(HashMap::new()));
         let stash2 = Rc::clone(&stash);
@@ -28,9 +33,9 @@ impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
                 move |input, output| {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
-                        output
-                            .session(&t)
-                            .give(data.iter().filter(|x| condition(x)).count());
+                        let cnt = data.iter().filter(|x| condition(x)).count();
+                        logger.log((CountEvent::updated_nodes(t.time().clone()), cnt as u64));
+                        output.session(&t).give(cnt);
                         stash
                             .borrow_mut()
                             .entry(t.time().clone())

@@ -1,5 +1,6 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
+use crate::operators::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
@@ -119,6 +120,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
                 |state| state.deactivate(),
             )
             .branch(|_t, (_id, state)| state.updated);
+        // .branch_all(|(_id, state)| state.updated);
 
         updated.connect_loop(handle);
 
