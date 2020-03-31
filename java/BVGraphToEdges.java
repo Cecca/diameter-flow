@@ -61,6 +61,9 @@ public class BVGraphToEdges {
 
         long[] buffer = new long[100_000_000];
 
+        long cntSelfLoops = 0;
+        long cntDuplicates = 0;
+
         long cnt = 0;
         System.out.println("Encoding the values... ");
         pl.start();
@@ -85,9 +88,11 @@ public class BVGraphToEdges {
                     }
                     buffer[pos++] = zorder(src, dst);
                     if (pos >= buffer.length) {
-                        writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
+                        cntDuplicates += writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
                         pos = 0;
                     }
+                } else {
+                    cntSelfLoops++;
                 }
                 pl.lightUpdate();
                 // if (cnt++ % 10000000 == 0) {
@@ -95,8 +100,9 @@ public class BVGraphToEdges {
                 // }
             }
         }
-        writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
+        cntDuplicates += writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
         pl.stop();
+        System.out.println("Ignored " + cntSelfLoops + " self loops and " + cntDuplicates + " duplicates");
 
         System.out.println("Merge sort the encoded values, writing them compressed... ");
         start = System.currentTimeMillis();
@@ -220,8 +226,10 @@ public class BVGraphToEdges {
         return directoryToBeDeleted.delete();
     }
 
-    static void writePartial(long[] buffer, int until, File output) throws IOException {
+    static long writePartial(long[] buffer, int until, File output) throws IOException {
         System.out.print("Sorting, pushing, and advancing... ");
+
+        long cntDuplicates = 0;
 
         long start = System.currentTimeMillis();
         Arrays.sort(buffer, 0, until);
@@ -230,10 +238,13 @@ public class BVGraphToEdges {
         for (int i = 1; i < until; i++) {
             if (buffer[i] != buffer[i - 1]) { // remove duplicates
                 out.write(buffer[i]);
+            } else {
+                cntDuplicates++;
             }
         }
         out.close();
         System.out.println((System.currentTimeMillis() - start) / 1000.0 + "s");
+        return cntDuplicates;
     }
 
     static File mergeAndCompress(File scratch) throws IOException, FileNotFoundException {
@@ -242,6 +253,7 @@ public class BVGraphToEdges {
         ArrayList<File> files = new ArrayList<>(Arrays.asList(scratch.listFiles(f -> f.isFile())));
         ArrayList<File> outputs = new ArrayList<>();
 
+        long cntDuplicates = 0;
         int cnt = 0;
         while (files.size() > 1) {
             System.out.println("merging " + files.size() + " files");
@@ -252,7 +264,7 @@ public class BVGraphToEdges {
                 if (iter.hasNext()) {
                     File b = iter.next();
                     File out = new File(mergedir, Integer.toString(cnt++));
-                    merge(a, b, out);
+                    cntDuplicates += merge(a, b, out);
                     outputs.add(out);
                 } else {
                     outputs.add(a);
@@ -262,15 +274,17 @@ public class BVGraphToEdges {
             files.addAll(outputs);
             outputs.clear();
         }
+        System.out.println("Ignored further " + cntDuplicates + " when merging");
 
         return files.get(0);
     }
 
-    static void merge(File aFile, File bFile, File outFile) throws IOException {
+    static long merge(File aFile, File bFile, File outFile) throws IOException {
         OutputDifferenceStream out = new OutputDifferenceStream(outFile);
         InputDifferenceStream aStream = new InputDifferenceStream(aFile);
         InputDifferenceStream bStream = new InputDifferenceStream(bFile);
 
+        long cntDuplicates = 0;
         long edgeCount = 0;
 
         long a = aStream.read();
@@ -302,6 +316,7 @@ public class BVGraphToEdges {
                     b = bStream.read();
                     bMore = true;
                     edgeCount++;
+                    cntDuplicates++;
                 }
             }
         } catch (EOFException e) {
@@ -338,6 +353,7 @@ public class BVGraphToEdges {
         out.close();
 
         System.out.println("edges merged: " + edgeCount);
+        return cntDuplicates;
     }
 
     // static class DataChunk implements Comparable<DataChunk> {
