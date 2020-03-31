@@ -388,7 +388,11 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         radii[&(v as u32)]
                     );
                     let diameter = aux_diam + radii[&(u as u32)] + radii[&(v as u32)];
-                    output.session(&t).give(diameter);
+                    if max_radius > diameter {
+                        output.session(&t).give(max_radius);
+                    } else {
+                        output.session(&t).give(diameter);
+                    }
                 }
             });
         },
