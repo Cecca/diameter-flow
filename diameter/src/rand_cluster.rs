@@ -16,10 +16,37 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
 
+#[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
+struct Message {
+    distance: u32,
+    root: u32,
+    generation: u32,
+}
+
+impl Message {
+    fn merge(msg1: &Self, msg2: &Self) -> Self {
+        if msg1.generation < msg2.generation {
+            // The newest wins
+            *msg2
+        } else if msg1.generation > msg2.generation {
+            *msg1
+        } else if msg1.distance < msg2.distance {
+            *msg1
+        } else if msg1.distance > msg2.distance {
+            *msg2
+        } else if msg1.root < msg2.root {
+            *msg1
+        } else {
+            *msg2
+        }
+    }
+}
+
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct NodeState {
     active: bool,
     distance: Option<(u32, u32)>,
+    generation: Option<u32>,
 }
 
 impl Default for NodeState {
@@ -27,6 +54,7 @@ impl Default for NodeState {
         Self {
             active: true,
             distance: None,
+            generation: None,
         }
     }
 }
@@ -40,7 +68,7 @@ impl NodeState {
         self.active && self.distance.is_some()
     }
 
-    fn propagate(&self, weight: u32, radius: u32) -> Option<(u32, u32)> {
+    fn propagate(&self, weight: u32, radius: u32) -> Option<Message> {
         assert!(self.can_send());
         let (root, d) = self
             .distance
@@ -48,15 +76,20 @@ impl NodeState {
         if d + weight > radius {
             None
         } else {
-            Some((root, d + weight))
+            Some(Message {
+                root,
+                distance: d + weight,
+                generation: self.generation.expect("missing generation"),
+            })
         }
     }
 
-    fn as_center(&self, id: u32) -> Self {
-        assert!(self.is_uncovered());
+    fn as_center(&self, id: u32, generation: u32) -> Self {
+        assert!(self.is_uncovered(), "a covered node cannot become a center");
         Self {
             active: true,
             distance: Some((id, 0)),
+            generation: Some(generation),
         }
     }
 
@@ -67,12 +100,13 @@ impl NodeState {
         }
     }
 
-    fn updated(&self, new_distance: (u32, u32)) -> Self {
+    fn updated(&self, message: Message) -> Self {
         if let Some((root, prev_distance)) = self.distance {
-            if new_distance.0 == root && new_distance.1 < prev_distance {
+            if message.root == root && message.distance < prev_distance {
                 Self {
                     active: true,
-                    distance: Some(new_distance),
+                    distance: Some((message.root, message.distance)),
+                    ..self.clone()
                 }
             } else {
                 Self {
@@ -84,20 +118,9 @@ impl NodeState {
             // the node was uncovered
             Self {
                 active: true,
-                distance: Some(new_distance),
+                distance: Some((message.root, message.distance)),
+                generation: Some(message.generation),
             }
-        }
-    }
-
-    fn merge(msg1: &(u32, u32), msg2: &(u32, u32)) -> (u32, u32) {
-        if msg1.1 < msg2.1 {
-            *msg1
-        } else if msg1.1 > msg2.1 {
-            *msg2
-        } else if msg1.0 < msg2.0 {
-            *msg1
-        } else {
-            *msg2
         }
     }
 }
@@ -109,7 +132,6 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
 ) -> Stream<G, (u32, NodeState)> {
     let mut stash = HashMap::new();
     let l1 = nodes.scope().count_logger().expect("missing logger");
-    let logn = (n as f64).log(10.0);
 
     // we have to stash the nodes and sort them to make the center sampling
     // deterministic, for a fixed random generator.
@@ -128,16 +150,17 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
             });
             notificator.for_each(|t, _, _| {
                 if let Some(mut nodes) = stash.remove(&t) {
+                    let generation = t.time().inner;
                     nodes.sort_by_key(|pair| pair.0);
                     l1.log((CountEvent::Active(t.inner), nodes.len() as u64));
                     let mut out = output.session(&t);
                     let population_size = nodes.len();
                     let mut cnt = 0;
-                    let p = logn * 2_f64.powi(t.time().inner as i32) / n as f64;
+                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
-                                out.give((id, state.as_center(id)));
+                                out.give((id, state.as_center(id, generation)));
                                 cnt += 1;
                             } else {
                                 out.give((id, state));
@@ -145,11 +168,13 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         }
                     } else {
                         cnt = nodes.len();
-                        out.give_iterator(
-                            nodes
-                                .into_iter()
-                                .map(|(id, state)| (id, state.as_center(id))),
-                        );
+                        out.give_iterator(nodes.into_iter().map(|(id, state)| {
+                            if state.is_uncovered() {
+                                (id, state.as_center(id, generation))
+                            } else {
+                                (id, state.clone())
+                            }
+                        }));
                     }
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
                     println!(
@@ -193,7 +218,7 @@ where
                         None
                     }
                 },
-                |d1, d2| NodeState::merge(d1, d2), // aggregate messages
+                |d1, d2| Message::merge(d1, d2), // aggregate messages
                 |state, message| state.updated(*message),
                 |state| state.deactivate(), // deactivate nodes with no messages
             )
@@ -270,7 +295,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        .branch(move |_t, (_id, state)| state.is_uncovered());
+        // .branch(move |_t, (_id, state)| state.is_uncovered());
+        .branch_all(move |(id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 
