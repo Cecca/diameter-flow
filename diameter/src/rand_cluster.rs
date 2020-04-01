@@ -327,6 +327,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         None,
         move |graph_input, radii_input, output, notificator| {
             graph_input.for_each(|t, data| {
+                println!("Stashing auxiliary graph data");
                 let data = data.replace(Vec::new());
                 let entry = stash_auxiliary
                     .entry(t.time().clone())
@@ -345,8 +346,10 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     entry.insert((u1, v1), w);
                 }
                 notificator.notify_at(t.retain());
+                println!("Stashed auxiliary graph data");
             });
             radii_input.for_each(|t, data| {
+                println!("Stashing radius data");
                 let data = data.replace(Vec::new());
                 stash_radii
                     .entry(t.time().clone())
@@ -362,6 +365,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         )
                     }));
                 notificator.notify_at(t.retain());
+                println!("Stashed radius data");
             });
 
             notificator.for_each(|t, _, _| {
