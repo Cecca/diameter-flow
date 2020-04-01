@@ -258,6 +258,8 @@ impl DistributedEdges {
         let edges = Self::clone(&self);
         let edges1 = Self::clone(&self);
 
+        let worker_id = nodes.scope().index();
+
         nodes
             // Send states if needed
             .unary(Pipeline, "send states", move |_, _| {
@@ -323,7 +325,8 @@ impl DistributedEdges {
                             });
                             let elapsed = timer.elapsed();
                             println!(
-                                "edge traversal in {:?} ({:.3?} edges/sec) with {} node states",
+                                "[{}] edge traversal in {:?} ({:.3?} edges/sec) with {} node states",
+                                worker_id,
                                 elapsed,
                                 cnt as f64 / elapsed.as_secs_f64(),
                                 n_states
@@ -389,7 +392,8 @@ impl DistributedEdges {
                             }
                             let elapsed = timer.elapsed();
                             println!(
-                                "updated {} nodes in {:?} ({:.3?} per second)",
+                                "[{}] updated {} nodes in {:?} ({:.3?} per second)",
+                                worker_id,
                                 n,
                                 elapsed,
                                 n as f64 / elapsed.as_secs_f64()
