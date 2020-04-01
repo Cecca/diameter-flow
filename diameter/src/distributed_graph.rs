@@ -301,6 +301,7 @@ impl DistributedEdges {
                             let mut output_messages = HashMap::new();
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
+                            let mut cnt_out = 0;
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
@@ -308,6 +309,7 @@ impl DistributedEdges {
                                 cnt += 1;
                                 if let Some(state_u) = states.get(&u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
+                                        cnt_out += 1;
                                         output_messages
                                             .entry(v)
                                             .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
@@ -316,6 +318,7 @@ impl DistributedEdges {
                                 }
                                 if let Some(state_v) = states.get(&v) {
                                     if let Some(msg) = message(t.time().clone(), state_v, w) {
+                                        cnt_out += 1;
                                         output_messages
                                             .entry(u)
                                             .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
@@ -325,12 +328,13 @@ impl DistributedEdges {
                             });
                             let elapsed = timer.elapsed();
                             println!(
-                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states",
+                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages",
                                 worker_id,
                                 cnt,
                                 elapsed,
                                 cnt as f64 / elapsed.as_secs_f64(),
-                                n_states
+                                n_states,
+                                cnt_out
                             );
 
                             // Output the aggregated messages
