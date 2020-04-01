@@ -122,7 +122,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
             // .branch(|_t, (_id, state)| state.updated);
             // We have to keep cycling nodes because they may get re-activated
             // at a later iteration
-            .branch_all(|(_id, state)| state.updated);
+            .branch_all(|_, (_id, state)| state.updated);
 
         updated.connect_loop(handle);
 

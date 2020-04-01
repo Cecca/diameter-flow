@@ -51,6 +51,10 @@ enum NodeState {
         generation: u32,
         updated: bool,
     },
+    Frozen {
+        root: u32,
+        distance: u32,
+    },
 }
 
 impl Default for NodeState {
@@ -67,19 +71,45 @@ impl NodeState {
         }
     }
 
-    fn can_send(&self) -> bool {
+    fn is_frozen(&self) -> bool {
+        match self {
+            Self::Frozen { .. } => true,
+            _ => false,
+        }
+    }
+
+    fn can_send(&self, radius: u32, round: u32) -> bool {
         match *self {
             Self::Covered {
                 root,
                 distance,
                 generation,
                 updated,
-            } => updated,
+            } => updated && distance <= radius * (1 + round - generation),
             _ => false,
         }
     }
 
-    fn propagate(&self, weight: u32, radius: u32, round: u32) -> Option<Message> {
+    fn freeze_if_done(&self, radius: u32, round: u32) -> Self {
+        match *self {
+            Self::Uncovered => Self::Uncovered,
+            Self::Frozen { .. } => self.clone(),
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => {
+                if distance <= radius * (1 + round - generation) {
+                    Self::Frozen { root, distance }
+                } else {
+                    self.clone()
+                }
+            }
+        }
+    }
+
+    fn propagate(&self, weight: u32, radius: u32) -> Option<Message> {
         match *self {
             Self::Covered {
                 root,
@@ -88,17 +118,18 @@ impl NodeState {
                 updated,
             } => {
                 assert!(updated, "no reason to send from non-updated nodes");
-                if distance + weight > radius * (1 + round - generation) {
-                    None
-                } else {
-                    Some(Message {
-                        root,
-                        distance: distance + weight,
-                        generation,
-                    })
-                }
+                // if distance + weight > radius * (1 + round - generation) {
+                //     None
+                // } else {
+                Some(Message {
+                    root,
+                    distance: distance + weight,
+                    generation,
+                })
+                // }
             }
             Self::Uncovered => panic!("cannot send from an uncovered node"),
+            Self::Frozen { .. } => panic!("frozen nodes don't participate in the communication"),
         }
     }
 
@@ -110,6 +141,7 @@ impl NodeState {
                 generation,
                 updated,
             } => *distance,
+            Self::Frozen { root, distance } => *distance,
             Self::Uncovered => panic!("Cannot get distance from uncovered node"),
         }
     }
@@ -122,6 +154,7 @@ impl NodeState {
                 generation,
                 updated,
             } => *root,
+            Self::Frozen { root, distance } => *root,
             Self::Uncovered => panic!("Cannot get distance from uncovered node"),
         }
     }
@@ -152,11 +185,13 @@ impl NodeState {
                 updated: false,
             },
             Self::Uncovered => Self::Uncovered,
+            Self::Frozen { .. } => self.clone(),
         }
     }
 
     fn updated(&self, message: Message) -> Self {
         match *self {
+            Self::Frozen { .. } => panic!("Frozen nodes cannot be updated"),
             Self::Uncovered => Self::Covered {
                 root: message.root,
                 distance: message.distance,
@@ -243,10 +278,10 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         }));
                     }
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
-                    println!(
-                        "{} centers out of {} sampled at iteration {}",
-                        cnt, population_size, t.inner
-                    );
+                    // println!(
+                    //     "{} centers out of {} sampled at iteration {}",
+                    //     cnt, population_size, t.inner
+                    // );
                 }
             });
         },
@@ -268,32 +303,47 @@ where
     let _l4 = l1.clone();
     let _l5 = l1.clone();
 
-    nodes.scope().iterative::<u32, _, _>(move |subscope| {
-        let nodes = nodes.enter(subscope);
+    nodes
+        .scope()
+        .iterative::<u32, _, _>(move |subscope| {
+            let nodes = nodes.enter(subscope);
 
-        let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
+            let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
-        let (output, further) = edges
-            .send(
-                &nodes.concat(&cycle),
-                |_, state| state.can_send(),
-                move |time, state, weight| {
-                    // if weight < radius {
-                    state.propagate(weight, radius, time.outer.inner)
-                    // } else {
-                    // None
-                    // }
-                },
-                |d1, d2| Message::merge(d1, d2), // aggregate messages
-                |state, message| state.updated(*message),
-                |state| state.deactivate(), // deactivate nodes with no messages
-            )
-            .branch_all(|pair| pair.1.can_send()); // Circulate while someone has something to say
+            let (output, further) = edges
+                .send(
+                    &nodes.concat(&cycle),
+                    move |t, state| state.can_send(radius, t.outer.inner),
+                    move |_time, state, weight| {
+                        // if weight < radius {
+                        state.propagate(weight, radius)
+                        // } else {
+                        // None
+                        // }
+                    },
+                    |d1, d2| Message::merge(d1, d2), // aggregate messages
+                    |state, message| state.updated(*message),
+                    |state| state.deactivate(), // deactivate nodes with no messages
+                )
+                .branch_all(move |t, pair| pair.1.can_send(radius, t.outer.inner)); // Circulate while someone has something to say
 
-        further.connect_loop(handle);
+            further.connect_loop(handle);
 
-        output.leave()
-    })
+            output.leave()
+        })
+        .unary(Pipeline, "freeze", |_, _| {
+            move |input, output| {
+                input.for_each(|t, data| {
+                    let round = t.time().inner;
+                    let mut session = output.session(&t);
+                    let data = data.replace(Vec::new());
+                    session.give_iterator(
+                        data.into_iter()
+                            .map(|(id, state)| (id, state.freeze_if_done(radius, round))),
+                    )
+                });
+            }
+        })
 }
 
 fn remap_edges<G: Scope>(
@@ -363,8 +413,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        // .branch(move |_t, (_id, state)| state.is_uncovered());
-        .branch_all(move |(id, state)| state.is_uncovered());
+        .branch(move |_t, (_id, state)| !state.is_frozen());
+        // .branch_all(move |_, (id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 

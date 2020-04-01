@@ -117,7 +117,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
                 |state, message| state.update_distance(*message),
                 |state| state.deactivate(), // deactivate nodes with no messages
             )
-            .branch_all(|pair| pair.1.updated);
+            .branch_all(|_, pair| pair.1.updated);
 
         further.connect_loop(handle);
 

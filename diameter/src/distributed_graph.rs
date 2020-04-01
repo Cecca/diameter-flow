@@ -140,9 +140,9 @@ impl DistributedEdges {
     where
         F: FnMut(u32, u32, u32),
     {
-        let timer = std::time::Instant::now();
+        // let timer = std::time::Instant::now();
         self.edges.for_each(action);
-        println!("time to iterate over all the edges {:?}", timer.elapsed());
+        // println!("time to iterate over all the edges {:?}", timer.elapsed());
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
@@ -243,7 +243,7 @@ impl DistributedEdges {
     ) -> Stream<G, (u32, S)>
     where
         G::Timestamp: ToPair,
-        P: Fn(u32, &S) -> bool + 'static,
+        P: Fn(G::Timestamp, &S) -> bool + 'static,
         Fm: Fn(G::Timestamp, &S, u32) -> Option<M> + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
         Fu: Fn(&S, &M) -> S + 'static,
@@ -269,7 +269,7 @@ impl DistributedEdges {
                         let mut session = output.session(&t);
                         let data = data.replace(Vec::new());
                         for (id, state) in data.into_iter() {
-                            if should_send(id, &state) {
+                            if should_send(t.time().clone(), &state) {
                                 edges1.for_each_processor(id, |p| {
                                     session.give((p, (id, state.clone())))
                                 });

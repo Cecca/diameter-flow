@@ -10,7 +10,7 @@ use timely::Data;
 pub trait BranchAll<G: Scope, D: Data> {
     fn branch_all<P>(&self, condition: P) -> (Stream<G, D>, Stream<G, D>)
     where
-        P: Fn(&D) -> bool + 'static;
+        P: Fn(G::Timestamp, &D) -> bool + 'static;
 }
 
 impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D>
@@ -19,7 +19,7 @@ where
 {
     fn branch_all<P>(&self, condition: P) -> (Stream<G, D>, Stream<G, D>)
     where
-        P: Fn(&D) -> bool + 'static,
+        P: Fn(G::Timestamp, &D) -> bool + 'static,
     {
         use timely::dataflow::operators::*;
 
@@ -33,7 +33,10 @@ where
                 move |input, output| {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
-                        let cnt = data.iter().filter(|x| condition(x)).count();
+                        let cnt = data
+                            .iter()
+                            .filter(|x| condition(t.time().clone(), x))
+                            .count();
                         logger.log((CountEvent::updated_nodes(t.time().clone()), cnt as u64));
                         output.session(&t).give(cnt);
                         stash
