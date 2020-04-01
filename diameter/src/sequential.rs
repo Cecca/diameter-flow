@@ -8,22 +8,23 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     use std::time::Instant;
 
     let neighbourhoods = init_neighbourhoods(edges, n);
+    let mut reachable = vec![false; n as usize];
 
-    println!("First run of sssp");
-    let start = Instant::now();
-    let (d1, (u1, v1)) = sssp(&neighbourhoods, 0);
-    println!("elapsed {:?}", start.elapsed());
-    assert!(u1 == 0);
-    println!("Second run of sssp");
-    let start = Instant::now();
-    let (d2, (u2, v2)) = sssp(&neighbourhoods, v1);
-    println!("elapsed {:?}", start.elapsed());
+    let mut distant_pairs = Vec::new();
 
-    if d1 > d2 {
-        (d1, (u1, v1))
-    } else {
-        (d2, (u2, v2))
+    let timer = Instant::now();
+    for i in 0..n {
+        if !reachable[i as usize] {
+            println!("starting sssp from {}", i);
+            let pair = sssp(&neighbourhoods, i, &mut reachable);
+            let v1 = (pair.1).1;
+            distant_pairs.push(pair);
+            distant_pairs.push(sssp(&neighbourhoods, v1, &mut reachable));
+        }
     }
+    println!("diameter computation: elapsed {:?}", timer.elapsed());
+
+    distant_pairs.into_iter().max_by_key(|pair| pair.0).unwrap()
 }
 
 /// Build neighbourhoods, as vectors of (weight, id) pairs
@@ -39,7 +40,7 @@ fn init_neighbourhoods<I: IntoIterator<Item = ((u32, u32), u32)>>(
     neighbourhoods
 }
 
-fn sssp(adjs: &Vec<Vec<(u32, u32)>>, source: u32) -> (u32, (u32, u32)) {
+fn sssp(adjs: &Vec<Vec<(u32, u32)>>, source: u32, reachable: &mut Vec<bool>) -> (u32, (u32, u32)) {
     use std::cmp::Reverse;
     use std::collections::BinaryHeap;
 
@@ -49,8 +50,10 @@ fn sssp(adjs: &Vec<Vec<(u32, u32)>>, source: u32) -> (u32, (u32, u32)) {
 
     pqueue.push(Reverse((0, source)));
     distances[source as usize] = Some(0);
+    reachable[source as usize] = true;
 
     while let Some(Reverse((dist, node))) = pqueue.pop() {
+        reachable[node as usize] = true;
         for &(weight, neigh) in adjs[node as usize].iter() {
             let d = dist + weight;
             if distances[neigh as usize].is_none() || d < distances[neigh as usize].unwrap() {

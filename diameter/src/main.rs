@@ -2,8 +2,6 @@ extern crate abomonation;
 #[macro_use]
 extern crate abomonation_derive;
 extern crate base64;
-extern crate differential_dataflow;
-extern crate dirs;
 extern crate flate2;
 extern crate regex;
 extern crate reqwest;
@@ -18,7 +16,6 @@ mod delta_stepping;
 mod distributed_graph;
 mod hyperball;
 mod logging;
-mod min_sum;
 mod operators;
 mod rand_cluster;
 mod reporter;
@@ -30,7 +27,10 @@ use delta_stepping::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::convert::TryFrom;
-use std::process::Command;
+use std::fmt::Debug;
+use std::path::Path;
+use std::path::PathBuf;
+use std::process::{Child, Command};
 use std::rc::Rc;
 use std::time::Instant;
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
@@ -50,6 +50,42 @@ struct Host {
 impl Host {
     fn to_string(&self) -> String {
         format!("{}:{}", self.name, self.port)
+    }
+
+    fn rsync<P: AsRef<Path>>(&self, path: P) -> Child {
+        let path_str = path
+            .as_ref()
+            .to_str()
+            .expect("problem converting path to string");
+        let path_with_slash = if path_str.ends_with("/") {
+            path_str.to_owned().clone()
+        } else {
+            let mut p = path_str.clone().to_owned();
+            p.push('/');
+            p
+        };
+        let path_no_slash = if path_str.ends_with("/") {
+            let mut p = path_str.clone().to_owned();
+            p.pop().unwrap();
+            p
+        } else {
+            path_str.to_owned().clone()
+        };
+        println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
+        let _parent_path_str = path
+            .as_ref()
+            .parent()
+            .expect("missing parent")
+            .to_str()
+            .expect("problem converting path to string");
+        Command::new("rsync")
+            .arg("--ignore-existing")
+            .arg("-r")
+            .arg("--progress")
+            .arg(path_with_slash)
+            .arg(format!("{}:{}", self.name, path_no_slash))
+            .spawn()
+            .expect("error spawning rsync")
     }
 }
 
@@ -72,6 +108,15 @@ struct Hosts {
 impl Hosts {
     fn to_strings(&self) -> Vec<String> {
         self.hosts.iter().map(|h| h.to_string()).collect()
+    }
+
+    fn rsync<P: AsRef<Path> + Debug>(&self, path: P) -> () {
+        let p = path.as_ref().to_path_buf();
+        let procs: Vec<Child> = self.hosts.iter().map(|h| h.rsync(p.clone())).collect();
+        procs.into_iter().for_each(|mut p| {
+            let status = p.wait().expect("Problem waiting the rsync process");
+            assert!(status.success(), "rsync command failed");
+        });
     }
 }
 
@@ -172,6 +217,8 @@ impl TryFrom<&str> for Algorithm {
 pub struct Config {
     #[argh(option, description = "number of threads per process")]
     threads: Option<usize>,
+    #[argh(option, description = "random seed for the algorithm")]
+    seed: Option<u64>,
     #[argh(
         option,
         description = "hosts: either a file or a comma separated list of strings",
@@ -180,6 +227,8 @@ pub struct Config {
     hosts: Option<Hosts>,
     #[argh(option, description = "set automatically. Don't set manually")]
     process_id: Option<usize>,
+    #[argh(option, description = "the data directory")]
+    ddir: PathBuf,
     #[argh(
         positional,
         description = "algortihm to use",
@@ -215,8 +264,10 @@ fn parse_hosts(arg: &str) -> Result<Hosts, String> {
         let mut hosts = Vec::new();
         for line in reader.lines() {
             let line = line.or(Err("error reading line"))?;
-            let host = Host::try_from(line.as_str())?;
-            hosts.push(host);
+            if line.len() > 0 {
+                let host = Host::try_from(line.as_str())?;
+                hosts.push(host);
+            }
         }
         Ok(Hosts { hosts })
     } else {
@@ -268,12 +319,18 @@ impl Config {
         }
     }
 
+    fn seed(&self) -> u64 {
+        self.seed.unwrap_or(1234u64)
+    }
+
     fn execute<T, F>(&self, func: F) -> Result<WorkerGuards<T>, ExecError>
     where
         T: Send + 'static,
         F: Fn(&mut Worker<Allocator>) -> T + Send + Sync + 'static,
     {
         if self.hosts.is_some() && self.process_id.is_none() {
+            let exec = std::env::args().nth(0).unwrap();
+            println!("spawning executable {:?}", exec);
             // This is the top level invocation, which should spawn the processes with ssh
             let handles: Vec<std::process::Child> = self
                 .hosts
@@ -287,7 +344,7 @@ impl Config {
                     println!("Connecting to {}", host.name);
                     Command::new("ssh")
                         .arg(&host.name)
-                        .arg("diameter-flow")
+                        .arg(&exec)
                         .arg(encoded_config)
                         .spawn()
                         .expect("problem spawning the ssh process")
@@ -334,31 +391,41 @@ macro_rules! map(
 fn main() {
     let config = Config::create();
 
+    let builder = DatasetBuilder::new(config.ddir.clone());
     let mut datasets = map! {
-        "cnr-2000" => Dataset::webgraph("cnr-2000"),
-        "it-2004" => Dataset::webgraph("it-2004"),
-        "sk-2005" => Dataset::webgraph("sk-2005"),
-        "uk-2014-tpd" => Dataset::webgraph("uk-2014-tpd"),
-        "uk-2014-host" => Dataset::webgraph("uk-2014-host"),
-        "uk-2007-05-small" => Dataset::webgraph("uk-2007-05@100000"),
-        "facebook" => Dataset::snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
-        "twitter" => Dataset::snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
-        "livejournal" => Dataset::snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
-        "colorado" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
-        "USA" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
-        "USA-east" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
-        "rome" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
-        "ny" => Dataset::dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
+        "cnr-2000" => builder.webgraph("cnr-2000"),
+        "it-2004" => builder.webgraph("it-2004"),
+        "uk-2005" => builder.webgraph("uk-2005"),
+        "sk-2005" => builder.webgraph("sk-2005"),
+        "uk-2014-tpd" => builder.webgraph("uk-2014-tpd"),
+        "uk-2014-host" => builder.webgraph("uk-2014-host"),
+        "uk-2007-05-small" => builder.webgraph("uk-2007-05@100000"),
+        "facebook" => builder.snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
+        "twitter" => builder.snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
+        "livejournal" => builder.snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
+        "colorado" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
+        "USA" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
+        "USA-east" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
+        "rome" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
+        "ny" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
     };
 
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
+
+    dataset.prepare();
+    if config.hosts.is_some() && config.process_id.is_none() {
+        println!("Syncing the dataset to the other hosts, if needed");
+        config.hosts.as_ref().unwrap().rsync(config.ddir.clone());
+    }
+
     let meta = dataset.metadata();
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
 
     let algorithm = config.algorithm;
+    let seed = config.seed();
     let config2 = config.clone();
 
     if algorithm.is_sequential() {
@@ -398,7 +465,7 @@ fn main() {
                     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
                     .probe_with(&mut probe)
                     .sink(Pipeline, "diameter collect", move |input| {
-                        input.for_each(|t, data| {
+                        input.for_each(|_t, data| {
                             //
                             diameter_result_ref.borrow_mut().replace(data[0]);
                         });

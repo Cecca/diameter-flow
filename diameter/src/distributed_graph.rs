@@ -1,5 +1,6 @@
 use crate::logging::*;
-use bytes::CompressedEdgesBlockSet;
+use bytes::*;
+// use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -140,9 +141,9 @@ impl DistributedEdges {
     where
         F: FnMut(u32, u32, u32),
     {
-        for (u, v, w) in self.edges.iter() {
-            action(u, v, w);
-        }
+        let timer = std::time::Instant::now();
+        self.edges.for_each(action);
+        println!("time to iterate over all the edges {:?}", timer.elapsed());
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
@@ -165,10 +166,15 @@ impl DistributedEdges {
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
-    pub fn triplets<G: Scope, S: ExchangeData>(
+    pub fn triplets<G: Scope, S: ExchangeData, F, O>(
         &self,
         nodes: &Stream<G, (u32, S)>,
-    ) -> Stream<G, ((u32, S), (u32, S), u32)> {
+        action: F,
+    ) -> Stream<G, O>
+    where
+        F: Fn(((u32, S), (u32, S), u32)) -> Option<O> + 'static,
+        O: ExchangeData,
+    {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::{Map, Operator};
 
@@ -205,14 +211,21 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
+                            println!("Outputting triplets");
+                            let timer = std::time::Instant::now();
                             let mut out = output.session(&t);
 
                             // Accumulate messages going over the edges
                             edges.for_each(|u, v, w| {
                                 let state_u = states.get(&u).expect("missing state for u");
                                 let state_v = states.get(&v).expect("missing state for v");
-                                out.give(((u, state_u.clone()), (v, state_v.clone()), w));
+                                if let Some(o) =
+                                    action(((u, state_u.clone()), (v, state_v.clone()), w))
+                                {
+                                    out.give(o);
+                                }
                             });
+                            println!("Done outputting triplets in {:?}", timer.elapsed());
                         }
                     });
                 },
@@ -289,6 +302,7 @@ impl DistributedEdges {
                             let mut output_messages = HashMap::new();
 
                             // Accumulate messages going over the edges
+                            // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
                                 if let Some(state_u) = states.get(&u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
@@ -307,11 +321,6 @@ impl DistributedEdges {
                                     }
                                 }
                             });
-                            // println!(
-                            //     "[{:?}] propagating {} messages",
-                            //     t.time(),
-                            //     output_messages.len()
-                            // );
 
                             // Output the aggregated messages
                             output
@@ -358,12 +367,6 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                            // println!(
-                            //     "[{:?}] got {} messages, and {} nodes",
-                            //     t.time(),
-                            //     msgs.len(),
-                            //     nodes.len()
-                            // );
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
                             for (id, state) in nodes.into_iter() {
@@ -375,12 +378,6 @@ impl DistributedEdges {
                                     cnt_no_messaged += 1;
                                 }
                             }
-                            // println!(
-                            //     "[{:?}], messaged: {}, no messaged: {}",
-                            //     t.time(),
-                            //     cnt_messaged,
-                            //     cnt_no_messaged
-                            // );
                         }
                     });
                 },

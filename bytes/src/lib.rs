@@ -16,15 +16,23 @@ impl CompressedEdgesBlockSet {
         P: AsRef<Path> + Debug,
         I: IntoIterator<Item = (P, Option<P>)>,
     {
+        let timer = std::time::Instant::now();
         let mut blocks = Vec::new();
         for (path, weights_path) in paths.into_iter() {
             blocks.push(CompressedEdges::from_file(path, weights_path)?);
         }
+
         Ok(Self { blocks })
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
         self.blocks.iter().flat_map(|b| b.iter())
+    }
+
+    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) {
+        for block in self.blocks.iter() {
+            block.for_each(&mut action);
+        }
     }
 }
 
@@ -38,7 +46,6 @@ impl CompressedEdges {
     pub fn from_file<P: AsRef<Path> + Debug>(path: P, weights_path: Option<P>) -> IOResult<Self> {
         use std::fs::File;
         use std::io::BufReader;
-        
         use std::io::ErrorKind::UnexpectedEof;
         let mut reader = BufReader::new(File::open(path)?);
         let mut raw = Vec::new();
@@ -62,6 +69,37 @@ impl CompressedEdges {
             weights
         });
         Ok(Self { raw, weights })
+    }
+
+    pub fn for_each<F: FnMut(u32, u32, u32)>(&self, action: &mut F) {
+        use std::io::Cursor;
+        let cursor = Cursor::new(&self.raw);
+        let mut reader = stream::DifferenceStreamReader::new(cursor);
+        let _weights = self.weights.as_ref().map(|vec| vec.iter());
+
+        if let Some(weights) = self.weights.as_ref() {
+            let mut weights = weights.iter();
+            loop {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    return;
+                } else {
+                    let (u, v) = morton::zorder_to_pair(z);
+                    let w = *weights.next().expect("weights exhausted too soon!");
+                    action(u, v, w);
+                }
+            }
+        } else {
+            loop {
+                let z = reader.read().expect("problem reading form the stream");
+                if z == 0 {
+                    return;
+                } else {
+                    let (u, v) = morton::zorder_to_pair(z);
+                    action(u, v, 1);
+                }
+            }
+        }
     }
 
     pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (u32, u32, u32)> + 'a> {
@@ -247,4 +285,16 @@ impl Drop for CompressedTripletsWriter {
     fn drop(&mut self) {
         self.flush().unwrap();
     }
+}
+
+#[test]
+fn test_entry() {
+    let mut arr = OffsetArrayMap::new(4, 10);
+    arr.entry(5).or_insert(5u32);
+    let actual = arr.get(5).clone();
+    assert!(actual.unwrap() == 5);
+
+    arr.entry(5).and_modify(|v| *v = 4);
+    let actual = arr.get(5).clone();
+    assert!(actual.unwrap() == 4);
 }

@@ -17,6 +17,7 @@ pub enum CountEvent {
     Centers(u32),
     LoadStateExchange(u32, u32),
     LoadMessageExchange(u32, u32),
+    UpdatedNodes(u32, u32),
 }
 
 impl CountEvent {
@@ -26,6 +27,7 @@ impl CountEvent {
             Self::Centers(iter) => (*iter, 0),
             Self::LoadMessageExchange(outer, inner) => (*outer, *inner),
             Self::LoadStateExchange(outer, inner) => (*outer, *inner),
+            Self::UpdatedNodes(outer, inner) => (*outer, *inner),
         }
     }
 
@@ -35,6 +37,7 @@ impl CountEvent {
             Self::Centers(_) => "Centers".to_owned(),
             Self::LoadMessageExchange(_, _) => "LoadMessageExchange".to_owned(),
             Self::LoadStateExchange(_, _) => "LoadStateExchange".to_owned(),
+            Self::UpdatedNodes(_, _) => "UpdatedNodes".to_owned(),
         }
     }
 
@@ -46,6 +49,11 @@ impl CountEvent {
     pub fn load_message_exchange<T: ToPair>(t: T) -> Self {
         let (outer, inner) = t.to_pair();
         Self::LoadMessageExchange(outer, inner)
+    }
+
+    pub fn updated_nodes<T: ToPair>(t: T) -> Self {
+        let (outer, inner) = t.to_pair();
+        Self::UpdatedNodes(outer, inner)
     }
 }
 
@@ -94,7 +102,7 @@ where
     let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
         let mut probe = ProbeHandle::new();
-        let reporting_worker = scope.index();
+        let _reporting_worker = scope.index();
 
         stream
             .aggregate(

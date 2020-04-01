@@ -16,10 +16,37 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
 
+#[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
+struct Message {
+    distance: u32,
+    root: u32,
+    generation: u32,
+}
+
+impl Message {
+    fn merge(msg1: &Self, msg2: &Self) -> Self {
+        if msg1.generation < msg2.generation {
+            // The newest wins
+            *msg2
+        } else if msg1.generation > msg2.generation {
+            *msg1
+        } else if msg1.distance < msg2.distance {
+            *msg1
+        } else if msg1.distance > msg2.distance {
+            *msg2
+        } else if msg1.root < msg2.root {
+            *msg1
+        } else {
+            *msg2
+        }
+    }
+}
+
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct NodeState {
     active: bool,
     distance: Option<(u32, u32)>,
+    generation: Option<u32>,
 }
 
 impl Default for NodeState {
@@ -27,6 +54,7 @@ impl Default for NodeState {
         Self {
             active: true,
             distance: None,
+            generation: None,
         }
     }
 }
@@ -40,23 +68,30 @@ impl NodeState {
         self.active && self.distance.is_some()
     }
 
-    fn propagate(&self, weight: u32, radius: u32) -> Option<(u32, u32)> {
+    fn propagate(&self, weight: u32, radius: u32, round: u32) -> Option<Message> {
         assert!(self.can_send());
         let (root, d) = self
             .distance
             .expect("called propagate on a non reached node");
-        if d + weight > radius {
+        // if d + weight > radius {
+        if d + weight > radius * (round - self.generation.unwrap()) {
             None
         } else {
-            Some((root, d + weight))
+            // println!("Propagating {:?} in round {}", self, round);
+            Some(Message {
+                root,
+                distance: d + weight,
+                generation: self.generation.expect("missing generation"),
+            })
         }
     }
 
-    fn as_center(&self, id: u32) -> Self {
-        assert!(self.is_uncovered());
+    fn as_center(&self, id: u32, generation: u32) -> Self {
+        assert!(self.is_uncovered(), "a covered node cannot become a center");
         Self {
             active: true,
             distance: Some((id, 0)),
+            generation: Some(generation),
         }
     }
 
@@ -67,12 +102,20 @@ impl NodeState {
         }
     }
 
-    fn updated(&self, new_distance: (u32, u32)) -> Self {
+    fn reactivate(&self) -> Self {
+        Self {
+            active: true,
+            ..self.clone()
+        }
+    }
+
+    fn updated(&self, message: Message) -> Self {
         if let Some((root, prev_distance)) = self.distance {
-            if new_distance.0 == root && new_distance.1 < prev_distance {
+            if message.root == root && message.distance < prev_distance {
                 Self {
                     active: true,
-                    distance: Some(new_distance),
+                    distance: Some((message.root, message.distance)),
+                    ..self.clone()
                 }
             } else {
                 Self {
@@ -84,20 +127,9 @@ impl NodeState {
             // the node was uncovered
             Self {
                 active: true,
-                distance: Some(new_distance),
+                distance: Some((message.root, message.distance)),
+                generation: Some(message.generation),
             }
-        }
-    }
-
-    fn merge(msg1: &(u32, u32), msg2: &(u32, u32)) -> (u32, u32) {
-        if msg1.1 < msg2.1 {
-            *msg1
-        } else if msg1.1 > msg2.1 {
-            *msg2
-        } else if msg1.0 < msg2.0 {
-            *msg1
-        } else {
-            *msg2
         }
     }
 }
@@ -127,29 +159,37 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
             });
             notificator.for_each(|t, _, _| {
                 if let Some(mut nodes) = stash.remove(&t) {
+                    let generation = t.time().inner;
                     nodes.sort_by_key(|pair| pair.0);
                     l1.log((CountEvent::Active(t.inner), nodes.len() as u64));
                     let mut out = output.session(&t);
+                    let population_size = nodes.len();
                     let mut cnt = 0;
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
-                                out.give((id, state.as_center(id)));
+                                out.give((id, state.as_center(id, generation)));
                                 cnt += 1;
                             } else {
-                                out.give((id, state));
+                                out.give((id, state.reactivate()));
                             }
                         }
                     } else {
                         cnt = nodes.len();
-                        out.give_iterator(
-                            nodes
-                                .into_iter()
-                                .map(|(id, state)| (id, state.as_center(id))),
-                        );
+                        out.give_iterator(nodes.into_iter().map(|(id, state)| {
+                            if state.is_uncovered() {
+                                (id, state.as_center(id, generation))
+                            } else {
+                                (id, state.reactivate())
+                            }
+                        }));
                     }
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
+                    println!(
+                        "{} centers out of {} sampled at iteration {}",
+                        cnt, population_size, t.inner
+                    );
                 }
             });
         },
@@ -180,14 +220,14 @@ where
             .send(
                 &nodes.concat(&cycle),
                 |_, state| state.can_send(),
-                move |_time, state, weight| {
-                    if weight < radius {
-                        state.propagate(weight, radius)
-                    } else {
-                        None
-                    }
+                move |time, state, weight| {
+                    // if weight < radius {
+                    state.propagate(weight, radius, time.outer.inner)
+                    // } else {
+                    // None
+                    // }
                 },
-                |d1, d2| NodeState::merge(d1, d2), // aggregate messages
+                |d1, d2| Message::merge(d1, d2), // aggregate messages
                 |state, message| state.updated(*message),
                 |state| state.deactivate(), // deactivate nodes with no messages
             )
@@ -206,18 +246,32 @@ fn remap_edges<G: Scope>(
     use std::collections::hash_map::DefaultHasher;
 
     edges
-        .triplets(&clustering)
-        .map(|((_u, state_u), (_v, state_v), w)| {
+        .triplets(&clustering, |((_u, state_u), (_v, state_v), w)| {
             let (c_u, d_u) = state_u.distance.expect("missing distance u");
             let (c_v, d_v) = state_v.distance.expect("missing distance v");
             let out_edge = if c_u < c_v {
-                ((c_u, c_v), w + d_u + d_v)
+                Some(((c_u, c_v), w + d_u + d_v))
+            } else if c_u > c_v {
+                Some(((c_v, c_u), w + d_u + d_v))
             } else {
-                ((c_v, c_u), w + d_u + d_v)
+                None
             };
             // println!("output edge {:?}", out_edge);
             out_edge
         })
+        // .flat_map(|((_u, state_u), (_v, state_v), w)| {
+        //     let (c_u, d_u) = state_u.distance.expect("missing distance u");
+        //     let (c_v, d_v) = state_v.distance.expect("missing distance v");
+        //     let out_edge = if c_u < c_v {
+        //         Some(((c_u, c_v), w + d_u + d_v))
+        //     } else if c_u > c_v {
+        //         Some(((c_v, c_u), w + d_u + d_v))
+        //     } else {
+        //         None
+        //     };
+        //     // println!("output edge {:?}", out_edge);
+        //     out_edge
+        // })
         .aggregate(
             |_key, val, min_weight: &mut Option<u32>| {
                 *min_weight = min_weight.map(|min| std::cmp::min(min, val)).or(Some(val));
@@ -264,7 +318,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        .branch(move |_t, (_id, state)| state.is_uncovered());
+        // .branch(move |_t, (_id, state)| state.is_uncovered());
+        .branch_all(move |(id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 
@@ -295,6 +350,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         None,
         move |graph_input, radii_input, output, notificator| {
             graph_input.for_each(|t, data| {
+                println!("Stashing auxiliary graph data");
                 let data = data.replace(Vec::new());
                 let entry = stash_auxiliary
                     .entry(t.time().clone())
@@ -313,8 +369,10 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     entry.insert((u1, v1), w);
                 }
                 notificator.notify_at(t.retain());
+                println!("Stashed auxiliary graph data");
             });
             radii_input.for_each(|t, data| {
+                println!("Stashing radius data");
                 let data = data.replace(Vec::new());
                 stash_radii
                     .entry(t.time().clone())
@@ -330,11 +388,14 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         )
                     }));
                 notificator.notify_at(t.retain());
+                println!("Stashed radius data");
             });
 
             notificator.for_each(|t, _, _| {
                 if let Some(edges) = stash_auxiliary.remove(t.time()) {
+                    println!("Building auxiliary graph");
                     let radii = stash_radii.remove(t.time()).expect("missing radii");
+                    let max_radius = *radii.values().max().expect("empty radii collection");
                     let n = 1 + *edges
                         .keys()
                         .map(|(u, v)| std::cmp::max(u, v))
@@ -348,37 +409,18 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     );
 
                     let (aux_diam, (u, v)) = approx_diameter(edges, n as u32);
+                    println!(
+                        "Maximum cluster radius {}, radii used {} and {}",
+                        max_radius,
+                        radii[&(u as u32)],
+                        radii[&(v as u32)]
+                    );
                     let diameter = aux_diam + radii[&(u as u32)] + radii[&(v as u32)];
-                    output.session(&t).give(diameter);
-
-                    // let mut adj = vec![vec![std::u32::MAX; n]; n];
-                    // for i in 0..n {
-                    //     adj[i][i] = 0;
-                    // }
-                    // for ((u, v), w) in edges.into_iter() {
-                    //     // println!("Adding edge {:?}", (u, v, w));
-                    //     if u != v {
-                    //         adj[u as usize][v as usize] = w;
-                    //         adj[v as usize][u as usize] = w;
-                    //     }
-                    // }
-                    // // println!("{:#?}", adj);
-                    // let distances = apsp(&adj);
-                    // let mut diameter = 0;
-                    // let mut diam_i = 0;
-                    // let mut diam_j = 0;
-                    // for i in 0..n {
-                    //     for j in 0..n {
-                    //         if distances[i][j] > diameter {
-                    //             diam_i = i;
-                    //             diam_j = j;
-                    //             diameter = distances[i][j];
-                    //         }
-                    //     }
-                    // }
-                    // let diameter = diameter + radii[&(diam_i as u32)] + radii[&(diam_j as u32)];
-
-                    // output.session(&t).give(diameter);
+                    if max_radius > diameter {
+                        output.session(&t).give(max_radius);
+                    } else {
+                        output.session(&t).give(diameter);
+                    }
                 }
             });
         },

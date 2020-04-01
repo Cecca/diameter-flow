@@ -1,5 +1,5 @@
 use crate::distributed_graph::*;
-use crate::logging::*;
+
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 
