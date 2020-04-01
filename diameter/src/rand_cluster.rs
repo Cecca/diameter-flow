@@ -43,92 +43,149 @@ impl Message {
 }
 
 #[derive(Debug, Clone, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
-struct NodeState {
-    active: bool,
-    distance: Option<(u32, u32)>,
-    generation: Option<u32>,
+enum NodeState {
+    Uncovered,
+    Covered {
+        root: u32,
+        distance: u32,
+        generation: u32,
+        updated: bool,
+    },
 }
 
 impl Default for NodeState {
     fn default() -> Self {
-        Self {
-            active: true,
-            distance: None,
-            generation: None,
-        }
+        Self::Uncovered
     }
 }
 
 impl NodeState {
     fn is_uncovered(&self) -> bool {
-        self.distance.is_none()
+        match self {
+            Self::Uncovered => true,
+            _ => false,
+        }
     }
 
     fn can_send(&self) -> bool {
-        self.active && self.distance.is_some()
+        match *self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => updated,
+            _ => false,
+        }
     }
 
     fn propagate(&self, weight: u32, radius: u32, round: u32) -> Option<Message> {
-        assert!(self.can_send());
-        let (root, d) = self
-            .distance
-            .expect("called propagate on a non reached node");
-        // if d + weight > radius {
-        if d + weight > radius * (round - self.generation.unwrap()) {
-            None
-        } else {
-            // println!("Propagating {:?} in round {}", self, round);
-            Some(Message {
+        match *self {
+            Self::Covered {
                 root,
-                distance: d + weight,
-                generation: self.generation.expect("missing generation"),
-            })
+                distance,
+                generation,
+                updated,
+            } => {
+                assert!(updated, "no reason to send from non-updated nodes");
+                if distance + weight > radius * (1 + round - generation) {
+                    None
+                } else {
+                    Some(Message {
+                        root,
+                        distance: distance + weight,
+                        generation,
+                    })
+                }
+            }
+            Self::Uncovered => panic!("cannot send from an uncovered node"),
+        }
+    }
+
+    fn distance(&self) -> u32 {
+        match self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => *distance,
+            Self::Uncovered => panic!("Cannot get distance from uncovered node"),
+        }
+    }
+
+    fn root(&self) -> u32 {
+        match self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => *root,
+            Self::Uncovered => panic!("Cannot get distance from uncovered node"),
         }
     }
 
     fn as_center(&self, id: u32, generation: u32) -> Self {
-        assert!(self.is_uncovered(), "a covered node cannot become a center");
-        Self {
-            active: true,
-            distance: Some((id, 0)),
-            generation: Some(generation),
+        match &self {
+            Self::Uncovered => Self::Covered {
+                root: id,
+                distance: 0,
+                generation,
+                updated: true,
+            },
+            _ => panic!("only uncovered nodes can become centers"),
         }
     }
 
     fn deactivate(&self) -> Self {
-        Self {
-            active: false,
-            ..self.clone()
-        }
-    }
-
-    fn reactivate(&self) -> Self {
-        Self {
-            active: true,
-            ..self.clone()
+        match *self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => Self::Covered {
+                root,
+                distance,
+                generation,
+                updated: false,
+            },
+            Self::Uncovered => Self::Uncovered,
         }
     }
 
     fn updated(&self, message: Message) -> Self {
-        if let Some((root, prev_distance)) = self.distance {
-            if message.root == root && message.distance < prev_distance {
-                Self {
-                    active: true,
-                    distance: Some((message.root, message.distance)),
-                    ..self.clone()
+        match *self {
+            Self::Uncovered => Self::Covered {
+                root: message.root,
+                distance: message.distance,
+                generation: message.generation,
+                updated: true,
+            },
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => {
+                if message.distance < distance
+                    && (message.generation > generation || message.root == root)
+                {
+                    Self::Covered {
+                        root: message.root,
+                        distance: message.distance,
+                        generation: message.generation,
+                        updated: true,
+                    }
+                } else {
+                    Self::Covered {
+                        root,
+                        distance,
+                        generation,
+                        updated: false,
+                    }
                 }
-            } else {
-                Self {
-                    active: false,
-                    ..self.clone()
-                }
-            }
-        } else {
-            // the node was uncovered
-            Self {
-                active: true,
-                distance: Some((message.root, message.distance)),
-                generation: Some(message.generation),
             }
         }
     }
@@ -172,7 +229,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                                 out.give((id, state.as_center(id, generation)));
                                 cnt += 1;
                             } else {
-                                out.give((id, state.reactivate()));
+                                out.give((id, state));
                             }
                         }
                     } else {
@@ -181,7 +238,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             if state.is_uncovered() {
                                 (id, state.as_center(id, generation))
                             } else {
-                                (id, state.reactivate())
+                                (id, state)
                             }
                         }));
                     }
@@ -231,7 +288,7 @@ where
                 |state, message| state.updated(*message),
                 |state| state.deactivate(), // deactivate nodes with no messages
             )
-            .branch_all(|pair| pair.1.active);
+            .branch_all(|pair| pair.1.can_send()); // Circulate while someone has something to say
 
         further.connect_loop(handle);
 
@@ -247,8 +304,10 @@ fn remap_edges<G: Scope>(
 
     edges
         .triplets(&clustering, |((_u, state_u), (_v, state_v), w)| {
-            let (c_u, d_u) = state_u.distance.expect("missing distance u");
-            let (c_v, d_v) = state_v.distance.expect("missing distance v");
+            let d_u = state_u.distance();
+            let d_v = state_v.distance();
+            let c_u = state_u.root();
+            let c_v = state_v.root();
             let out_edge = if c_u < c_v {
                 Some(((c_u, c_v), w + d_u + d_v))
             } else if c_u > c_v {
@@ -256,22 +315,8 @@ fn remap_edges<G: Scope>(
             } else {
                 None
             };
-            // println!("output edge {:?}", out_edge);
             out_edge
         })
-        // .flat_map(|((_u, state_u), (_v, state_v), w)| {
-        //     let (c_u, d_u) = state_u.distance.expect("missing distance u");
-        //     let (c_v, d_v) = state_v.distance.expect("missing distance v");
-        //     let out_edge = if c_u < c_v {
-        //         Some(((c_u, c_v), w + d_u + d_v))
-        //     } else if c_u > c_v {
-        //         Some(((c_v, c_u), w + d_u + d_v))
-        //     } else {
-        //         None
-        //     };
-        //     // println!("output edge {:?}", out_edge);
-        //     out_edge
-        // })
         .aggregate(
             |_key, val, min_weight: &mut Option<u32>| {
                 *min_weight = min_weight.map(|min| std::cmp::min(min, val)).or(Some(val));
@@ -328,7 +373,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 
     let auxiliary_graph = remap_edges(&edges, &clustering);
     let clusters_radii = clustering
-        .map(|(_id, state)| state.distance.expect("uncovered node"))
+        .map(|(_id, state)| (state.root(), state.distance()))
         .aggregate(
             |_center, distance, agg| {
                 *agg = std::cmp::max(*agg, distance);
@@ -350,7 +395,6 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         None,
         move |graph_input, radii_input, output, notificator| {
             graph_input.for_each(|t, data| {
-                println!("Stashing auxiliary graph data");
                 let data = data.replace(Vec::new());
                 let entry = stash_auxiliary
                     .entry(t.time().clone())
@@ -369,10 +413,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     entry.insert((u1, v1), w);
                 }
                 notificator.notify_at(t.retain());
-                println!("Stashed auxiliary graph data");
             });
             radii_input.for_each(|t, data| {
-                println!("Stashing radius data");
                 let data = data.replace(Vec::new());
                 stash_radii
                     .entry(t.time().clone())
@@ -388,12 +430,10 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         )
                     }));
                 notificator.notify_at(t.retain());
-                println!("Stashed radius data");
             });
 
             notificator.for_each(|t, _, _| {
                 if let Some(edges) = stash_auxiliary.remove(t.time()) {
-                    println!("Building auxiliary graph");
                     let radii = stash_radii.remove(t.time()).expect("missing radii");
                     let max_radius = *radii.values().max().expect("empty radii collection");
                     let n = 1 + *edges

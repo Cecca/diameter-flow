@@ -15,7 +15,7 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     let timer = Instant::now();
     for i in 0..n {
         if !reachable[i as usize] {
-            println!("starting sssp from {}", i);
+            // println!("starting sssp from {}", i);
             let pair = sssp(&neighbourhoods, i, &mut reachable);
             let v1 = (pair.1).1;
             distant_pairs.push(pair);
