@@ -68,14 +68,16 @@ impl NodeState {
         self.active && self.distance.is_some()
     }
 
-    fn propagate(&self, weight: u32, radius: u32) -> Option<Message> {
+    fn propagate(&self, weight: u32, radius: u32, round: u32) -> Option<Message> {
         assert!(self.can_send());
         let (root, d) = self
             .distance
             .expect("called propagate on a non reached node");
-        if d + weight > radius {
+        // if d + weight > radius {
+        if d + weight > radius * (round - self.generation.unwrap()) {
             None
         } else {
+            // println!("Propagating {:?} in round {}", self, round);
             Some(Message {
                 root,
                 distance: d + weight,
@@ -96,6 +98,13 @@ impl NodeState {
     fn deactivate(&self) -> Self {
         Self {
             active: false,
+            ..self.clone()
+        }
+    }
+
+    fn reactivate(&self) -> Self {
+        Self {
+            active: true,
             ..self.clone()
         }
     }
@@ -163,7 +172,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                                 out.give((id, state.as_center(id, generation)));
                                 cnt += 1;
                             } else {
-                                out.give((id, state));
+                                out.give((id, state.reactivate()));
                             }
                         }
                     } else {
@@ -172,7 +181,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             if state.is_uncovered() {
                                 (id, state.as_center(id, generation))
                             } else {
-                                (id, state.clone())
+                                (id, state.reactivate())
                             }
                         }));
                     }
@@ -211,12 +220,12 @@ where
             .send(
                 &nodes.concat(&cycle),
                 |_, state| state.can_send(),
-                move |_time, state, weight| {
-                    if weight < radius {
-                        state.propagate(weight, radius)
-                    } else {
-                        None
-                    }
+                move |time, state, weight| {
+                    // if weight < radius {
+                    state.propagate(weight, radius, time.outer.inner)
+                    // } else {
+                    // None
+                    // }
                 },
                 |d1, d2| Message::merge(d1, d2), // aggregate messages
                 |state, message| state.updated(*message),

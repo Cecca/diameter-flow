@@ -66,7 +66,11 @@ where
                         if let Some(updated_count) = stash_counts.remove(&time) {
                             let branch = updated_count > 0;
                             if worker_id == 0 {
-                                println!("{} nodes updated at time {:?}", updated_count, time);
+                                println!(
+                                    ">> {} nodes updated at time {:?}",
+                                    updated_count,
+                                    time.time()
+                                );
                             }
                             if let Some(nodes) = stash2.borrow_mut().remove(&time) {
                                 output
