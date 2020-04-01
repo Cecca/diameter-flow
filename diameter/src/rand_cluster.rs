@@ -366,8 +366,9 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 
             notificator.for_each(|t, _, _| {
                 if let Some(edges) = stash_auxiliary.remove(t.time()) {
+                    println!("Building auxiliary graph");
                     let radii = stash_radii.remove(t.time()).expect("missing radii");
-                    let max_radius = *radii.values().max().unwrap();
+                    let max_radius = *radii.values().max().expect("empty radii collection");
                     let n = 1 + *edges
                         .keys()
                         .map(|(u, v)| std::cmp::max(u, v))

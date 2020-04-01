@@ -206,6 +206,8 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
+                            println!("Outputting triplets");
+                            let timer = std::time::Instant::now();
                             let mut out = output.session(&t);
 
                             // Accumulate messages going over the edges
@@ -214,6 +216,7 @@ impl DistributedEdges {
                                 let state_v = states.get(&v).expect("missing state for v");
                                 out.give(((u, state_u.clone()), (v, state_v.clone()), w));
                             });
+                            println!("Done outputting triplets in {:?}", timer.elapsed());
                         }
                     });
                 },
