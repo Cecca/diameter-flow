@@ -303,6 +303,13 @@ impl DistributedEdges {
                             let mut cnt = 0;
                             let mut cnt_out = 0;
 
+                            // benchmark how fast you can go through the edges
+                            let mut bench = 0;
+                            let bench_timer = std::time::Instant::now();
+                            edges.for_each(|_,_,_| {bench += 1;});
+                            let bench_elapsed = bench_timer.elapsed();
+                            let bench_throughput = bench as f64 /  bench_elapsed.as_secs_f64();
+
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
@@ -327,14 +334,17 @@ impl DistributedEdges {
                                 }
                             });
                             let elapsed = timer.elapsed();
+                            let throughput = cnt as f64 / elapsed.as_secs_f64();
                             println!(
-                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages",
+                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. Baseline {:.3?} edges/sec, {} slower",
                                 worker_id,
                                 cnt,
                                 elapsed,
-                                cnt as f64 / elapsed.as_secs_f64(),
+                                throughput,
                                 n_states,
-                                cnt_out
+                                cnt_out,
+                                bench_throughput,
+                                bench_throughput / throughput
                             );
 
                             // Output the aggregated messages
