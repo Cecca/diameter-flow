@@ -295,6 +295,7 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
+                            let n_states = states.len();
                             let mut output_messages = HashMap::new();
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
@@ -322,9 +323,10 @@ impl DistributedEdges {
                             });
                             let elapsed = timer.elapsed();
                             println!(
-                                "edge traversal in {:?} ({:.3?} edges/sec)",
+                                "edge traversal in {:?} ({:.3?} edges/sec) with {} node states",
                                 elapsed,
-                                cnt as f64 / elapsed.as_secs_f64()
+                                cnt as f64 / elapsed.as_secs_f64(),
+                                n_states
                             );
 
                             // Output the aggregated messages
@@ -371,6 +373,8 @@ impl DistributedEdges {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
                         if let Some(nodes) = node_stash.remove(t.time()) {
+                            let n = nodes.len();
+                            let timer = std::time::Instant::now();
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
@@ -383,6 +387,13 @@ impl DistributedEdges {
                                     cnt_no_messaged += 1;
                                 }
                             }
+                            let elapsed = timer.elapsed();
+                            println!(
+                                "updated {} nodes in {:?} ({:.3?} per second)",
+                                n,
+                                elapsed,
+                                n as f64 / elapsed.as_secs_f64()
+                            );
                         }
                     });
                 },
