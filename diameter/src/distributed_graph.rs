@@ -166,10 +166,15 @@ impl DistributedEdges {
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
-    pub fn triplets<G: Scope, S: ExchangeData>(
+    pub fn triplets<G: Scope, S: ExchangeData, F, O>(
         &self,
         nodes: &Stream<G, (u32, S)>,
-    ) -> Stream<G, ((u32, S), (u32, S), u32)> {
+        action: F,
+    ) -> Stream<G, O>
+    where
+        F: Fn(((u32, S), (u32, S), u32)) -> Option<O> + 'static,
+        O: ExchangeData,
+    {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::{Map, Operator};
 
@@ -214,7 +219,11 @@ impl DistributedEdges {
                             edges.for_each(|u, v, w| {
                                 let state_u = states.get(&u).expect("missing state for u");
                                 let state_v = states.get(&v).expect("missing state for v");
-                                out.give(((u, state_u.clone()), (v, state_v.clone()), w));
+                                if let Some(o) =
+                                    action(((u, state_u.clone()), (v, state_v.clone()), w))
+                                {
+                                    out.give(o);
+                                }
                             });
                             println!("Done outputting triplets in {:?}", timer.elapsed());
                         }

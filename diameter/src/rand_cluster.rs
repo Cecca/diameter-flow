@@ -237,8 +237,7 @@ fn remap_edges<G: Scope>(
     use std::collections::hash_map::DefaultHasher;
 
     edges
-        .triplets(&clustering)
-        .flat_map(|((_u, state_u), (_v, state_v), w)| {
+        .triplets(&clustering, |((_u, state_u), (_v, state_v), w)| {
             let (c_u, d_u) = state_u.distance.expect("missing distance u");
             let (c_v, d_v) = state_v.distance.expect("missing distance v");
             let out_edge = if c_u < c_v {
@@ -251,6 +250,19 @@ fn remap_edges<G: Scope>(
             // println!("output edge {:?}", out_edge);
             out_edge
         })
+        // .flat_map(|((_u, state_u), (_v, state_v), w)| {
+        //     let (c_u, d_u) = state_u.distance.expect("missing distance u");
+        //     let (c_v, d_v) = state_v.distance.expect("missing distance v");
+        //     let out_edge = if c_u < c_v {
+        //         Some(((c_u, c_v), w + d_u + d_v))
+        //     } else if c_u > c_v {
+        //         Some(((c_v, c_u), w + d_u + d_v))
+        //     } else {
+        //         None
+        //     };
+        //     // println!("output edge {:?}", out_edge);
+        //     out_edge
+        // })
         .aggregate(
             |_key, val, min_weight: &mut Option<u32>| {
                 *min_weight = min_weight.map(|min| std::cmp::min(min, val)).or(Some(val));
