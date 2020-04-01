@@ -140,7 +140,6 @@ impl DistributedEdges {
     where
         F: FnMut(u32, u32, u32),
     {
-        // let timer = std::time::Instant::now();
         self.edges.for_each(action);
         // println!("time to iterate over all the edges {:?}", timer.elapsed());
     }
@@ -210,7 +209,6 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
-                            println!("Outputting triplets");
                             let timer = std::time::Instant::now();
                             let mut out = output.session(&t);
 
@@ -224,7 +222,6 @@ impl DistributedEdges {
                                     out.give(o);
                                 }
                             });
-                            println!("Done outputting triplets in {:?}", timer.elapsed());
                         }
                     });
                 },
@@ -299,10 +296,13 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
                             let mut output_messages = HashMap::new();
+                            let timer = std::time::Instant::now();
+                            let mut cnt = 0;
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
+                                cnt += 1;
                                 if let Some(state_u) = states.get(&u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         output_messages
@@ -320,6 +320,12 @@ impl DistributedEdges {
                                     }
                                 }
                             });
+                            let elapsed = timer.elapsed();
+                            println!(
+                                "edge traversal in {:?} ({:.3?} edges/sec)",
+                                elapsed,
+                                cnt as f64 / elapsed.as_secs_f64()
+                            );
 
                             // Output the aggregated messages
                             output
