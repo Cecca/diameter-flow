@@ -56,7 +56,6 @@ impl DistributedEdgesBuilder {
                             CompressedEdgesBlockSet::from_files(paths)
                                 .expect("problem loading blocks"),
                         );
-                        println!("Loaded the edges locally");
 
                         // exchange the edges to build processor targets
                         let mut nodes = HashSet::new();
@@ -115,7 +114,7 @@ impl DistributedEdgesBuilder {
                 .and_modify(|c| *c += len)
                 .or_insert(len);
         }
-        println!("Distribution of destination sets {:#?}", histogram);
+        // println!("Distribution of destination sets {:#?}", histogram);
         DistributedEdges {
             edges: Rc::new(edges),
             nodes_processors: Rc::new(nodes_processors),
