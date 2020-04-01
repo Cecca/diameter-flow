@@ -238,13 +238,15 @@ fn remap_edges<G: Scope>(
 
     edges
         .triplets(&clustering)
-        .map(|((_u, state_u), (_v, state_v), w)| {
+        .flat_map(|((_u, state_u), (_v, state_v), w)| {
             let (c_u, d_u) = state_u.distance.expect("missing distance u");
             let (c_v, d_v) = state_v.distance.expect("missing distance v");
             let out_edge = if c_u < c_v {
-                ((c_u, c_v), w + d_u + d_v)
+                Some(((c_u, c_v), w + d_u + d_v))
+            } else if c_u > c_v {
+                Some(((c_v, c_u), w + d_u + d_v))
             } else {
-                ((c_v, c_u), w + d_u + d_v)
+                None
             };
             // println!("output edge {:?}", out_edge);
             out_edge
