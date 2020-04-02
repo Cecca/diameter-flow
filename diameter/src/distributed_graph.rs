@@ -1,5 +1,9 @@
 use crate::logging::*;
 use bytes::*;
+use timely::communication::Push;
+use timely::dataflow::channels::pushers::buffer::Session;
+use timely::dataflow::channels::Bundle;
+use timely::progress::Timestamp;
 // use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -299,7 +303,9 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
                             let n_states = states.len();
-                            let mut output_messages = HashMap::new();
+                            let states = ArrayMap::new(states);
+                            // let mut output_messages = HashMap::new();
+                            let mut output_messages = MessageBuffer::with_capacity(1_000_000, aggregate, output.session(&t));
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
                             let mut cnt_out = 0;
@@ -315,22 +321,24 @@ impl DistributedEdges {
                             // This is the hot loop, where most of the time is spent
                             edges.for_each(|u, v, w| {
                                 cnt += 1;
-                                if let Some(state_u) = states.get(&u) {
+                                if let Some(state_u) = states.get(u) {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         cnt_out += 1;
-                                        output_messages
-                                            .entry(v)
-                                            .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
-                                            .or_insert(msg);
+                                        output_messages.push(v, msg);
+                                        // output_messages
+                                        //     .entry(v)
+                                        //     .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
+                                        //     .or_insert(msg);
                                     }
                                 }
-                                if let Some(state_v) = states.get(&v) {
+                                if let Some(state_v) = states.get(v) {
                                     if let Some(msg) = message(t.time().clone(), state_v, w) {
                                         cnt_out += 1;
-                                        output_messages
-                                            .entry(u)
-                                            .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
-                                            .or_insert(msg);
+                                        output_messages.push(u, msg);
+                                        // output_messages
+                                        //     .entry(u)
+                                        //     .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
+                                        //     .or_insert(msg);
                                     }
                                 }
                             });
@@ -348,10 +356,10 @@ impl DistributedEdges {
                                 bench_throughput / throughput
                             );
 
-                            // Output the aggregated messages
-                            output
-                                .session(&t)
-                                .give_iterator(output_messages.into_iter());
+                            // // Output the aggregated messages
+                            // output
+                            //     .session(&t)
+                            //     .give_iterator(output_messages.into_iter());
                         }
                     });
                 },
@@ -418,5 +426,100 @@ impl DistributedEdges {
                     });
                 },
             )
+    }
+}
+
+/// Buffers messages and aggregates ones with duplicate keys
+struct MessageBuffer<'a, T, M, F, P>
+where
+    T: Timestamp,
+    M: ExchangeData,
+    F: Fn(&M, &M) -> M + 'static,
+    P: Push<Bundle<T, (u32, M)>>,
+{
+    capacity: usize,
+    buffer: Vec<(u32, M)>,
+    merger: F,
+    session: Session<'a, T, (u32, M), P>,
+}
+
+impl<'a, T, M, F, P> MessageBuffer<'a, T, M, F, P>
+where
+    T: Timestamp,
+    M: ExchangeData,
+    F: Fn(&M, &M) -> M + 'static,
+    P: Push<Bundle<T, (u32, M)>>,
+{
+    fn with_capacity(capacity: usize, merger: F, session: Session<'a, T, (u32, M), P>) -> Self {
+        Self {
+            capacity,
+            buffer: Vec::with_capacity(capacity),
+            merger,
+            session,
+        }
+    }
+
+    fn push(&mut self, dest: u32, msg: M) {
+        self.buffer.push((dest, msg));
+        if self.buffer.len() == self.capacity {
+            self.flush()
+        }
+    }
+
+    fn flush(&mut self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        println!("Flushing messages");
+        self.buffer.sort_by_key(|pair| pair.0);
+        {
+            let mut iter = self.buffer.drain(..);
+            let mut current_message = iter.next().expect("called flush on empty vector");
+            loop {
+                if let Some(msg) = iter.next() {
+                    if msg.0 == current_message.0 {
+                        current_message.1 = (self.merger)(&current_message.1, &msg.1);
+                    } else {
+                        self.session.give(current_message);
+                        current_message = msg;
+                    }
+                } else {
+                    self.session.give(current_message);
+                    break;
+                }
+            }
+        }
+        assert!(self.buffer.is_empty());
+    }
+}
+
+impl<'a, T, M, F, P> Drop for MessageBuffer<'a, T, M, F, P>
+where
+    T: Timestamp,
+    M: ExchangeData,
+    F: Fn(&M, &M) -> M + 'static,
+    P: Push<Bundle<T, (u32, M)>>,
+{
+    fn drop(&mut self) {
+        self.flush()
+    }
+}
+
+struct ArrayMap<S> {
+    data: Vec<(u32, S)>,
+}
+
+impl<S> ArrayMap<S> {
+    fn new<I: IntoIterator<Item = (u32, S)>>(iter: I) -> Self {
+        let mut data: Vec<(u32, S)> = iter.into_iter().collect();
+        data.sort_by_key(|pair| pair.0);
+        Self { data }
+    }
+
+    fn get(&self, key: u32) -> Option<&S> {
+        match self.data.binary_search_by_key(&key, |pair| pair.0) {
+            Ok(index) => Some(&self.data[index].1),
+            Err(_) => None,
+        }
     }
 }
