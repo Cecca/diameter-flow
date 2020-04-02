@@ -31,7 +31,7 @@ public class BVGraphToEdges {
     public static void main(String[] args) throws IOException {
         String inputPath = args[0];
         String outputPath = args[1];
-        File scratch = new File("/tmp/scratch");
+        File scratch = new File(new File(outputPath).getParent(), "scratch");
 
         if (new File(outputPath).isDirectory()) {
             System.out.println("output file already exists, exiting");
@@ -227,7 +227,8 @@ public class BVGraphToEdges {
     }
 
     static long writePartial(long[] buffer, int until, File output) throws IOException {
-        System.out.print("Sorting, pushing, and advancing... ");
+        System.out.print("Sorting, pushing, and advancing ("
+            + output + ")... ");
 
         long cntDuplicates = 0;
 
