@@ -305,17 +305,17 @@ impl DistributedEdges {
                             let n_states = states.len();
                             let states = ArrayMap::new(states);
                             // let mut output_messages = HashMap::new();
-                            let mut output_messages = MessageBuffer::with_capacity(1_000_000, aggregate, output.session(&t));
+                            let mut output_messages = MessageBuffer::with_capacity(4_000_000, aggregate, output.session(&t));
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
                             let mut cnt_out = 0;
 
                             // benchmark how fast you can go through the edges
-                            let mut bench = 0;
-                            let bench_timer = std::time::Instant::now();
-                            edges.for_each(|_,_,_| {bench += 1;});
-                            let bench_elapsed = bench_timer.elapsed();
-                            let bench_throughput = bench as f64 /  bench_elapsed.as_secs_f64();
+                            // let mut bench = 0;
+                            // let bench_timer = std::time::Instant::now();
+                            // edges.for_each(|_,_,_| {bench += 1;});
+                            // let bench_elapsed = bench_timer.elapsed();
+                            // let bench_throughput = bench as f64 /  bench_elapsed.as_secs_f64();
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
@@ -345,16 +345,25 @@ impl DistributedEdges {
                             let elapsed = timer.elapsed();
                             let throughput = cnt as f64 / elapsed.as_secs_f64();
                             println!(
-                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. Baseline {:.3?} edges/sec, {} slower",
+                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
                                 worker_id,
                                 cnt,
                                 elapsed,
                                 throughput,
                                 n_states,
-                                cnt_out,
-                                bench_throughput,
-                                bench_throughput / throughput
+                                cnt_out
                             );
+                            // println!(
+                            //     "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. Baseline {:.3?} edges/sec, {} slower",
+                            //     worker_id,
+                            //     cnt,
+                            //     elapsed,
+                            //     throughput,
+                            //     n_states,
+                            //     cnt_out,
+                            //     bench_throughput,
+                            //     bench_throughput / throughput
+                            // );
 
                             // // Output the aggregated messages
                             // output
@@ -470,7 +479,6 @@ where
         if self.buffer.is_empty() {
             return;
         }
-        println!("Flushing messages");
         self.buffer.sort_by_key(|pair| pair.0);
         {
             let mut iter = self.buffer.drain(..);
