@@ -328,9 +328,12 @@ impl Dataset {
             self.binary_edge_files().map(|triplet| triplet.0).collect();
         identifiers.sort();
         let mut groups = identifiers.chunks(1 + identifiers.len() / worker.peers());
-        let this_identifiers: &[usize] = groups
-            .nth(worker.index())
-            .expect("no parts to load for this worker, possibly there are too few parts");
+        let this_identifiers: &[usize] = groups.nth(worker.index()).unwrap_or_else(|| {
+            panic!(
+                "no parts to load for worker {}, possibly there are too few parts",
+                worker.index()
+            )
+        });
         println!(
             "worker {} will load parts {:?}",
             worker.index(),
