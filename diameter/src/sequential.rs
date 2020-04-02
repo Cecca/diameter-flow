@@ -1,10 +1,10 @@
-/// Compute an approximation to the diameter by means of two runs of Dijkstra algorithm
-/// Returns the diameter and a pair of nodes realizing it.
+/// Compute an approximations to the diameter by means of runs of Dijkstra algorithm
+/// Returns a vector of approximations and pairs of nodes realizing them.
 /// Assumes that all vertices are in the range [0,n)
 pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     edges: I,
     n: u32,
-) -> (u32, (u32, u32)) {
+) -> Vec<(u32, (u32, u32))> {
     use std::time::Instant;
 
     let neighbourhoods = init_neighbourhoods(edges, n);
@@ -24,7 +24,8 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     }
     println!("diameter computation: elapsed {:?}", timer.elapsed());
 
-    distant_pairs.into_iter().max_by_key(|pair| pair.0).unwrap()
+    // distant_pairs.into_iter().max_by_key(|pair| pair.0).unwrap()
+    distant_pairs
 }
 
 /// Build neighbourhoods, as vectors of (weight, id) pairs

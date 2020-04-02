@@ -431,7 +431,10 @@ fn main() {
     if algorithm.is_sequential() {
         let edges = dataset.as_vec();
         let timer = std::time::Instant::now();
-        let (diam, _) = sequential::approx_diameter(edges, n);
+        let (diam, _) = sequential::approx_diameter(edges, n)
+            .into_iter()
+            .max_by_key(|pair| pair.0)
+            .unwrap();
         println!("Diameter {}, computed in {:?}", diam, timer.elapsed());
     } else {
         let ret_status = config.execute(move |worker| {
