@@ -115,6 +115,7 @@ impl DistributedEdgesBuilder {
                 .or_insert(len);
         }
         // println!("Distribution of destination sets {:#?}", histogram);
+        println!("Loaded edges: {} bytes", edges.byte_size());
         DistributedEdges {
             edges: Rc::new(edges),
             nodes_processors: Rc::new(nodes_processors),

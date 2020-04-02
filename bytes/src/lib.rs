@@ -34,6 +34,10 @@ impl CompressedEdgesBlockSet {
             block.for_each(&mut action);
         }
     }
+
+    pub fn byte_size(&self) -> u64 {
+        self.blocks.iter().map(|b| b.byte_size()).sum()
+    }
 }
 
 pub struct CompressedEdges {
@@ -100,6 +104,10 @@ impl CompressedEdges {
                 }
             }
         }
+    }
+
+    pub fn byte_size(&self) -> u64 {
+        self.raw.len() as u64 * 8
     }
 
     pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (u32, u32, u32)> + 'a> {
