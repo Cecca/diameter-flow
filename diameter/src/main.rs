@@ -393,6 +393,8 @@ fn main() {
 
     let builder = DatasetBuilder::new(config.ddir.clone());
     let mut datasets = map! {
+        "clueweb12" => builder.webgraph("clueweb12"),
+        "gsh-2015" => builder.webgraph("gsh-2015"),
         "cnr-2000" => builder.webgraph("cnr-2000"),
         "it-2004" => builder.webgraph("it-2004"),
         "uk-2005" => builder.webgraph("uk-2005"),
