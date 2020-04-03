@@ -86,6 +86,12 @@ impl State {
     }
 }
 
+impl Default for State {
+    fn default() -> Self {
+        panic!("here just to type check, no meaningful instantiation can happen with Default")
+    }
+}
+
 pub fn hyperball<G: Scope<Timestamp = usize>>(
     edges: DistributedEdges,
     scope: &mut G,

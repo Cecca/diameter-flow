@@ -513,7 +513,7 @@ fn main() {
 
                 let diameter_stream = match algorithm {
                     Algorithm::DeltaStepping(delta) => {
-                        delta_stepping(static_edges, scope, delta, n, 1, 123)
+                        delta_stepping(static_edges, scope, delta, n, 123)
                     }
                     Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
                     Algorithm::RandCluster(radius) => {

@@ -119,7 +119,9 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
             )
             .branch_all(|_, pair| pair.1.updated);
 
-        further.connect_loop(handle);
+        further
+            // .inspect(|p| println!("{:?}", p))
+            .connect_loop(handle);
 
         output.leave()
     });
@@ -141,24 +143,17 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
     scope: &mut G,
     delta: u32,
     n: u32,
-    num_roots: usize,
     seed: u64,
 ) -> Stream<G, u32> {
     use std::collections::HashSet;
 
-    let rng = Xoshiro256StarStar::seed_from_u64(seed);
-    let dist = Uniform::new(0u32, n + 1);
-    let roots: HashSet<u32> = dist.sample_iter(rng).take(num_roots).collect();
     let l1 = scope.count_logger().expect("missing logger");
-
-    // Initialize nodes
-    let nodes = edges.nodes::<_, State>(scope).map(move |(id, state)| {
-        if roots.contains(&id) {
-            (id, State::root())
-        } else {
-            (id, state)
-        }
-    });
+    let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
+    let dist = Uniform::new(0u32, n + 1);
+    let root: u32 = dist.sample(&mut rng);
+    let nodes = vec![(root, State::root())]
+        .to_stream(scope)
+        .exchange(|p| p.0 as u64);
 
     // Perform the delta steps, retiring at the end of each
     // delta step the stable nodes
@@ -173,7 +168,9 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
             }),
             delta,
         )
-        .branch(move |t, (_id, state)| {
+        // We should also keep the old states because otherwise we enter
+        // and endless loop
+        .branch_all(move |t, (_id, state)| {
             state
                 .distance
                 .map(|d| d > delta * (t.inner + 1))

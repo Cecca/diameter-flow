@@ -234,7 +234,7 @@ impl DistributedEdges {
     }
 
     /// Send messages that can be aggregated along the edges
-    pub fn send<G: Scope, S: ExchangeData, M: ExchangeData, P, Fm, Fa, Fu, Fun>(
+    pub fn send<G: Scope, S: ExchangeData + Default, M: ExchangeData, P, Fm, Fa, Fu, Fun>(
         &self,
         nodes: &Stream<G, (u32, S)>,
         should_send: P,
@@ -401,36 +401,38 @@ impl DistributedEdges {
                         let data = data.replace(Vec::new());
                         node_stash
                             .entry(t.time().clone())
-                            .or_insert_with(Vec::new)
+                            .or_insert_with(HashMap::new)
                             .extend(data.into_iter());
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
-                        if let Some(nodes) = node_stash.remove(t.time()) {
+                        if let Some(mut nodes) = node_stash.remove(t.time()) {
                             // let n = nodes.len();
                             // let timer = std::time::Instant::now();
                             let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                             let mut cnt_messaged = 0;
                             let mut cnt_no_messaged = 0;
-                            for (id, state) in nodes.into_iter() {
-                                if let Some(message) = msgs.get(&id) {
-                                    session.give((id, update(&state, message)));
-                                    cnt_messaged += 1;
-                                } else {
+                            // for (id, state) in nodes.into_iter() {
+                            //     if let Some(message) = msgs.get(&id) {
+                            //         session.give((id, update(&state, message)));
+                            //         cnt_messaged += 1;
+                            //     } else {
+                            //         session.give((id, update_no_msg(&state)));
+                            //         cnt_no_messaged += 1;
+                            //     }
+                            // }
+                            for (id, message) in msgs.into_iter() {
+                                let state = nodes.remove(&id).unwrap_or_default();
+                                session.give((id, update(&state, &message)));
+                                cnt_messaged += 1;
+                            }
+                            // Exhaust un-messaged nodes
+                            for (id, state) in nodes.drain() {
                                     session.give((id, update_no_msg(&state)));
                                     cnt_no_messaged += 1;
-                                }
                             }
-                            // let elapsed = timer.elapsed();
-                            // println!(
-                            //     "[{}] updated {} nodes in {:?} ({:.3?} per second)",
-                            //     worker_id,
-                            //     n,
-                            //     elapsed,
-                            //     n as f64 / elapsed.as_secs_f64()
-                            // );
                         }
                     });
                 },
