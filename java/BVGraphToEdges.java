@@ -267,6 +267,8 @@ public class BVGraphToEdges {
                     File out = new File(mergedir, Integer.toString(cnt++));
                     cntDuplicates += merge(a, b, out);
                     outputs.add(out);
+                    a.delete();
+                    b.delete();
                 } else {
                     outputs.add(a);
                 }
@@ -301,11 +303,13 @@ public class BVGraphToEdges {
                     aMore = false;
                     out.write(a);
                     a = aStream.read();
+                    edgeCount++;
                     aMore = true;
                 } else if (a > b) {
                     bMore = false;
                     out.write(b);
                     b = bStream.read();
+                    edgeCount++;
                     bMore = true;
                 } else {
                     // Remove the duplicate edge
