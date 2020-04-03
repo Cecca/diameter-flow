@@ -513,13 +513,13 @@ fn main() {
 
                 let diameter_stream = match algorithm {
                     Algorithm::DeltaStepping(delta) => {
-                        delta_stepping(static_edges, scope, delta, n, 123)
+                        delta_stepping(static_edges, scope, delta, n, seed)
                     }
-                    Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, 123),
+                    Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, seed),
                     Algorithm::RandCluster(radius) => {
-                        rand_cluster::rand_cluster(static_edges, scope, radius, n, 123)
+                        rand_cluster::rand_cluster(static_edges, scope, radius, n, seed)
                     }
-                    Algorithm::Bfs => bfs::bfs(static_edges, scope, n, 123),
+                    Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
                     Algorithm::Sequential => {
                         panic!("sequential algorithm not supported in dataflow")
                     }
