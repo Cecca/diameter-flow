@@ -33,7 +33,7 @@ impl Ord for WeightedEdge {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Metadata {
     pub num_nodes: u32,
-    pub num_edges: u32,
+    pub num_edges: u64,
     pub min_weight: u32,
     pub max_weight: u32,
 }
@@ -142,7 +142,6 @@ impl Dataset {
                 min_weight,
                 max_weight,
             };
-            println!("{:?}", meta);
 
             // Add it to the map and update the file
             meta_map.insert(key, meta.clone());
@@ -152,7 +151,14 @@ impl Dataset {
         }
     }
 
+    pub fn is_prepared(&self) -> bool {
+        self.edges_directory().is_dir()
+    }
+
     pub fn prepare(&self) {
+        if self.is_prepared() {
+            return;
+        }
         match &self.kind {
             DatasetKind::Dimacs(url) => {
                 let edges_dir = self.edges_directory();
@@ -235,11 +241,11 @@ impl Dataset {
             .map(|triplet| (triplet.1, triplet.2));
         CompressedEdgesBlockSet::from_files(files)
             .expect("error building the edge set")
-            .iter()
-            .for_each(|(u, v, w)| action(u, v, w));
+            // .iter()
+            .for_each(|u, v, w| action(u, v, w));
     }
 
-    fn edges_directory(&self) -> PathBuf {
+    pub fn edges_directory(&self) -> PathBuf {
         let mut path = self.dataset_directory();
         path.push("edges");
         path

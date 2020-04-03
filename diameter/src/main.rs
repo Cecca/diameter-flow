@@ -26,6 +26,7 @@ use datasets::*;
 use delta_stepping::*;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::fmt::Debug;
 use std::path::Path;
@@ -388,11 +389,54 @@ macro_rules! map(
      };
 );
 
-fn main() {
-    let config = Config::create();
+fn list_datasets(datasets: &HashMap<String, Dataset>) {
+    let mut table: Vec<(String, Option<u32>, Option<u64>, Option<u32>, Option<u32>)> = datasets
+        .iter()
+        .map(|(name, dataset)| {
+            if dataset.is_prepared() {
+                // println!("{} ({:?})", name, dataset.edges_directory());
+                let meta = dataset.metadata();
+                (
+                    name.clone(),
+                    Some(meta.num_nodes),
+                    Some(meta.num_edges),
+                    Some(meta.min_weight),
+                    Some(meta.max_weight),
+                )
+            } else {
+                (name.clone(), None, None, None, None)
+            }
+        })
+        .collect();
 
-    let builder = DatasetBuilder::new(config.ddir.clone());
-    let mut datasets = map! {
+    table.sort_by_cached_key(|tuple| (tuple.2, tuple.0.clone()));
+    println!(
+        "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
+        "name", "nodes", "edges", "minimum weight", "maximum weight"
+    );
+    println!(
+        "{}|{}|{}|{}|{}",
+        "--------------------",
+        "---------------",
+        "---------------",
+        "---------------",
+        "---------------"
+    );
+    for (name, nodes, edges, minw, maxw) in table.into_iter() {
+        println!(
+            "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
+            name,
+            nodes.map(|n| format!("{}", n)).unwrap_or(String::new()),
+            edges.map(|n| format!("{}", n)).unwrap_or(String::new()),
+            minw.map(|n| format!("{}", n)).unwrap_or(String::new()),
+            maxw.map(|n| format!("{}", n)).unwrap_or(String::new())
+        );
+    }
+}
+
+fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
+    let builder = DatasetBuilder::new(ddir);
+    map! {
         "clueweb12" => builder.webgraph("clueweb12"),
         "gsh-2015" => builder.webgraph("gsh-2015"),
         "cnr-2000" => builder.webgraph("cnr-2000"),
@@ -410,7 +454,23 @@ fn main() {
         "USA-east" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
         "rome" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
         "ny" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
-    };
+    }
+}
+
+fn main() {
+    if let Some("list") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
+        if let Some(ddir) = std::env::args().nth(2) {
+            let ddir = PathBuf::from(ddir);
+            let datasets = datasets_map(ddir);
+            list_datasets(&datasets);
+        } else {
+            println!("Specify a directory containing the datasets");
+        }
+        return;
+    }
+
+    let config = Config::create();
+    let mut datasets = datasets_map(config.ddir.clone());
 
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
