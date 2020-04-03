@@ -519,7 +519,7 @@ fn main() {
                     Algorithm::RandCluster(radius) => {
                         rand_cluster::rand_cluster(static_edges, scope, radius, n, 123)
                     }
-                    Algorithm::Bfs => bfs::bfs(static_edges, scope),
+                    Algorithm::Bfs => bfs::bfs(static_edges, scope, n, 123),
                     Algorithm::Sequential => {
                         panic!("sequential algorithm not supported in dataflow")
                     }

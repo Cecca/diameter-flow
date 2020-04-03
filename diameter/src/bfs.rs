@@ -1,5 +1,9 @@
 use crate::distributed_graph::*;
 
+use crate::operators::BranchAll;
+use rand::distributions::Uniform;
+use rand::prelude::*;
+use rand_xoshiro::Xoshiro256StarStar;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 
@@ -24,23 +28,27 @@ impl State {
     }
 }
 
-pub fn bfs<G: Scope<Timestamp = usize>>(edges: DistributedEdges, scope: &mut G) -> Stream<G, u32> {
+pub fn bfs<G: Scope<Timestamp = usize>>(
+    edges: DistributedEdges,
+    scope: &mut G,
+    n: u32,
+    seed: u64,
+) -> Stream<G, u32> {
     use timely::dataflow::operators::*;
     use timely::order::Product;
 
-    let nodes = edges.nodes::<_, State>(scope).map(|(id, state)| {
-        if id == 0 {
-            (
-                id,
-                State {
-                    active: true,
-                    distance: Some(0),
-                },
-            )
-        } else {
-            (id, state)
-        }
-    });
+    let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
+    let dist = Uniform::new(0u32, n + 1);
+    let root: u32 = dist.sample(&mut rng);
+    let nodes = vec![(
+        root,
+        State {
+            active: true,
+            distance: Some(0),
+        },
+    )]
+    .to_stream(scope)
+    .exchange(|p| p.0 as u64);
 
     let distances = nodes.scope().iterative::<u32, _, _>(move |inner_scope| {
         let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
@@ -85,7 +93,7 @@ pub fn bfs<G: Scope<Timestamp = usize>>(edges: DistributedEdges, scope: &mut G) 
                     }
                 },
             )
-            .branch(|_t, pair| pair.1.active);
+            .branch_all(|_t, pair| pair.1.active);
 
         active_nodes.connect_loop(handle);
 
