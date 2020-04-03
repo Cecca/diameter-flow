@@ -75,12 +75,13 @@ impl Reporter {
         main_path.push("main.csv");
         let mut writer = Self::with_header(
             main_path,
-            "sha,seed,threads,hosts,dataset,algorithm,main,diameter,total_time_ms",
+            "sha,date,seed,threads,hosts,dataset,algorithm,main,diameter,total_time_ms",
         )?;
         writeln!(
             writer,
-            "{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{}",
             sha,
+            self.date.to_rfc2822(),
             self.config.seed(),
             self.config.threads.unwrap_or(1),
             self.config.hosts_string(),
