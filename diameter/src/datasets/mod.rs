@@ -239,10 +239,15 @@ impl Dataset {
         let files = self
             .binary_edge_files()
             .map(|triplet| (triplet.1, triplet.2));
-        CompressedEdgesBlockSet::from_files(files)
-            .expect("error building the edge set")
-            // .iter()
-            .for_each(|u, v, w| action(u, v, w));
+        files.for_each(|(pe, pw)| {
+            CompressedEdges::from_file(pe, pw)
+                .expect("problem creating compressed edges from file")
+                .for_each(&mut |u, v, w| action(u, v, w));
+        });
+        // CompressedEdgesBlockSet::from_files(files)
+        //     .expect("error building the edge set")
+        //     // .iter()
+        //     .for_each(|u, v, w| action(u, v, w));
     }
 
     pub fn edges_directory(&self) -> PathBuf {
