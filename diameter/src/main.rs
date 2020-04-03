@@ -415,11 +415,11 @@ fn main() {
     let dataset = datasets
         .remove(&config.dataset) // And not `get`, so we get ownership
         .expect("missing dataset in configuration");
+    dataset.prepare();
     let meta = dataset.metadata();
     let n = meta.num_nodes;
     println!("Input graph stats: {:?}", meta);
 
-    dataset.prepare();
     if config.hosts.is_some() && config.process_id.is_none() {
         println!("Syncing the dataset to the other hosts, if needed");
         config.hosts.as_ref().unwrap().rsync(config.ddir.clone());
