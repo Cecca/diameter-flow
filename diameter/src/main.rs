@@ -79,7 +79,7 @@ impl Host {
             .to_str()
             .expect("problem converting path to string");
         Command::new("rsync")
-            .arg("--ignore-existing")
+            .arg("--update")
             .arg("-r")
             .arg("--progress")
             .arg(path_with_slash)
