@@ -446,6 +446,8 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "uk-2014-tpd" => builder.webgraph("uk-2014-tpd"),
         "uk-2014-host" => builder.webgraph("uk-2014-host"),
         "uk-2007-05-small" => builder.webgraph("uk-2007-05@100000"),
+        "twitter-2010" => builder.webgraph("twitter-2010"),
+        "friendster" => builder.snap("https://snap.stanford.edu/data/bigdata/communities/com-friendster.ungraph.txt.gz"),
         "facebook" => builder.snap("https://snap.stanford.edu/data/facebook_combined.txt.gz"),
         "twitter" => builder.snap("https://snap.stanford.edu/data/twitter_combined.txt.gz"),
         "livejournal" => builder.snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
