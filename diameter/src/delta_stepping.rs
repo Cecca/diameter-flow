@@ -148,12 +148,17 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
     use std::collections::HashSet;
 
     let l1 = scope.count_logger().expect("missing logger");
-    let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
-    let dist = Uniform::new(0u32, n + 1);
-    let root: u32 = dist.sample(&mut rng);
-    let nodes = vec![(root, State::root())]
-        .to_stream(scope)
-        .exchange(|p| p.0 as u64);
+    let nodes = if scope.index() == 0 {
+        let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
+        let dist = Uniform::new(0u32, n + 1);
+        let root: u32 = dist.sample(&mut rng);
+
+        vec![(root, State::root())]
+    } else {
+        vec![]
+    }
+    .to_stream(scope)
+    .exchange(|p| p.0 as u64);
 
     // Perform the delta steps, retiring at the end of each
     // delta step the stable nodes
