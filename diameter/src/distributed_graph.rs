@@ -304,18 +304,10 @@ impl DistributedEdges {
                         if let Some(states) = stash.remove(&t) {
                             let n_states = states.len();
                             let states = ArrayMap::new(states);
-                            // let mut output_messages = HashMap::new();
                             let mut output_messages = MessageBuffer::with_capacity(4_000_000, aggregate, output.session(&t));
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
                             let mut cnt_out = 0;
-
-                            // benchmark how fast you can go through the edges
-                            // let mut bench = 0;
-                            // let bench_timer = std::time::Instant::now();
-                            // edges.for_each(|_,_,_| {bench += 1;});
-                            // let bench_elapsed = bench_timer.elapsed();
-                            // let bench_throughput = bench as f64 /  bench_elapsed.as_secs_f64();
 
                             // Accumulate messages going over the edges
                             // This is the hot loop, where most of the time is spent
@@ -325,20 +317,12 @@ impl DistributedEdges {
                                     if let Some(msg) = message(t.time().clone(), state_u, w) {
                                         cnt_out += 1;
                                         output_messages.push(v, msg);
-                                        // output_messages
-                                        //     .entry(v)
-                                        //     .and_modify(|msg_v| *msg_v = aggregate(msg_v, &msg))
-                                        //     .or_insert(msg);
                                     }
                                 }
                                 if let Some(state_v) = states.get(v) {
                                     if let Some(msg) = message(t.time().clone(), state_v, w) {
                                         cnt_out += 1;
                                         output_messages.push(u, msg);
-                                        // output_messages
-                                        //     .entry(u)
-                                        //     .and_modify(|msg_u| *msg_u = aggregate(msg_u, &msg))
-                                        //     .or_insert(msg);
                                     }
                                 }
                             });
@@ -353,22 +337,6 @@ impl DistributedEdges {
                                 n_states,
                                 cnt_out
                             );
-                            // println!(
-                            //     "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. Baseline {:.3?} edges/sec, {} slower",
-                            //     worker_id,
-                            //     cnt,
-                            //     elapsed,
-                            //     throughput,
-                            //     n_states,
-                            //     cnt_out,
-                            //     bench_throughput,
-                            //     bench_throughput / throughput
-                            // );
-
-                            // // Output the aggregated messages
-                            // output
-                            //     .session(&t)
-                            //     .give_iterator(output_messages.into_iter());
                         }
                     });
                 },
@@ -383,6 +351,7 @@ impl DistributedEdges {
                 move |message_input, node_input, output, notificator| {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
+                        println!("{} received {} messages!", worker_id, data.len());
                         l2.log((
                             CountEvent::load_message_exchange(t.time().clone()),
                             data.len() as u64,
@@ -408,31 +377,20 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
-                        if let Some(mut nodes) = node_stash.remove(t.time()) {
-                            // let n = nodes.len();
-                            // let timer = std::time::Instant::now();
-                            let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                            let mut cnt_messaged = 0;
-                            let mut cnt_no_messaged = 0;
-                            // for (id, state) in nodes.into_iter() {
-                            //     if let Some(message) = msgs.get(&id) {
-                            //         session.give((id, update(&state, message)));
-                            //         cnt_messaged += 1;
-                            //     } else {
-                            //         session.give((id, update_no_msg(&state)));
-                            //         cnt_no_messaged += 1;
-                            //     }
-                            // }
-                            for (id, message) in msgs.into_iter() {
-                                let state = nodes.remove(&id).unwrap_or_default();
-                                session.give((id, update(&state, &message)));
-                                cnt_messaged += 1;
-                            }
-                            // Exhaust un-messaged nodes
-                            for (id, state) in nodes.drain() {
-                                    session.give((id, update_no_msg(&state)));
-                                    cnt_no_messaged += 1;
-                            }
+                        let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
+                        let mut nodes = node_stash.remove(t.time()).unwrap_or_else(HashMap::new);
+                        println!("Received {} messages", msgs.len());
+                        let mut cnt_messaged = 0;
+                        let mut cnt_no_messaged = 0;
+                        for (id, message) in msgs.into_iter() {
+                            let state = nodes.remove(&id).unwrap_or_default();
+                            session.give((id, update(&state, &message)));
+                            cnt_messaged += 1;
+                        }
+                        // Exhaust un-messaged nodes
+                        for (id, state) in nodes.drain() {
+                                session.give((id, update_no_msg(&state)));
+                                cnt_no_messaged += 1;
                         }
                     });
                 },
@@ -485,19 +443,23 @@ where
         {
             let mut iter = self.buffer.drain(..);
             let mut current_message = iter.next().expect("called flush on empty vector");
+            let mut cnt = 0;
             loop {
                 if let Some(msg) = iter.next() {
                     if msg.0 == current_message.0 {
                         current_message.1 = (self.merger)(&current_message.1, &msg.1);
                     } else {
                         self.session.give(current_message);
+                        cnt += 1;
                         current_message = msg;
                     }
                 } else {
                     self.session.give(current_message);
+                    cnt += 1;
                     break;
                 }
             }
+            println!("Sent from buffer: {}", cnt);
         }
         assert!(self.buffer.is_empty());
     }

@@ -37,9 +37,11 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
     use timely::dataflow::operators::*;
     use timely::order::Product;
 
+    // let nodes = if scope.index() == 0 {
     let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
     let dist = Uniform::new(0u32, n + 1);
     let root: u32 = dist.sample(&mut rng);
+    println!("Root is {}", root);
     let nodes = vec![(
         root,
         State {
@@ -47,6 +49,9 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
             distance: Some(0),
         },
     )]
+    // } else {
+    //     vec![]
+    // }
     .to_stream(scope)
     .exchange(|p| p.0 as u64);
 
