@@ -351,7 +351,6 @@ impl DistributedEdges {
                 move |message_input, node_input, output, notificator| {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
-                        println!("{} received {} messages!", worker_id, data.len());
                         l2.log((
                             CountEvent::load_message_exchange(t.time().clone()),
                             data.len() as u64,
@@ -379,7 +378,6 @@ impl DistributedEdges {
                         // For each node, update the state with the received, message, if any
                         let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                         let mut nodes = node_stash.remove(t.time()).unwrap_or_else(HashMap::new);
-                        println!("Received {} messages", msgs.len());
                         let mut cnt_messaged = 0;
                         let mut cnt_no_messaged = 0;
                         for (id, message) in msgs.into_iter() {
@@ -443,23 +441,19 @@ where
         {
             let mut iter = self.buffer.drain(..);
             let mut current_message = iter.next().expect("called flush on empty vector");
-            let mut cnt = 0;
             loop {
                 if let Some(msg) = iter.next() {
                     if msg.0 == current_message.0 {
                         current_message.1 = (self.merger)(&current_message.1, &msg.1);
                     } else {
                         self.session.give(current_message);
-                        cnt += 1;
                         current_message = msg;
                     }
                 } else {
                     self.session.give(current_message);
-                    cnt += 1;
                     break;
                 }
             }
-            println!("Sent from buffer: {}", cnt);
         }
         assert!(self.buffer.is_empty());
     }
