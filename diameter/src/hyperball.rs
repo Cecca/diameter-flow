@@ -114,6 +114,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
                 &nodes.concat(&cycle).inspect_batch(move |t, data| {
                     l1.log((CountEvent::Active(t.inner), data.len() as u64))
                 }),
+                false,
                 // Should send?
                 |_, _| true,
                 // create message

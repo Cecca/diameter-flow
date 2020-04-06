@@ -109,6 +109,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
         let (output, further) = edges
             .send(
                 &nodes.concat(&cycle),
+                true,
                 |_, state| state.should_send(),
                 move |time, state, weight| {
                     State::send_light(time.outer.inner, delta, state, weight)
@@ -129,6 +130,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
     // do the heavy updates and return
     edges.send(
         &lightly_updated,
+        true,
         |_, state| state.distance.is_some(),
         move |time, state, weight| State::send_heavy(time.inner, delta, state, weight),
         |d1, d2| std::cmp::min(*d1, *d2), // aggregate messages

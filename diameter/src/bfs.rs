@@ -61,6 +61,7 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
         let (inactive_nodes, active_nodes) = edges
             .send(
                 &nodes.concat(&cycle),
+                true,
                 // Filter nodes that have something to say
                 |_, state| state.should_send(),
                 // Create messages

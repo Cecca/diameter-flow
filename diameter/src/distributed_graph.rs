@@ -237,6 +237,7 @@ impl DistributedEdges {
     pub fn send<G: Scope, S: ExchangeData + Default, M: ExchangeData, P, Fm, Fa, Fu, Fun>(
         &self,
         nodes: &Stream<G, (u32, S)>,
+        with_default: bool,
         should_send: P,
         message: Fm,
         aggregate: Fa,
@@ -376,20 +377,31 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
+                        let mut cnt_default = 0;
                         let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                         let mut nodes = node_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                         let mut cnt_messaged = 0;
                         let mut cnt_no_messaged = 0;
                         for (id, message) in msgs.into_iter() {
-                            let state = nodes.remove(&id).unwrap_or_default();
-                            session.give((id, update(&state, &message)));
-                            cnt_messaged += 1;
+                            // let state = nodes.remove(&id).unwrap_or_else(|| {
+                            //     cnt_default+=1;
+                            //     Default::default()
+                            // });
+                            if let Some(state) = nodes.remove(&id) {
+                                session.give((id, update(&state, &message)));
+                                cnt_messaged += 1;
+                            } else if with_default {
+                                let state = Default::default();
+                                session.give((id, update(&state, &message)));
+                                cnt_messaged += 1;
+                            }
                         }
                         // Exhaust un-messaged nodes
                         for (id, state) in nodes.drain() {
                                 session.give((id, update_no_msg(&state)));
                                 cnt_no_messaged += 1;
                         }
+                        println!("Default states: {}", cnt_default);
                     });
                 },
             )

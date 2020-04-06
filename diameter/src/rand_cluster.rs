@@ -313,6 +313,7 @@ where
             let (output, further) = edges
                 .send(
                     &nodes.concat(&cycle),
+                    false,
                     move |t, state| state.can_send(radius, t.outer.inner),
                     move |_time, state, weight| {
                         // if weight < radius {
