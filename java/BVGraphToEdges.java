@@ -180,6 +180,10 @@ public class BVGraphToEdges {
 
         void write(long x) throws IOException {
             long diff = x - this.last;
+            if (diff == 0) {
+              System.err.println("x="+x+ " last=" +this.last);
+            }
+            assert diff != 0 : "difference is zero!";
             assert diff > 0 : "non-positive difference!";
             this.last = x;
             this.stream.writeLongGamma(diff);
@@ -206,6 +210,7 @@ public class BVGraphToEdges {
 
         long read() throws IOException {
             long diff = this.stream.readLongGamma();
+            assert diff > 0 : "Read a zero difference!";
             long x = this.last + diff;
             this.last = x;
             return x;
@@ -296,24 +301,28 @@ public class BVGraphToEdges {
         boolean aMore = true;
         boolean bMore = true;
 
+        System.out.println(">> Merging the two files");
         long last = 0;
         try {
             while (true) {
                 if (a < b) {
                     aMore = false;
                     out.write(a);
+                    last = a;
                     a = aStream.read();
                     edgeCount++;
                     aMore = true;
                 } else if (a > b) {
                     bMore = false;
                     out.write(b);
+                    last = b;
                     b = bStream.read();
                     edgeCount++;
                     bMore = true;
                 } else {
                     // Remove the duplicate edge
                     out.write(a);
+                    last = a;
                     aMore = false;
                     a = aStream.read();
                     aMore = true;
@@ -329,11 +338,15 @@ public class BVGraphToEdges {
         }
 
         // Now exhaust the files
+        System.out.println("   Exhausing left file");
         if (aMore) {
             try {
                 while (true) {
-                    out.write(a);
-                    edgeCount++;
+                    if (a > last) {
+                      out.write(a);
+                      last = a;
+                      edgeCount++;
+                    }
                     a = aStream.read();
                 }
             } catch (EOFException e) {
@@ -341,11 +354,15 @@ public class BVGraphToEdges {
             }
         }
 
+        System.out.println("   Exhausing rigth file");
         if (bMore) {
             try {
                 while (true) {
-                    out.write(b);
-                    edgeCount++;
+                    if (b > last) {
+                      out.write(b);
+                      last = b;
+                      edgeCount++;
+                    }
                     b = bStream.read();
                 }
             } catch (EOFException e) {

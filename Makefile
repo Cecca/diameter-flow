@@ -16,6 +16,11 @@ try-java: java/BVGraphToEdges.class
 	~/.graph-datasets/EDA383F35CE3CC7832DE1301A2E972E33FC39307B9B14E4F70A7916B2D575D6E/it-2004-hc \
 	/tmp/out.bin
 
+convert-twitter: java/BVGraphToEdges.class
+	cd java && java -Xmx4G -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar:. BVGraphToEdges \
+	/mnt/ssd/graphs/3CAEEB13A5DAC1044EEE5E0624398251D9AD49F3646194AA31DEC95DE360B6B8/twitter-2010-hc \
+	/mnt/ssd/tmp/out.bin
+
 java/BVGraphToEdges.class: java/BVGraphToEdges.java
 	cd java && javac -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar BVGraphToEdges.java
 
