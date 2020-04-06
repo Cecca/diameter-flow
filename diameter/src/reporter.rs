@@ -81,7 +81,7 @@ impl Reporter {
             writer,
             "{},{},{},{},{},{},{},{},{},{}",
             sha,
-            self.date.to_rfc2822(),
+            self.date.to_rfc3339(),
             self.config.seed(),
             self.config.threads.unwrap_or(1),
             self.config.hosts_string(),
