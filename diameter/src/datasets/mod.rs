@@ -65,19 +65,27 @@ impl DatasetBuilder {
             kind: DatasetKind::WebGraph(s.into()),
         }
     }
+
+    pub fn lcc(&self, inner: Dataset) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::LCC(Box::new(inner)),
+        }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Dataset {
     data_dir: PathBuf,
     kind: DatasetKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DatasetKind {
     Snap(String),
     Dimacs(String),
     WebGraph(String),
+    LCC(Box<Dataset>),
 }
 
 impl Dataset {
@@ -94,6 +102,7 @@ impl Dataset {
             DatasetKind::Dimacs(url) => format!("dimacs::{}", url),
             DatasetKind::Snap(url) => format!("snap::{}", url),
             DatasetKind::WebGraph(name) => format!("webgraph::{}", name),
+            DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
         }
     }
 
@@ -229,6 +238,36 @@ impl Dataset {
                     println!("Compression took {:?}", timer.elapsed());
                 }
             }
+
+            DatasetKind::LCC(inner) => {
+                inner.prepare();
+                let edges_dir = self.edges_directory();
+                println!(
+                    "Compressing the largest connected component into {:?}",
+                    edges_dir
+                );
+                std::fs::create_dir_all(&edges_dir);
+                let inner_meta = inner.metadata();
+
+                let mut uf = UnionFind::new(inner_meta.num_nodes as usize);
+                inner.for_each(|x, y, _| {
+                    uf.union(x, y);
+                });
+                let lcc = uf.lcc();
+
+                let mut remapper = Remapper::default();
+                let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
+                inner.for_each(|u, v, w| {
+                    if lcc.is_in_lcc(u) {
+                        let mut src = remapper.remap(u);
+                        let mut dst = remapper.remap(v);
+                        if src > dst {
+                            std::mem::swap(&mut src, &mut dst);
+                        }
+                        compressor.write((src, dst, w));
+                    }
+                });
+            }
         }
     }
 
@@ -269,6 +308,7 @@ impl Dataset {
                 );
                 graph_url
             }
+            DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
         };
 
         let mut hasher = Sha256::new();
@@ -604,5 +644,79 @@ where
                 .expect("could not parse weight");
             action((src, dst, weight));
         }
+    }
+}
+
+struct UnionFindNode {
+    parent: u32,
+    rank: u32,
+    size: u32,
+}
+
+struct UnionFind {
+    components: Vec<UnionFindNode>,
+}
+
+impl UnionFind {
+    fn new(n: usize) -> Self {
+        let mut components = Vec::with_capacity(n);
+        for i in 0..n {
+            components.push(UnionFindNode {
+                parent: i as u32,
+                rank: 0,
+                size: 1 as u32,
+            });
+        }
+        Self { components }
+    }
+
+    fn find(&self, x: u32) -> u32 {
+        let mut root = self.components[x as usize].parent;
+        while self.components[root as usize].parent != root {
+            root = self.components[root as usize].parent;
+        }
+        root
+    }
+
+    fn union(&mut self, x: u32, y: u32) {
+        let mut root_x = self.find(x);
+        let mut root_y = self.find(y);
+
+        if root_x == root_y {
+            return;
+        }
+
+        if self.components[root_x as usize].rank < self.components[root_y as usize].rank {
+            std::mem::swap(&mut root_x, &mut root_y);
+        }
+
+        self.components[root_y as usize].parent = root_x;
+        if self.components[root_x as usize].rank == self.components[root_y as usize].rank {
+            self.components[root_x as usize].rank += 1;
+            self.components[root_x as usize].size += self.components[root_y as usize].size;
+        }
+    }
+
+    fn lcc(self) -> LargestConnectedComponent {
+        let idx = self
+            .components
+            .iter()
+            .enumerate()
+            .filter(|(id, ufn)| *id == ufn.parent as usize)
+            .max_by_key(|(_, ufn)| ufn.size)
+            .unwrap()
+            .0 as u32;
+        LargestConnectedComponent { idx, uf: self }
+    }
+}
+
+struct LargestConnectedComponent {
+    idx: u32,
+    uf: UnionFind,
+}
+
+impl LargestConnectedComponent {
+    fn is_in_lcc(&self, x: u32) -> bool {
+        self.idx == self.uf.find(x)
     }
 }

@@ -436,7 +436,7 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
 
 fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     let builder = DatasetBuilder::new(ddir);
-    map! {
+    let mut datasets = map! {
         "clueweb12" => builder.webgraph("clueweb12"),
         "gsh-2015" => builder.webgraph("gsh-2015"),
         "cnr-2000" => builder.webgraph("cnr-2000"),
@@ -456,7 +456,13 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "USA-east" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
         "rome" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
         "ny" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
+    };
+
+    for (k, v) in datasets.clone().into_iter() {
+        datasets.insert(format!("{}-lcc", k), builder.lcc(v));
     }
+
+    datasets
 }
 
 fn main() {
