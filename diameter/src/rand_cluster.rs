@@ -191,7 +191,7 @@ impl NodeState {
 
     fn updated(&self, message: Message) -> Self {
         match *self {
-            Self::Frozen { .. } => panic!("Frozen nodes cannot be updated"),
+            Self::Frozen { .. } => self.clone(),
             Self::Uncovered => Self::Covered {
                 root: message.root,
                 distance: message.distance,
@@ -355,6 +355,18 @@ fn remap_edges<G: Scope>(
 ) -> Stream<G, ((u32, u32), u32)> {
     use std::collections::hash_map::DefaultHasher;
 
+    // We build the self loops to cover the case in which 
+    // everything is covered by a single cluster.
+    // In that case the call to `triplets` would yield no
+    // output, thus ending the stream prematurely
+    let self_loops = clustering.flat_map(|(id, state)|{
+        if id == state.root() {
+            Some(((id, id), 0))
+        } else {
+            None
+        }
+    });
+
     edges
         .triplets(&clustering, |((_u, state_u), (_v, state_v), w)| {
             let d_u = state_u.distance();
@@ -370,6 +382,7 @@ fn remap_edges<G: Scope>(
             };
             out_edge
         })
+        .concat(&self_loops)
         .aggregate(
             |_key, val, min_weight: &mut Option<u32>| {
                 *min_weight = min_weight.map(|min| std::cmp::min(min, val)).or(Some(val));
@@ -416,8 +429,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        .branch(move |_t, (_id, state)| !state.is_frozen());
-        // .branch_all(move |_, (id, state)| state.is_uncovered());
+        // .branch(move |_t, (_id, state)| !state.is_frozen());
+        .branch_all(move |_, (id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 
@@ -500,21 +513,25 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         n,
                         edges.len()
                     );
-
-                    let diameter = approx_diameter(edges, n as u32)
-                        .into_iter()
-                        .map(|(approx, (u, v))| {
-                            let res = approx + radii[&(u as u32)] + radii[&(v as u32)];
-                            res
-                        })
-                        .max()
-                        .unwrap();
-                    if max_radius > diameter {
-                        println!("Outputting max radius: {}!", max_radius);
+                    if n == 1 {
+                        println!("Auxiliary graph with a single node");
                         output.session(&t).give(max_radius);
                     } else {
-                        println!("Outputting combined diameter: {}", diameter);
-                        output.session(&t).give(diameter);
+                        let diameter = approx_diameter(edges, n as u32)
+                            .into_iter()
+                            .map(|(approx, (u, v))| {
+                                let res = approx + radii[&(u as u32)] + radii[&(v as u32)];
+                                res
+                            })
+                            .max()
+                            .unwrap();
+                        if max_radius > diameter {
+                            println!("Outputting max radius: {}!", max_radius);
+                            output.session(&t).give(max_radius);
+                        } else {
+                            println!("Outputting combined diameter: {}", diameter);
+                            output.session(&t).give(diameter);
+                        }
                     }
                 }
             });

@@ -217,6 +217,7 @@ impl DistributedEdges {
                             let timer = std::time::Instant::now();
                             let mut out = output.session(&t);
 
+                            let mut cnt = 0;
                             // Accumulate messages going over the edges
                             edges.for_each(|u, v, w| {
                                 let state_u = states.get(&u).expect("missing state for u");
@@ -224,9 +225,13 @@ impl DistributedEdges {
                                 if let Some(o) =
                                     action(((u, state_u.clone()), (v, state_v.clone()), w))
                                 {
+                                    cnt += 1;
                                     out.give(o);
                                 }
                             });
+                            if cnt == 0 {
+                                println!("Warning: no output triplets");
+                            }
                         }
                     });
                 },
@@ -329,15 +334,15 @@ impl DistributedEdges {
                             });
                             let elapsed = timer.elapsed();
                             let throughput = cnt as f64 / elapsed.as_secs_f64();
-                            println!(
-                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
-                                worker_id,
-                                cnt,
-                                elapsed,
-                                throughput,
-                                n_states,
-                                cnt_out
-                            );
+                            // println!(
+                            //     "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
+                            //     worker_id,
+                            //     cnt,
+                            //     elapsed,
+                            //     throughput,
+                            //     n_states,
+                            //     cnt_out
+                            // );
                         }
                     });
                 },
