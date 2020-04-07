@@ -503,28 +503,15 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         .into_iter()
                         .map(|(approx, (u, v))| {
                             let res = approx + radii[&(u as u32)] + radii[&(v as u32)];
-                            // println!(
-                            //     "approx: {} + {} + {} = {}",
-                            //     approx,
-                            //     radii[&(u as u32)],
-                            //     radii[&(v as u32)],
-                            //     res
-                            // );
                             res
                         })
                         .max()
                         .unwrap();
-                    // println!(
-                    //     "Maximum cluster radius {}, radii used {} and {}",
-                    //     max_radius,
-                    //     radii[&(u as u32)],
-                    //     radii[&(v as u32)]
-                    // );
-                    // let diameter = aux_diam + radii[&(u as u32)] + radii[&(v as u32)];
                     if max_radius > diameter {
-                        println!("Outputting max radius!");
+                        println!("Outputting max radius: {}!", max_radius);
                         output.session(&t).give(max_radius);
                     } else {
+                        println!("Outputting combined diameter: {}", diameter);
                         output.session(&t).give(diameter);
                     }
                 }
