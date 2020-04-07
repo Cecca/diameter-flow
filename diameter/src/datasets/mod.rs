@@ -256,17 +256,31 @@ impl Dataset {
                 let lcc = uf.lcc();
 
                 let mut remapper = Remapper::default();
-                let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
-                inner.for_each(|u, v, w| {
-                    if lcc.is_in_lcc(u) {
-                        let mut src = remapper.remap(u);
-                        let mut dst = remapper.remap(v);
-                        if src > dst {
-                            std::mem::swap(&mut src, &mut dst);
+                if inner_meta.max_weight == 1 {
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    inner.for_each(|u, v, _| {
+                        if lcc.is_in_lcc(u) {
+                            let mut src = remapper.remap(u);
+                            let mut dst = remapper.remap(v);
+                            if src > dst {
+                                std::mem::swap(&mut src, &mut dst);
+                            }
+                            compressor.write((src, dst));
                         }
-                        compressor.write((src, dst, w));
-                    }
-                });
+                    });
+                } else {
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
+                    inner.for_each(|u, v, w| {
+                        if lcc.is_in_lcc(u) {
+                            let mut src = remapper.remap(u);
+                            let mut dst = remapper.remap(v);
+                            if src > dst {
+                                std::mem::swap(&mut src, &mut dst);
+                            }
+                            compressor.write((src, dst, w));
+                        }
+                    });
+                }
             }
         }
     }
