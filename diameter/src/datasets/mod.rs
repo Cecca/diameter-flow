@@ -164,6 +164,10 @@ impl Dataset {
         self.edges_directory().is_dir()
     }
 
+    pub fn clean_edges(&self) {
+        std::fs::remove_dir_all(self.edges_directory()).expect("Problem removing edges directory");
+    }
+
     pub fn prepare(&self) {
         if self.is_prepared() {
             return;

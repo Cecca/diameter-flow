@@ -476,6 +476,21 @@ fn main() {
         }
         return;
     }
+    if let Some("clean-edges") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
+        if let Some(ddir) = std::env::args().nth(2) {
+            let ddir = PathBuf::from(ddir);
+            let datasets = datasets_map(ddir);
+            if let Some(dataset) = std::env::args().nth(3) {
+                datasets
+                    .get(&dataset)
+                    .expect("Missing dataset from configuration!")
+                    .clean_edges();
+            }
+        } else {
+            println!("Specify a directory containing the datasets");
+        }
+        return;
+    }
 
     let config = Config::create();
     let mut datasets = datasets_map(config.ddir.clone());
