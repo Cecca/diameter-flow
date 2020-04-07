@@ -257,8 +257,10 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let mut out = output.session(&t);
                     let population_size = nodes.len();
                     let mut cnt = 0;
+                    let mut cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
+                        println!("Probability is less than one (n is {}, p is {})", n, p);
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                                 out.give((id, state.as_center(id, generation)));
@@ -268,20 +270,20 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }
                     } else {
-                        cnt = nodes.len();
+                        println!("Selecting all uncovered nodes as centers (n is {})", n);
+                        cnt = cnt_uncovered;
                         out.give_iterator(nodes.into_iter().map(|(id, state)| {
                             if state.is_uncovered() {
+                                // cnt_uncovered += 1;
                                 (id, state.as_center(id, generation))
                             } else {
                                 (id, state)
                             }
                         }));
                     }
+                    println!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
-                    // println!(
-                    //     "{} centers out of {} sampled at iteration {}",
-                    //     cnt, population_size, t.inner
-                    // );
+                    l1.log((CountEvent::Uncovered(t.inner), cnt_uncovered as u64));
                 }
             });
         },

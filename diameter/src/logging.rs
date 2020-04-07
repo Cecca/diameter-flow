@@ -15,6 +15,7 @@ use timely::worker::{AsWorker, Worker};
 pub enum CountEvent {
     Active(u32),
     Centers(u32),
+    Uncovered(u32),
     LoadStateExchange(u32, u32),
     LoadMessageExchange(u32, u32),
     UpdatedNodes(u32, u32),
@@ -25,6 +26,7 @@ impl CountEvent {
         match self {
             Self::Active(iter) => (*iter, 0),
             Self::Centers(iter) => (*iter, 0),
+            Self::Uncovered(iter) => (*iter, 0),
             Self::LoadMessageExchange(outer, inner) => (*outer, *inner),
             Self::LoadStateExchange(outer, inner) => (*outer, *inner),
             Self::UpdatedNodes(outer, inner) => (*outer, *inner),
@@ -34,6 +36,7 @@ impl CountEvent {
     pub fn as_string(&self) -> String {
         match self {
             Self::Active(_) => "Active".to_owned(),
+            Self::Uncovered(_) => "Uncovered".to_owned(),
             Self::Centers(_) => "Centers".to_owned(),
             Self::LoadMessageExchange(_, _) => "LoadMessageExchange".to_owned(),
             Self::LoadStateExchange(_, _) => "LoadStateExchange".to_owned(),

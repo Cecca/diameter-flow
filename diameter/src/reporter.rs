@@ -75,7 +75,7 @@ impl Reporter {
         main_path.push("main.csv");
         let mut writer = Self::with_header(
             main_path,
-            "sha,date,seed,threads,hosts,dataset,algorithm,main,diameter,total_time_ms",
+            "sha,date,seed,threads,hosts,dataset,algorithm,parameters,diameter,total_time_ms",
         )?;
         writeln!(
             writer,

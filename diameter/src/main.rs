@@ -550,13 +550,15 @@ fn main() {
 
                 diameter_stream
                     .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
-                    .probe_with(&mut probe)
-                    .sink(Pipeline, "diameter collect", move |input| {
-                        input.for_each(|_t, data| {
-                            //
-                            diameter_result_ref.borrow_mut().replace(data[0]);
-                        });
-                    });
+                    .unary(Pipeline, "diameter collect", move |_, _| {
+                        move |input, output| {
+                            input.for_each(|t, data| {
+                                diameter_result_ref.borrow_mut().replace(data[0]);
+                                output.session(&t).give(());
+                            });
+                        }
+                    })
+                    .probe_with(&mut probe);
 
                 probe
             });
