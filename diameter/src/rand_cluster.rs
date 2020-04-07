@@ -260,7 +260,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let mut cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
                     let p = 2_f64.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
-                        println!("Probability is less than one (n is {}, p is {})", n, p);
+                        // println!("Probability is less than one (n is {}, p is {})", n, p);
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                                 out.give((id, state.as_center(id, generation)));
@@ -270,7 +270,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }
                     } else {
-                        println!("Selecting all uncovered nodes as centers (n is {})", n);
+                        // println!("Selecting all uncovered nodes as centers (n is {})", n);
                         cnt = cnt_uncovered;
                         out.give_iterator(nodes.into_iter().map(|(id, state)| {
                             if state.is_uncovered() {
@@ -281,7 +281,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }));
                     }
-                    println!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
+                    // println!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
                     l1.log((CountEvent::Uncovered(t.inner), cnt_uncovered as u64));
                 }
@@ -429,8 +429,8 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             radius,
             n,
         )
-        // .branch(move |_t, (_id, state)| !state.is_frozen());
-        .branch_all(move |_, (id, state)| state.is_uncovered());
+        .branch(move |_t, (_id, state)| !state.is_frozen());
+        // .branch_all(move |_, (id, state)| state.is_uncovered());
 
         further.connect_loop(handle);
 
