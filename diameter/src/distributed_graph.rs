@@ -377,7 +377,6 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         let mut session = output.session(&t);
                         // For each node, update the state with the received, message, if any
-                        let mut cnt_default = 0;
                         let msgs = msg_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                         let mut nodes = node_stash.remove(t.time()).unwrap_or_else(HashMap::new);
                         let mut cnt_messaged = 0;
@@ -401,7 +400,6 @@ impl DistributedEdges {
                                 session.give((id, update_no_msg(&state)));
                                 cnt_no_messaged += 1;
                         }
-                        println!("Default states: {}", cnt_default);
                     });
                 },
             )
