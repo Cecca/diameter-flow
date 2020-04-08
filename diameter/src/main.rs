@@ -437,6 +437,7 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
 fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     let builder = DatasetBuilder::new(ddir);
     let mut datasets = map! {
+        "mesh-10" => builder.mesh(10),
         "mesh-100" => builder.mesh(100),
         "mesh-1000" => builder.mesh(1000),
         "mesh-10000" => builder.mesh(10000),

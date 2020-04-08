@@ -310,7 +310,11 @@ impl DistributedEdges {
                         if let Some(states) = stash.remove(&t) {
                             let n_states = states.len();
                             let states = ArrayMap::new(states);
-                            let mut output_messages = MessageBuffer::with_capacity(4_000_000, aggregate, output.session(&t));
+                            let mut output_messages = MessageBuffer::with_capacity(
+                                4_000_000,
+                                aggregate,
+                                output.session(&t),
+                            );
                             let timer = std::time::Instant::now();
                             let mut cnt = 0;
                             let mut cnt_out = 0;
@@ -387,10 +391,6 @@ impl DistributedEdges {
                         let mut cnt_messaged = 0;
                         let mut cnt_no_messaged = 0;
                         for (id, message) in msgs.into_iter() {
-                            // let state = nodes.remove(&id).unwrap_or_else(|| {
-                            //     cnt_default+=1;
-                            //     Default::default()
-                            // });
                             if let Some(state) = nodes.remove(&id) {
                                 session.give((id, update(&state, &message)));
                                 cnt_messaged += 1;
@@ -402,8 +402,8 @@ impl DistributedEdges {
                         }
                         // Exhaust un-messaged nodes
                         for (id, state) in nodes.drain() {
-                                session.give((id, update_no_msg(&state)));
-                                cnt_no_messaged += 1;
+                            session.give((id, update_no_msg(&state)));
+                            cnt_no_messaged += 1;
                         }
                     });
                 },

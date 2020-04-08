@@ -71,6 +71,18 @@ impl NodeState {
         }
     }
 
+    fn is_updated(&self) -> bool {
+        match self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => *updated,
+            _ => false,
+        }
+    }
+
     fn is_frozen(&self) -> bool {
         match self {
             Self::Frozen { .. } => true,
@@ -87,6 +99,30 @@ impl NodeState {
                 updated,
             } => updated && distance <= radius * (1 + round - generation),
             _ => false,
+        }
+    }
+
+    fn reactivate_fringe(&self, radius: u32, round: u32) -> Self {
+        match *self {
+            Self::Covered {
+                root,
+                distance,
+                generation,
+                updated,
+            } => {
+                if distance >= radius * (round - generation) {
+                    Self::Covered {
+                        root,
+                        distance,
+                        generation,
+                        updated: true,
+                    }
+                } else {
+                    self.clone()
+                }
+            }
+            Self::Uncovered => Self::Uncovered,
+            Self::Frozen { .. } => self.clone(),
         }
     }
 
@@ -118,15 +154,11 @@ impl NodeState {
                 updated,
             } => {
                 assert!(updated, "no reason to send from non-updated nodes");
-                // if distance + weight > radius * (1 + round - generation) {
-                //     None
-                // } else {
                 Some(Message {
                     root,
                     distance: distance + weight,
                     generation,
                 })
-                // }
             }
             Self::Uncovered => panic!("cannot send from an uncovered node"),
             Self::Frozen { .. } => panic!("frozen nodes don't participate in the communication"),
@@ -160,6 +192,7 @@ impl NodeState {
     }
 
     fn as_center(&self, id: u32, generation: u32) -> Self {
+        println!("making {} a center for generation {}", id, generation);
         match &self {
             Self::Uncovered => Self::Covered {
                 root: id,
@@ -300,12 +333,20 @@ where
     G: Scope<Timestamp = Product<usize, u32>>,
 {
     let l1 = nodes.scope().count_logger().expect("missing logger");
-    let _l2 = l1.clone();
-    let _l3 = l1.clone();
-    let _l4 = l1.clone();
-    let _l5 = l1.clone();
 
     nodes
+        .unary(Pipeline, "reactivate", move |_, _| {
+            move |input, output| {
+                input.for_each(|t, data| {
+                    let round = t.time().inner;
+                    let data = data.replace(Vec::new());
+                    output.session(&t).give_iterator(
+                        data.into_iter()
+                            .map(|(id, state)| (id, state.reactivate_fringe(radius, round))),
+                    );
+                });
+            }
+        })
         .scope()
         .iterative::<u32, _, _>(move |subscope| {
             let nodes = nodes.enter(subscope);
@@ -317,13 +358,7 @@ where
                     &nodes.concat(&cycle),
                     false,
                     move |t, state| state.can_send(radius, t.outer.inner),
-                    move |_time, state, weight| {
-                        // if weight < radius {
-                        state.propagate(weight, radius)
-                        // } else {
-                        // None
-                        // }
-                    },
+                    move |_time, state, weight| state.propagate(weight, radius),
                     |d1, d2| Message::merge(d1, d2), // aggregate messages
                     |state, message| state.updated(*message),
                     |state| state.deactivate(), // deactivate nodes with no messages

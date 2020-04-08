@@ -70,7 +70,7 @@ where
                             let branch = updated_count > 0;
                             if worker_id == 0 {
                                 println!(
-                                    ">> {} nodes updated at time {:?}",
+                                    ">> {} nodes passing predicate at time {:?}",
                                     updated_count,
                                     time.time()
                                 );
