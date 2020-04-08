@@ -355,11 +355,11 @@ fn remap_edges<G: Scope>(
 ) -> Stream<G, ((u32, u32), u32)> {
     use std::collections::hash_map::DefaultHasher;
 
-    // We build the self loops to cover the case in which 
+    // We build the self loops to cover the case in which
     // everything is covered by a single cluster.
     // In that case the call to `triplets` would yield no
     // output, thus ending the stream prematurely
-    let self_loops = clustering.flat_map(|(id, state)|{
+    let self_loops = clustering.flat_map(|(id, state)| {
         if id == state.root() {
             Some(((id, id), 0))
         } else {
@@ -437,6 +437,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
         stable.leave()
     });
 
+    let l_radius = nodes.scope().count_logger().expect("missing logger");
     let auxiliary_graph = remap_edges(&edges, &clustering);
     let clusters_radii = clustering
         .map(|(_id, state)| (state.root(), state.distance()))
@@ -446,7 +447,16 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             },
             |center, agg: u32| (center, agg),
             |key| *key as u64,
-        );
+        )
+        .inspect_batch(move |t, data| {
+            let mut hist = HashMap::new();
+            data.iter().for_each(|(_center, radius)| {
+                hist.entry(radius).and_modify(|c| *c += 1).or_insert(1);
+            });
+            for (radius, count) in hist.drain() {
+                l_radius.log((CountEvent::RadiusHist(0, *radius), count as u64));
+            }
+        });
 
     // Collect the auxiliary graph and compute the diameter on it
     let mut stash_auxiliary = HashMap::new();

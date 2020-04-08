@@ -19,6 +19,7 @@ pub enum CountEvent {
     LoadStateExchange(u32, u32),
     LoadMessageExchange(u32, u32),
     UpdatedNodes(u32, u32),
+    RadiusHist(u32, u32),
 }
 
 impl CountEvent {
@@ -30,6 +31,7 @@ impl CountEvent {
             Self::LoadMessageExchange(outer, inner) => (*outer, *inner),
             Self::LoadStateExchange(outer, inner) => (*outer, *inner),
             Self::UpdatedNodes(outer, inner) => (*outer, *inner),
+            Self::RadiusHist(iter, _radius) => (*iter, 0),
         }
     }
 
@@ -41,6 +43,7 @@ impl CountEvent {
             Self::LoadMessageExchange(_, _) => "LoadMessageExchange".to_owned(),
             Self::LoadStateExchange(_, _) => "LoadStateExchange".to_owned(),
             Self::UpdatedNodes(_, _) => "UpdatedNodes".to_owned(),
+            Self::RadiusHist(_, radius) => format!("RadiusHist_{}", radius),
         }
     }
 
