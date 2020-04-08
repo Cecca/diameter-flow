@@ -126,7 +126,7 @@ enum Algorithm {
     Sequential,
     DeltaStepping(u32),
     HyperBall(usize),
-    RandCluster(u32),
+    RandCluster(u32, f64),
     Bfs,
 }
 
@@ -143,7 +143,7 @@ impl Algorithm {
             Self::Sequential => "Sequential".to_owned(),
             Self::DeltaStepping(_) => "DeltaStepping".to_owned(),
             Self::HyperBall(_) => "HyperBall".to_owned(),
-            Self::RandCluster(_) => "RandCluster".to_owned(),
+            Self::RandCluster(_, _) => "RandCluster".to_owned(),
             Self::Bfs => "Bfs".to_owned(),
         }
     }
@@ -153,7 +153,7 @@ impl Algorithm {
             Self::Sequential => "".to_owned(),
             Self::DeltaStepping(delta) => format!("{}", delta),
             Self::HyperBall(p) => format!("{}", p),
-            Self::RandCluster(radius) => format!("{}", radius),
+            Self::RandCluster(radius, base) => format!("{}:{}", radius, base),
             Self::Bfs => "".to_owned(),
         }
     }
@@ -167,7 +167,7 @@ impl TryFrom<&str> for Algorithm {
         let re_sequential = Regex::new(r"sequential").unwrap();
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
-        let re_rand_cluster = Regex::new(r"rand-cluster\((\d+)\)").unwrap();
+        let re_rand_cluster = Regex::new(r"rand-cluster\((\d+), *(\d+)\)").unwrap();
         let re_bfs = Regex::new(r"bfs").unwrap();
         if let Some(_captures) = re_sequential.captures(value) {
             return Ok(Self::Sequential);
@@ -204,7 +204,13 @@ impl TryFrom<&str> for Algorithm {
                 .as_str()
                 .parse::<u32>()
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
-            return Ok(Self::RandCluster(radius));
+            let base = captures
+                .get(2)
+                .ok_or_else(|| format!("unable to get first capture"))?
+                .as_str()
+                .parse::<f64>()
+                .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
+            return Ok(Self::RandCluster(radius, base));
         }
         if let Some(_captures) = re_bfs.captures(value) {
             return Ok(Self::Bfs);
@@ -543,8 +549,8 @@ fn main() {
                         delta_stepping(static_edges, scope, delta, n, seed)
                     }
                     Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, seed),
-                    Algorithm::RandCluster(radius) => {
-                        rand_cluster::rand_cluster(static_edges, scope, radius, n, seed)
+                    Algorithm::RandCluster(radius, base) => {
+                        rand_cluster::rand_cluster(static_edges, scope, radius, base, n, seed)
                     }
                     Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
                     Algorithm::Sequential => {

@@ -192,7 +192,6 @@ impl NodeState {
     }
 
     fn as_center(&self, id: u32, generation: u32) -> Self {
-        println!("making {} a center for generation {}", id, generation);
         match &self {
             Self::Uncovered => Self::Covered {
                 root: id,
@@ -261,6 +260,7 @@ impl NodeState {
 
 fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
     nodes: &Stream<G, (u32, NodeState)>,
+    base: f64,
     n: u32,
     rand: Rc<RefCell<R>>,
 ) -> Stream<G, (u32, NodeState)> {
@@ -291,7 +291,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let population_size = nodes.len();
                     let mut cnt = 0;
                     let mut cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
-                    let p = 2_f64.powi(t.time().inner as i32) / n as f64;
+                    let p = base.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
                         // println!("Probability is less than one (n is {}, p is {})", n, p);
                         for (id, state) in nodes.into_iter() {
@@ -416,6 +416,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     edges: DistributedEdges,
     scope: &mut G,
     radius: u32,
+    base: f64,
     n: u32,
     seed: u64,
 ) -> Stream<G, u32> {
@@ -437,7 +438,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
 
         let (stable, further) = expand_clusters(
             &edges,
-            &sample_centers(&nodes.concat(&cycle), n, rand),
+            &sample_centers(&nodes.concat(&cycle), base, n, rand),
             radius,
             n,
         )
