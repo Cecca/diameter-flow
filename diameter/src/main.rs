@@ -437,6 +437,9 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
 fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     let builder = DatasetBuilder::new(ddir);
     let mut datasets = map! {
+        "mesh-100" => builder.mesh(100),
+        "mesh-1000" => builder.mesh(1000),
+        "mesh-10000" => builder.mesh(10000),
         "clueweb12" => builder.webgraph("clueweb12"),
         "gsh-2015" => builder.webgraph("gsh-2015"),
         "cnr-2000" => builder.webgraph("cnr-2000"),

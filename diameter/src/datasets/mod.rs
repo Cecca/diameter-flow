@@ -72,6 +72,13 @@ impl DatasetBuilder {
             kind: DatasetKind::LCC(Box::new(inner)),
         }
     }
+
+    pub fn mesh(&self, side: u32) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::Mesh(side),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +93,7 @@ pub enum DatasetKind {
     Dimacs(String),
     WebGraph(String),
     LCC(Box<Dataset>),
+    Mesh(u32),
 }
 
 impl Dataset {
@@ -103,6 +111,7 @@ impl Dataset {
             DatasetKind::Snap(url) => format!("snap::{}", url),
             DatasetKind::WebGraph(name) => format!("webgraph::{}", name),
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
+            DatasetKind::Mesh(side) => format!("mesh::{}", side),
         }
     }
 
@@ -286,6 +295,24 @@ impl Dataset {
                     });
                 }
             }
+            DatasetKind::Mesh(side) => {
+                let edges_dir = self.edges_directory();
+                std::fs::create_dir_all(edges_dir.clone());
+                let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                for i in 0..*side {
+                    for j in 0..*side {
+                        let node = i * side + j;
+                        if i + 1 < *side {
+                            let bottom = (i + 1) * side + j;
+                            compressor.write((node, bottom));
+                        }
+                        if j + 1 < *side {
+                            let right = i * side + j + 1;
+                            compressor.write((node, right));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -327,6 +354,7 @@ impl Dataset {
                 graph_url
             }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
+            DatasetKind::Mesh(side) => format!("mesh::{}", side),
         };
 
         let mut hasher = Sha256::new();
