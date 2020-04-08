@@ -89,3 +89,25 @@ where
         (stable.map(|pair| pair.1), some_updated.map(|pair| pair.1))
     }
 }
+
+pub trait MapTimed<G: Scope, D: Data> {
+    fn map_timed<O: Data, F: Fn(G::Timestamp, D) -> O + 'static>(&self, f: F) -> Stream<G, O>;
+}
+
+impl<G: Scope, D: Data> MapTimed<G, D> for Stream<G, D> {
+    fn map_timed<O: Data, F: Fn(G::Timestamp, D) -> O + 'static>(&self, f: F) -> Stream<G, O> {
+        use timely::dataflow::operators::Operator;
+
+        self.unary(Pipeline, "map_timed", move |_, _| {
+            move |input, output| {
+                input.for_each(|t, data| {
+                    let time = t.time().clone();
+                    let data = data.replace(Vec::new());
+                    output
+                        .session(&t)
+                        .give_iterator(data.into_iter().map(|d| f(time.clone(), d)));
+                });
+            }
+        })
+    }
+}

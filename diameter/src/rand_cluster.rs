@@ -335,18 +335,7 @@ where
     let l1 = nodes.scope().count_logger().expect("missing logger");
 
     nodes
-        .unary(Pipeline, "reactivate", move |_, _| {
-            move |input, output| {
-                input.for_each(|t, data| {
-                    let round = t.time().inner;
-                    let data = data.replace(Vec::new());
-                    output.session(&t).give_iterator(
-                        data.into_iter()
-                            .map(|(id, state)| (id, state.reactivate_fringe(radius, round))),
-                    );
-                });
-            }
-        })
+        .map_timed(move |t, (id, state)| (id, state.reactivate_fringe(radius, t.inner)))
         .scope()
         .iterative::<u32, _, _>(move |subscope| {
             let nodes = nodes.enter(subscope);
@@ -369,19 +358,7 @@ where
 
             output.leave()
         })
-        .unary(Pipeline, "freeze", |_, _| {
-            move |input, output| {
-                input.for_each(|t, data| {
-                    let round = t.time().inner;
-                    let mut session = output.session(&t);
-                    let data = data.replace(Vec::new());
-                    session.give_iterator(
-                        data.into_iter()
-                            .map(|(id, state)| (id, state.freeze_if_done(radius, round))),
-                    )
-                });
-            }
-        })
+        .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.inner)))
 }
 
 fn remap_edges<G: Scope>(
