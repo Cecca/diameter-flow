@@ -5,3 +5,5 @@
 *.jar
 *.tar.gz
 /reports
+.drake
+/remote-reports

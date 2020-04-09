@@ -1,0 +1,10 @@
+---
+title: "Diameter experiments"
+output: 
+  flexdashboard::flex_dashboard:
+    vertical_layout: fill
+---
+
+```{r fig.width=8, fig.height=4}
+readd(plot_main)
+```
