@@ -1,10 +1,37 @@
 ---
 title: "Diameter experiments"
-output: 
-  flexdashboard::flex_dashboard:
-    vertical_layout: fill
+output: html_document
 ---
 
+```{r echo=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+```
+
+### Diameter vs. time
+
+Down and to the left is better
+
 ```{r fig.width=8, fig.height=4}
-readd(plot_main)
+readd(plot_diam_vs_time_interactive)
+```
+
+### Center selection by iteration
+
+Note that in some configurations the number of centers
+decreases with respect to the previous iteration, even though the probability
+increases. This is due to the decrease in the number of uncovered nodes from
+which we sample the centers.
+Suppose that in one iteration the probability of selecting a center is 0.05 and there
+are 5000 uncovered nodes: the expected number of centers will be 250.
+If in the next iterations there are just 1000 uncovered nodes, and the probability
+of selecting a center is 0.1, the expected number of centers will be 100.
+
+```{r}
+readd(plot_centers_interactive)
+```
+
+### Uncovered nodes by iteration
+
+```{r}
+readd(plot_uncovered_interactive)
 ```
