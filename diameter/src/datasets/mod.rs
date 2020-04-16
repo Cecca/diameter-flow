@@ -298,7 +298,12 @@ impl Dataset {
             DatasetKind::Mesh(side) => {
                 let edges_dir = self.edges_directory();
                 std::fs::create_dir_all(edges_dir.clone());
-                let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                let edges = 2 * side * side;
+                let blocks = 128;
+                let mut compressor = CompressedPairsWriter::to_file(
+                    edges_dir,
+                    std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                );
                 for i in 0..*side {
                     for j in 0..*side {
                         let node = i * side + j;
