@@ -95,7 +95,7 @@ function run_web() {
 function run_weighted() {
     for SEED in 112985714 524098 124098
     do
-    for DATASET in colorado USA-east USA
+    for DATASET in USA-E USA-W USA-CTR USA
     do
         # Delta-stepping
         for DELTA in 1000 10000 100000
