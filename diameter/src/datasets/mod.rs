@@ -270,7 +270,7 @@ impl Dataset {
 
                 let mut remapper = Remapper::default();
                 if inner_meta.max_weight == 1 {
-                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 500_000);
                     inner.for_each(|u, v, _| {
                         if lcc.is_in_lcc(u) {
                             let mut src = remapper.remap(u);
@@ -391,6 +391,7 @@ impl Dataset {
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 edges_files.insert(chunk_id, path);
             } else if let Some(captures) = rex_weights.captures(str_name) {
+                println!("Loading edge weight file");
                 let digits = captures.get(1).unwrap();
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 weights_files.insert(chunk_id, path);
@@ -426,27 +427,15 @@ impl Dataset {
             (input, probe, builder)
         });
 
-        // let mut identifiers: Vec<usize> =
-        //     self.binary_edge_files().map(|triplet| triplet.0).collect();
-        // identifiers.sort();
-        // let mut groups = identifiers.chunks(1 + identifiers.len() / worker.peers());
-        // let this_identifiers: &[usize] = groups.nth(worker.index()).unwrap_or_else(|| {
-        //     panic!(
-        //         "no parts to load for worker {}, possibly there are too few parts",
-        //         worker.index()
-        //     )
-        // });
-        // println!(
-        //     "worker {} will load parts {:?}",
-        //     worker.index(),
-        //     this_identifiers
-        // );
+        let n_files = self.binary_edge_files().count();
+        assert!(n_files >= worker.peers(), 
+                "not enough files: {} < {}",
+                n_files, worker.peers());
 
-        println!("loading input");
+        println!("loading input from {} edge files", n_files);
         self.binary_edge_files()
             .for_each(|(id, path, weights_path)| {
                 if id % worker.peers() == worker.index() {
-                    // if this_identifiers.contains(&id) {
                     input.send((
                         path.to_str()
                             .expect("couldn't convert path to string")
