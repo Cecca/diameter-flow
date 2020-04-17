@@ -463,7 +463,9 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "livejournal" => builder.snap("https://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
         "colorado" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
         "USA" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
-        "USA-east" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
+        "USA-CTR" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.CTR.gr.gz"),
+        "USA-W" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.W.gr.gz"),
+        "USA-E" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.E.gr.gz"),
         "rome" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/rome/rome99.gr"),
         "ny" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.NY.gr.gz")
     };

@@ -189,7 +189,7 @@ impl Dataset {
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
-                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 100_000);
                     read_dimacs_file(&raw, |(u, v, w)| {
                         let mut src = remapper.remap(u);
                         let mut dst = remapper.remap(v);
@@ -282,7 +282,7 @@ impl Dataset {
                         }
                     });
                 } else {
-                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 1_000_000);
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 500_000);
                     inner.for_each(|u, v, w| {
                         if lcc.is_in_lcc(u) {
                             let mut src = remapper.remap(u);
