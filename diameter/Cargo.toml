@@ -24,6 +24,8 @@ bincode = "1.2"
 serde = "1.0"
 base64 = "0.11"
 chrono = "0.4"
+progress-logger = "0.1.1"
+env_logger = "0.7"
 
 [build-dependencies]
 reqwest = "0.9"

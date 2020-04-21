@@ -190,6 +190,9 @@ impl Dataset {
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
                     let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 100_000);
+                    let mut pl = progress_logger::ProgressLogger::builder()
+                        .with_items_name("edges")
+                        .start();
                     read_dimacs_file(&raw, |(u, v, w)| {
                         let mut src = remapper.remap(u);
                         let mut dst = remapper.remap(v);
@@ -197,7 +200,9 @@ impl Dataset {
                             std::mem::swap(&mut src, &mut dst);
                         }
                         compressor.write((src, dst, w));
+                        pl.update_light(1u64);
                     });
+                    pl.stop();
                 }
             }
             DatasetKind::Snap(url) => {
@@ -208,6 +213,9 @@ impl Dataset {
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
                     let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    let mut pl = progress_logger::ProgressLogger::builder()
+                        .with_items_name("edges")
+                        .start();
                     read_text_edge_file_unweighted(&raw, |(u, v)| {
                         let mut src = remapper.remap(u);
                         let mut dst = remapper.remap(v);
@@ -215,7 +223,9 @@ impl Dataset {
                             std::mem::swap(&mut src, &mut dst);
                         }
                         compressor.write((src, dst));
+                        pl.update_light(1u64);
                     });
+                    pl.stop();
                 }
             }
             DatasetKind::WebGraph(name) => {
@@ -268,6 +278,9 @@ impl Dataset {
                 });
                 let lcc = uf.lcc();
 
+                let mut pl = progress_logger::ProgressLogger::builder()
+                    .with_items_name("edges")
+                    .start();
                 let mut remapper = Remapper::default();
                 if inner_meta.max_weight == 1 {
                     let mut compressor = CompressedPairsWriter::to_file(edges_dir, 500_000);
@@ -279,6 +292,7 @@ impl Dataset {
                                 std::mem::swap(&mut src, &mut dst);
                             }
                             compressor.write((src, dst));
+                            pl.update_light(1u64);
                         }
                     });
                 } else {
@@ -291,9 +305,11 @@ impl Dataset {
                                 std::mem::swap(&mut src, &mut dst);
                             }
                             compressor.write((src, dst, w));
+                            pl.update_light(1u64);
                         }
                     });
                 }
+                pl.stop();
             }
             DatasetKind::Mesh(side) => {
                 let edges_dir = self.edges_directory();
@@ -428,9 +444,12 @@ impl Dataset {
         });
 
         let n_files = self.binary_edge_files().count();
-        assert!(n_files >= worker.peers(), 
-                "not enough files: {} < {}",
-                n_files, worker.peers());
+        assert!(
+            n_files >= worker.peers(),
+            "not enough files: {} < {}",
+            n_files,
+            worker.peers()
+        );
 
         println!("loading input from {} edge files", n_files);
         self.binary_edge_files()
