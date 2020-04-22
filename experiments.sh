@@ -93,12 +93,12 @@ function run_web() {
 }
 
 function run_weighted() {
-    for SEED in 112985714 524098 124098
+    for SEED in 11985714 524098 124098
     do
     for DATASET in USA-E USA-W USA-CTR USA
     do
         # Delta-stepping
-        for DELTA in 1000 10000 100000
+        for DELTA in 10000 100000 1000000
         do
             $BIN \
             --ddir /mnt/ssd/graphs \
