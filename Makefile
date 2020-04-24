@@ -8,6 +8,10 @@ test-rust:
 .PHONY: build-java
 build-java: deps java/BVGraphToEdges.class
 
+.PHONY: install
+install:
+	cargo install --path diameter --force
+
 .PHONY: deps
 deps: java/webgraph-3.6.3.jar java/dsiutils-2.6.2.jar
 
