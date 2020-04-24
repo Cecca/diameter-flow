@@ -17,6 +17,8 @@ jobs:
       with:
         java-version: 1.8
     - uses: actions/checkout@v2
+    - name: Build Java dependency
+      run: make build-java
     - name: Build
       run: cargo build --verbose
     - name: Run tests
