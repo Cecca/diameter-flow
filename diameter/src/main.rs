@@ -478,6 +478,7 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
 }
 
 fn main() {
+    env_logger::init();
     if let Some("list") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
         if let Some(ddir) = std::env::args().nth(2) {
             let ddir = PathBuf::from(ddir);
