@@ -124,18 +124,18 @@ impl<R: Read> GammaStreamReader<R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use std::env::temp_dir;
-    use std::fs::File;
 
     #[test]
     fn test_encode_decode() {
         for x in 1..100 {
-            let mut file = temp_dir();
-            file.push("tmp.bin");
-            let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
+            let mut buf = Vec::new();
+            // let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
+            let mut writer = GammaStreamWriter::new(&mut buf);
             assert!(writer.write(x).is_ok());
             writer.close().unwrap();
-            let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
+            let cursor = std::io::Cursor::new(buf);
+            // let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
+            let mut reader = GammaStreamReader::new(cursor);
             let res = reader.read();
             assert!(res.is_ok(), "error was: {:?}", res.unwrap_err());
             assert_eq!(res.unwrap(), x);
@@ -151,16 +151,15 @@ mod test {
         let mut values: Vec<u64> = distrib.sample_iter(rng).take(10).collect();
         values.sort();
 
-        let mut file = temp_dir();
-        file.push("tmp.bin");
-
-        let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
+        let mut buf = Vec::new();
+        let mut writer = GammaStreamWriter::new(&mut buf);
         for x in values.iter() {
             assert!(writer.write(*x).is_ok());
         }
         writer.close().unwrap();
 
-        let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
+        let cursor = std::io::Cursor::new(buf);
+        let mut reader = GammaStreamReader::new(cursor);
         for &expected in values.iter() {
             let res = reader.read();
             assert!(res.is_ok(), "error is {:?}", res);
@@ -177,16 +176,15 @@ mod test {
         let mut values: Vec<u64> = distrib.sample_iter(rng).take(10).collect();
         values.sort();
 
-        let mut file = temp_dir();
-        file.push("tmp.bin");
-
-        let mut writer = GammaStreamWriter::new(File::create(&file).unwrap());
+        let mut buf = Vec::new();
+        let mut writer = GammaStreamWriter::new(&mut buf);
         for x in values.iter() {
             assert!(writer.write(*x).is_ok());
         }
         writer.close().unwrap();
 
-        let mut reader = GammaStreamReader::new(File::open(&file).unwrap());
+        let cursor = std::io::Cursor::new(buf);
+        let mut reader = GammaStreamReader::new(cursor);
         let mut actual = Vec::new();
         loop {
             let x = reader.read().unwrap();

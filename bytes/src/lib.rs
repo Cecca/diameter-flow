@@ -294,15 +294,3 @@ impl Drop for CompressedTripletsWriter {
         self.flush().unwrap();
     }
 }
-
-#[test]
-fn test_entry() {
-    let mut arr = OffsetArrayMap::new(4, 10);
-    arr.entry(5).or_insert(5u32);
-    let actual = arr.get(5).clone();
-    assert!(actual.unwrap() == 5);
-
-    arr.entry(5).and_modify(|v| *v = 4);
-    let actual = arr.get(5).clone();
-    assert!(actual.unwrap() == 4);
-}

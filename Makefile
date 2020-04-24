@@ -1,4 +1,11 @@
-.PHONY: deps
+.PHONY: default
+default: build-java test-rust
+
+.PHONY: test-rust
+test-rust:
+	cargo test
+
+.PHONY: build-java
 build-java: deps java/BVGraphToEdges.class
 
 .PHONY: deps
