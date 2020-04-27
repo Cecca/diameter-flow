@@ -1,8 +1,9 @@
 use crate::logging::*;
 use crate::Config;
 use chrono::prelude::*;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use sha2::{Digest, Sha256};
-
 use std::fs::File;
 use std::io::{Result as IOResult, Write};
 use std::path::Path;
@@ -35,8 +36,7 @@ impl Reporter {
 
     pub fn append_counter(&mut self, event: CountEvent, count: u64) {
         let (outer, inner) = event.iterations();
-        self.counters
-            .push((event.as_string(), outer, inner, count));
+        self.counters.push((event.as_string(), outer, inner, count));
     }
 
     fn sha(&self) -> String {
@@ -51,15 +51,17 @@ impl Reporter {
         format!("{:x}", sha.result())[..6].to_owned()
     }
 
-    fn with_header<P: AsRef<Path> + std::fmt::Debug>(path: P, header: &str) -> IOResult<File> {
+    fn with_header<P: AsRef<Path> + std::fmt::Debug>(path: P, header: &str) -> IOResult<GzEncoder<File>> {
         use std::fs::OpenOptions;
         if !path.as_ref().is_file() {
             println!("File {:?} does not exist, writing header", path);
-            let mut f = OpenOptions::new().create(true).write(true).open(path)?;
-            writeln!(f, "{}", header);
-            Ok(f)
+            let f = OpenOptions::new().create(true).write(true).open(path)?;
+            let mut writer = GzEncoder::new(f, Compression::best());
+            writeln!(writer, "{}", header);
+            Ok(writer)
         } else {
-            OpenOptions::new().create(true).append(true).open(path)
+            let f = OpenOptions::new().create(true).append(true).open(path)?;
+            Ok(GzEncoder::new(f, Compression::best()))
         }
     }
 
@@ -72,7 +74,7 @@ impl Reporter {
 
         // Write configuration and parameters
         let mut main_path = dir.clone();
-        main_path.push("main.csv");
+        main_path.push("main.csv.gz");
         let mut writer = Self::with_header(
             main_path,
             "sha,date,seed,threads,hosts,dataset,algorithm,parameters,diameter,total_time_ms",
@@ -94,17 +96,11 @@ impl Reporter {
 
         // Write counters
         let mut counters_path = dir.clone();
-        counters_path.push("counters.csv");
-        let mut writer = Self::with_header(
-            counters_path,
-            "sha,counter,outer_iter,inner_iter,count",
-        )?;
+        counters_path.push("counters.csv.gz");
+        let mut writer =
+            Self::with_header(counters_path, "sha,counter,outer_iter,inner_iter,count")?;
         for (name, outer, inner, count) in self.counters.iter() {
-            writeln!(
-                writer,
-                "{},{},{},{},{}",
-                sha, name, outer, inner, count
-            )?;
+            writeln!(writer, "{},{},{},{},{}", sha, name, outer, inner, count)?;
         }
 
         Ok(())
