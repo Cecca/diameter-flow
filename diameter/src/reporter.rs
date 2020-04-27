@@ -11,8 +11,8 @@ use std::time::Duration;
 pub struct Reporter {
     date: DateTime<Utc>,
     config: Config,
-    // Table with Counter name, worker id, outer and inner iteration counters, and count
-    counters: Vec<(String, usize, u32, u32, u64)>,
+    // Table with Counter name, outer and inner iteration counters, and count
+    counters: Vec<(String, u32, u32, u64)>,
     diameter: Option<u32>,
     duration: Option<Duration>,
 }
@@ -33,10 +33,10 @@ impl Reporter {
         self.duration.replace(elapsed);
     }
 
-    pub fn append_counter(&mut self, event: CountEvent, worker_id: usize, count: u64) {
+    pub fn append_counter(&mut self, event: CountEvent, count: u64) {
         let (outer, inner) = event.iterations();
         self.counters
-            .push((event.as_string(), worker_id, outer, inner, count));
+            .push((event.as_string(), outer, inner, count));
     }
 
     fn sha(&self) -> String {
@@ -97,13 +97,13 @@ impl Reporter {
         counters_path.push("counters.csv");
         let mut writer = Self::with_header(
             counters_path,
-            "sha,counter,worker,outer_iter,inner_iter,count",
+            "sha,counter,outer_iter,inner_iter,count",
         )?;
-        for (name, worker, outer, inner, count) in self.counters.iter() {
+        for (name, outer, inner, count) in self.counters.iter() {
             writeln!(
                 writer,
-                "{},{},{},{},{},{}",
-                sha, name, worker, outer, inner, count
+                "{},{},{},{},{}",
+                sha, name, outer, inner, count
             )?;
         }
 

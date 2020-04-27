@@ -97,16 +97,15 @@ pub fn init_count_logging<A>(
     reporter: Rc<RefCell<Reporter>>,
 ) -> (
     ProbeHandle<()>,
-    Rc<RefCell<Option<InputHandle<(), ((CountEvent, usize), u64)>>>>,
+    Rc<RefCell<Option<InputHandle<(), (CountEvent, u64)>>>>,
 )
 where
     A: timely::communication::Allocate,
 {
     use timely::dataflow::channels::pact::Pipeline;
-    use timely::dataflow::operators::Operator;
 
     let (input, probe) = worker.dataflow::<(), _, _>(move |scope| {
-        let (input, stream) = scope.new_input::<((CountEvent, usize), u64)>();
+        let (input, stream) = scope.new_input::<(CountEvent, u64)>();
         let mut probe = ProbeHandle::new();
         let _reporting_worker = scope.index();
 
@@ -126,8 +125,8 @@ where
                 move |input, output, notificator| {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
-                        for ((counter, worker), count) in data.into_iter() {
-                            reporter.borrow_mut().append_counter(counter, worker, count);
+                        for (counter, count) in data.into_iter() {
+                            reporter.borrow_mut().append_counter(counter, count);
                         }
                         notificator.notify_at(t.retain());
                     });
@@ -151,7 +150,7 @@ where
                 input
                     .borrow_mut()
                     .as_mut()
-                    .map(|input| input.send(((key, worker_id), value)));
+                    .map(|input| input.send((key, value)));
             }
         });
 

@@ -53,7 +53,6 @@ plan <- drake_plan(
                                   bind = "scales", type = "interval")
     ,
 
-
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),
         output_file = file_out("dashboard.html"),
