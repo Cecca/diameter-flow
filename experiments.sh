@@ -98,7 +98,7 @@ function run_weighted() {
     for DATASET in USA-E USA-W USA-CTR USA
     do
         # Delta-stepping
-        for DELTA in 10000 100000 1000000
+        for DELTA in 100000 1000000 10000000
         do
             $BIN \
             --ddir /mnt/ssd/graphs \
