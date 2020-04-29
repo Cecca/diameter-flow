@@ -592,7 +592,7 @@ fn main() {
             if worker.index() == 0 {
                 let diameter: u32 = diameter_result.borrow().expect("missing result");
                 reporter.borrow_mut().set_result(diameter, elapsed);
-                reporter.borrow().report("reports");
+                reporter.borrow().report();
             }
         });
         match ret_status {

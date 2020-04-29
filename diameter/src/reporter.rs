@@ -3,6 +3,7 @@ use crate::Config;
 use chrono::prelude::*;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use rusqlite::{params, Connection, Result as SQLResult};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::{Result as IOResult, Write};
@@ -51,58 +52,102 @@ impl Reporter {
         format!("{:x}", sha.result())[..6].to_owned()
     }
 
-    fn with_header<P: AsRef<Path> + std::fmt::Debug>(path: P, header: &str) -> IOResult<GzEncoder<File>> {
-        use std::fs::OpenOptions;
-        if !path.as_ref().is_file() {
-            println!("File {:?} does not exist, writing header", path);
-            let f = OpenOptions::new().create(true).write(true).open(path)?;
-            let mut writer = GzEncoder::new(f, Compression::best());
-            writeln!(writer, "{}", header);
-            Ok(writer)
-        } else {
-            let f = OpenOptions::new().create(true).append(true).open(path)?;
-            Ok(GzEncoder::new(f, Compression::best()))
+    pub fn report(&self) {
+        let sha = self.sha();
+        let dbpath = std::path::PathBuf::from("diameter-results.sqlite");
+        let mut conn = Connection::open(dbpath).expect("error connecting to the database");
+        create_tables_if_needed(&conn);
+
+        let tx = conn.transaction().expect("problem starting transaction");
+
+        {
+            // Insert into main table
+            tx.execute(
+                "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms )
+                 VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 )",
+                params![
+                    sha,
+                    self.date.to_rfc3339(),
+                    format!("{}", self.config.seed()),
+                    self.config.threads.unwrap_or(1) as u32,
+                    self.config.hosts_string(),
+                    self.config.dataset,
+                    self.config.algorithm.name(),
+                    self.config.algorithm.parameters_string(),
+                    self.diameter.expect("missing diameter"),
+                    self.duration.expect("missing total time").as_millis() as u32,
+                ],
+            )
+            .expect("error inserting into main table");
+
+            // Insert into counters table
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO counters ( sha, counter, outer_iter, inner_iter, count
+                    ) VALUES ( ?1, ?2, ?3, ?4, ?5 )",
+                )
+                .expect("failed to prepare statement");
+            for (name, outer, inner, count) in self.counters.iter() {
+                stmt.execute(params![sha, name, outer, inner, *count as u32])
+                    .expect("Failure to insert into counters table");
+            }
         }
+
+        tx.commit().expect("error committing insertions");
+        conn.close().expect("error inserting into the database");
+    }
+}
+
+fn table_names(conn: &Connection) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';")
+        .expect("problem preparing query");
+    let rows = stmt
+        .query_map(params![], |row| row.get(0))
+        .expect("problem executing query");
+    let mut names: Vec<String> = Vec::new();
+    for name in rows {
+        names.push(name.expect("error getting name"));
+    }
+    names
+}
+
+fn create_tables_if_needed(conn: &Connection) {
+    let names = table_names(conn);
+
+    if !names.contains(&"main".to_owned()) {
+        println!("Creating table main");
+        conn.execute(
+            "CREATE TABLE main (
+            sha      TEXT PRIMARY KEY,
+            date     TEXT NOT NULL,
+            seed     TEXT NOT NULL,
+            threads  INTEGER NOT NULL,
+            hosts    TEXT NOT NULL,
+            dataset  TEXT NOT NULL,
+            algorithm TEXT NOT NULL,
+            parameters TEXT NOT NULL,
+            diameter INTEGER NOT NULL,
+            total_time_ms  INTEGER NOT NULL
+            )",
+            params![],
+        )
+        .expect("Error creating main table");
     }
 
-    pub fn report<P: AsRef<Path>>(&self, path: P) -> IOResult<()> {
-        let sha = self.sha();
-        let dir = path.as_ref().to_path_buf();
-        if !dir.is_dir() {
-            std::fs::create_dir_all(&dir)?;
-        }
-
-        // Write configuration and parameters
-        let mut main_path = dir.clone();
-        main_path.push("main.csv.gz");
-        let mut writer = Self::with_header(
-            main_path,
-            "sha,date,seed,threads,hosts,dataset,algorithm,parameters,diameter,total_time_ms",
-        )?;
-        writeln!(
-            writer,
-            "{},{},{},{},{},{},{},{},{},{}",
-            sha,
-            self.date.to_rfc3339(),
-            self.config.seed(),
-            self.config.threads.unwrap_or(1),
-            self.config.hosts_string(),
-            self.config.dataset,
-            self.config.algorithm.name(),
-            self.config.algorithm.parameters_string(),
-            self.diameter.expect("missing diameter"),
-            self.duration.expect("missing total time").as_millis(),
-        )?;
-
-        // Write counters
-        let mut counters_path = dir.clone();
-        counters_path.push("counters.csv.gz");
-        let mut writer =
-            Self::with_header(counters_path, "sha,counter,outer_iter,inner_iter,count")?;
-        for (name, outer, inner, count) in self.counters.iter() {
-            writeln!(writer, "{},{},{},{},{}", sha, name, outer, inner, count)?;
-        }
-
-        Ok(())
+    if !names.contains(&"counters".to_owned()) {
+        println!("Creating table counters");
+        conn.execute(
+            "CREATE TABLE counters (
+            sha       TEXT NOT NULL,
+            counter   TEXT NOT NULL,
+            outer_iter INTEGER NOT NULL,
+            inner_iter INTEGER NOT NULL,
+            count     INTEGER NOT NULL,
+            FOREIGN KEY (sha) REFERENCES main (sha)
+            )",
+            params![],
+        )
+        .expect("error creating counters table");
     }
 }
