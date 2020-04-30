@@ -538,7 +538,9 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                     );
                     if n == 1 {
                         println!("Auxiliary graph with a single node");
-                        output.session(&t).give(max_radius);
+                        // In this case the max radius is a two approximation, so we have to
+                        // double it to make an upper bound estimate like in the other cases
+                        output.session(&t).give(2 * max_radius);
                     } else {
                         let diameter = approx_diameter(edges, n as u32)
                             .into_iter()

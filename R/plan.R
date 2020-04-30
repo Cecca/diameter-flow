@@ -2,10 +2,21 @@ con <- db_connection()
 
 plan <- drake_plan(
     main_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        select(-hosts, everything()) %>%
         collect() %>%
         mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
                                   as.integer(2 * diameter),
                                   diameter)),
+
+    diameter_range = table_main(con, file_in("diameter-results.sqlite")) %>%
+        filter(algorithm %in% c("Bfs", "DeltaStepping")) %>%
+        collect() %>%
+        group_by(dataset) %>%
+        summarise(
+            lower_bound = max(diameter),
+            upper_bound = min(2 * diameter)
+        )
+    ,
 
     centers_data = table_counters(con, file_in("diameter-results.sqlite")) %>%
         filter(counter %in% c("Centers", "Uncovered")) %>%
@@ -24,7 +35,7 @@ plan <- drake_plan(
     # Plots
     plot_diam_vs_time_interactive = vl_chart(autosize = "fit")  %>%
         vl_add_data(values = main_data) %>%
-        vl_mark_point(tooltip = TRUE) %>%
+        vl_mark_point() %>%
         vl_encode_x(field = "diameter", type = "quantitative") %>%
         vl_encode_y(field = "total_time_ms", type = "quantitative") %>%
         vl_encode_color(field = "algorithm", type = "nominal") %>%

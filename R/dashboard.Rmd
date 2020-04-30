@@ -9,7 +9,8 @@ knitr::opts_chunk$set(echo=FALSE)
 
 ### Diameter vs. time
 
-Down and to the left is better
+Down and to the left is better.
+When the auxiliary graph has a single node (happens when the radius parameter is too large) then we have to multiply the radius estimate by two, to continue an estimate upper bounding the radius.
 
 ```{r fig.width=8, fig.height=4}
 readd(plot_diam_vs_time_interactive)
