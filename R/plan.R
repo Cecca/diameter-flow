@@ -33,15 +33,8 @@ plan <- drake_plan(
     ,
 
     # Plots
-    plot_diam_vs_time_interactive = vl_chart(autosize = "fit")  %>%
-        vl_add_data(values = main_data) %>%
-        vl_mark_point() %>%
-        vl_encode_x(field = "diameter", type = "quantitative") %>%
-        vl_encode_y(field = "total_time_ms", type = "quantitative") %>%
-        vl_encode_color(field = "algorithm", type = "nominal") %>%
-        vl_facet_wrap(field = "dataset", type = "nominal") %>%
-        vl_resolve_scale_x("independent") %>%
-        vl_resolve_scale_y("independent"),
+    plot_diam_vs_time_interactive =
+        do_plot_diam_vs_time_interactive(main_data),
 
     plot_centers_interactive = vl_chart(autosize = "fit") %>%
         vl_add_data(values = centers_data) %>%

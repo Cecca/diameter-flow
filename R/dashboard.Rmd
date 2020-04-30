@@ -28,11 +28,11 @@ If in the next iterations there are just 1000 uncovered nodes, and the probabili
 of selecting a center is 0.1, the expected number of centers will be 100.
 
 ```{r}
-readd(plot_centers_interactive)
+#readd(plot_centers_interactive)
 ```
 
 ### Uncovered nodes by iteration
 
 ```{r}
-readd(plot_uncovered_interactive)
+#readd(plot_uncovered_interactive)
 ```
