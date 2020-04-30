@@ -3,4 +3,5 @@ suppressPackageStartupMessages({
     library(tidyverse)
     library(drake)
     library(vlbuildr)
+    library(DBI)
 })

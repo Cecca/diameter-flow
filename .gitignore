@@ -8,3 +8,4 @@
 .drake
 /remote-reports
 diameter-results.sqlite
+/dashboard.html

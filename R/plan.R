@@ -1,19 +1,24 @@
-plan <- drake_plan(
-    main_data = read_csv(here("remote-reports/main.csv.bz2")) %>%
-        mutate(diameter = if_else(algorithm == "Bfs",
-                                  diameter * 2,
-                                  diameter)),
-    counters_data = read_csv(here("remote-reports/counters.csv.bz2")),
+con <- db_connection()
 
-    centers_data = counters_data %>%
+plan <- drake_plan(
+    main_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        collect() %>%
+        mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
+                                  as.integer(2 * diameter),
+                                  diameter)),
+
+    centers_data = table_counters(con, file_in("diameter-results.sqlite")) %>%
         filter(counter %in% c("Centers", "Uncovered")) %>%
         group_by(sha, outer_iter, counter) %>%
-        summarise(count = sum(count)) %>%
+        summarise(count = sum(count, na.rm = TRUE)) %>%
         ungroup() %>%
+        collect() %>%
         spread(counter, count) %>%
         select(iteration = outer_iter, everything()) %>%
         inner_join(main_data) %>%
-        separate(parameters, into = c("radius", "base"))
+        separate(parameters, into = c("radius", "base")) %>%
+        mutate(radius = as.integer(radius),
+               base = as.integer(base))
     ,
 
     # Plots
@@ -49,6 +54,7 @@ plan <- drake_plan(
         vl_facet_row(field = "base", type = "nominal") %>%
         vl_facet_column(field = "dataset", type = "nominal") %>%
         vl_resolve_scale_y("independent") %>%
+        vl_scale_y(type = "log") %>%
         vl_add_interval_selection(selection_name = "zoom",
                                   bind = "scales", type = "interval")
     ,
@@ -56,6 +62,7 @@ plan <- drake_plan(
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),
         output_file = file_out("dashboard.html"),
+        output_dir = here("."),
         quiet = T
     )
 )
