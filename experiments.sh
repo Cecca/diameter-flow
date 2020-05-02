@@ -49,7 +49,7 @@ function run_test() {
 }
 
 function run_web() {
-    for SEED in 112985714 524098 124098
+    for SEED in 112985 246134 346235 2356
     do
     for DATASET in uk-2014-host-lcc uk-2005-lcc sk-2005-lcc
     do
@@ -62,17 +62,17 @@ function run_web() {
         "bfs" \
         $DATASET
 
-        # Hyperball
-        for PARAM in 4 5 6
-        do
-        $BIN \
-            --ddir /mnt/ssd/graphs \
-            --hosts ~/working_hosts \
-            --threads 4 \
-            --seed $SEED \
-            "hyperball($PARAM)" \
-            $DATASET
-        done
+        # # Hyperball
+        # for PARAM in 4 5 6
+        # do
+        # $BIN \
+        #     --ddir /mnt/ssd/graphs \
+        #     --hosts ~/working_hosts \
+        #     --threads 4 \
+        #     --seed $SEED \
+        #     "hyperball($PARAM)" \
+        #     $DATASET
+        # done
 
         # Rand cluster
         for PARAM in 4 8 16
@@ -110,7 +110,7 @@ function run_weighted() {
         done
 
         # Rand cluster
-        for PARAM in 10 100 1000 10000
+        for PARAM in 1000 10000 100000
         do
             for BASE in 2 10
             do
