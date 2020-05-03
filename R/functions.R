@@ -44,16 +44,20 @@ do_plot_diam_vs_time_interactive <- function(to_plot) {
 
     scatter <- function() {
         vl_chart()  %>%
-        vl_mark_point(tooltip = TRUE) %>%
+        vl_mark_point(tooltip = TRUE,
+                      filled = TRUE) %>%
         vl_encode_x(field = "diameter",
                     aggregate = "mean",
                     type = "quantitative") %>%
         vl_encode_y(field = "total_time_ms",
                     aggregate = "mean",
                     type = "quantitative") %>%
+        vl_scale_y(type = "log") %>%
         vl_encode_detail(field = "parameters",
                          type = "nominal") %>%
-        vl_encode_color(field = "algorithm", type = "nominal")
+        vl_encode_color(field = "algorithm",
+                        type = "nominal",
+                        scale = list(scheme = "category10"))
     }
 
     vl_layer(bands(), scatter()) %>%
