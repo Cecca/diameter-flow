@@ -97,8 +97,89 @@ function run_weighted() {
     do
     for DATASET in USA-E USA-W USA-CTR USA
     do
-        # Delta-stepping
-        for DELTA in 100000 1000000 10000000
+        # # Delta-stepping
+        # for DELTA in 100000 1000000 10000000
+        # do
+        #     $BIN \
+        #     --ddir /mnt/ssd/graphs \
+        #     --hosts ~/working_hosts \
+        #     --threads 4 \
+        #     --seed $SEED \
+        #     "delta-stepping($DELTA)" \
+        #     $DATASET
+        # done
+
+        # Rand cluster
+        for PARAM in 10000 100000 1000000
+        do
+            for BASE in 2 10
+            do
+                $BIN \
+                    --ddir /mnt/ssd/graphs \
+                    --hosts ~/working_hosts \
+                    --threads 4 \
+                    --seed $SEED \
+                    "rand-cluster($PARAM,$BASE)" \
+                    $DATASET
+            done
+        done
+    done
+    done
+}
+
+function run_mesh() {
+    for SEED in 11985714 524098 124098
+    do
+    for DATASET in mesh-2048
+    do
+
+        # BFS
+        $BIN \
+        --ddir /mnt/ssd/graphs \
+        --hosts ~/working_hosts \
+        --threads 4 \
+        --seed $SEED \
+        "bfs" \
+        $DATASET
+
+        # Hyperball
+        for PARAM in 4 5 6
+        do
+        $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "hyperball($PARAM)" \
+            $DATASET
+        done
+
+        # Rand cluster
+        for PARAM in 16 64 256 1024
+        do
+            for BASE in 2 10
+            do
+                $BIN \
+                    --ddir /mnt/ssd/graphs \
+                    --hosts ~/working_hosts \
+                    --threads 4 \
+                    --seed $SEED \
+                    "rand-cluster($PARAM,$BASE)" \
+                    $DATASET
+            done
+        done
+    done
+    done
+}
+
+function run_rwmesh() {
+    for SEED in 11985714 524098 124098
+    do
+    for DATASET in mesh-rw-2048
+    do
+
+        # Delta stepping
+        for DELTA in 1000 10000 100000 1000000
         do
             $BIN \
             --ddir /mnt/ssd/graphs \
@@ -110,7 +191,7 @@ function run_weighted() {
         done
 
         # Rand cluster
-        for PARAM in 1000 10000 100000
+        for PARAM in 100 1000 10000 100000
         do
             for BASE in 2 10
             do
@@ -137,5 +218,8 @@ case $1 in
     ;;
     web)
         run_web
+    ;;
+    mesh)
+        run_mesh
     ;;
 esac
