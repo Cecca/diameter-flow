@@ -446,7 +446,7 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "mesh-10" => builder.mesh(10),
         "mesh-100" => builder.mesh(100),
         "mesh-1000" => builder.mesh(1000),
-        "mesh-10000" => builder.mesh(10000),
+        "mesh-2048" => builder.mesh(2048),
         "clueweb12" => builder.webgraph("clueweb12"),
         "gsh-2015" => builder.webgraph("gsh-2015"),
         "cnr-2000" => builder.webgraph("cnr-2000"),
