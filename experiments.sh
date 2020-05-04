@@ -222,4 +222,7 @@ case $1 in
     mesh)
         run_mesh
     ;;
+    rwmesh)
+        run_rwmesh
+    ;;
 esac
