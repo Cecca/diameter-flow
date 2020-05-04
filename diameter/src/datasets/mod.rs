@@ -86,6 +86,13 @@ impl DatasetBuilder {
             kind: DatasetKind::MeshBiweight(side, p, w1, w2, seed),
         }
     }
+
+    pub fn mesh_rweight(&self, side: u32, w1: u32, w2: u32, seed: u64) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::MeshRWeight(side, w1, w2, seed),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +111,8 @@ pub enum DatasetKind {
     // A mesh with two different edge weights, assigned randomly with
     // probability p and 1-p
     MeshBiweight(u32, f64, u32, u32, u64),
+    // Random weights between minimum and maximum
+    MeshRWeight(u32, u32, u32, u64),
 }
 
 impl Dataset {
@@ -123,7 +132,10 @@ impl Dataset {
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
-                format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w1, seed)
+                format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w2, seed)
+            },
+            DatasetKind::MeshRWeight(side, w1, w2, seed) => {
+                format!("mesh::{}-{}-{}-{}", side, w1, w2, seed)
             }
         }
     }
@@ -375,6 +387,36 @@ impl Dataset {
                     }
                 }
             }
+            DatasetKind::MeshRWeight(side, w1, w2, seed) => {
+                use rand::prelude::*;
+                use rand::distributions::Uniform;
+
+                let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
+                let uniform = Uniform::new(w1, w2);
+                let edges_dir = self.edges_directory();
+                std::fs::create_dir_all(edges_dir.clone()).expect("problem creating directory");
+                let edges = 2 * side * side;
+                let blocks = 128;
+                let mut compressor = CompressedTripletsWriter::to_file(
+                    edges_dir,
+                    std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                );
+                for i in 0..*side {
+                    for j in 0..*side {
+                        let node = i * side + j;
+                        if i + 1 < *side {
+                            let w = uniform.sample(&mut rng);
+                            let bottom = (i + 1) * side + j;
+                            compressor.write((node, bottom, w));
+                        }
+                        if j + 1 < *side {
+                            let w = uniform.sample(&mut rng);
+                            let right = i * side + j + 1;
+                            compressor.write((node, right, w));
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -419,6 +461,9 @@ impl Dataset {
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w2, seed)
+            },
+            DatasetKind::MeshRWeight(side, w1, w2, seed) => {
+                format!("mesh::{}-{}-{}-{}", side, w1, w2, seed)
             }
         };
 
