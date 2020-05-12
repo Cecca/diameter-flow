@@ -72,17 +72,11 @@ impl Host {
         } else {
             path_str.to_owned().clone()
         };
-        println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
-        let _parent_path_str = path
-            .as_ref()
-            .parent()
-            .expect("missing parent")
-            .to_str()
-            .expect("problem converting path to string");
+        // println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
         Command::new("rsync")
             .arg("--update")
             .arg("-r")
-            .arg("--progress")
+            // .arg("--progress")
             .arg(path_with_slash)
             .arg(format!("{}:{}", self.name, path_no_slash))
             .spawn()
@@ -515,6 +509,11 @@ fn main() {
     }
 
     let config = Config::create();
+    if let Some(sha) = reporter::Reporter::new(config.clone()).already_run() {
+        println!("Parameter configuration already run (sha {}), exiting", sha);
+        return;
+    }
+
     let mut datasets = datasets_map(config.ddir.clone());
 
     let dataset = datasets
@@ -545,10 +544,6 @@ fn main() {
     } else {
         let ret_status = config.execute(move |worker| {
             let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
-            if let Some(sha) = reporter.borrow().already_run() {
-                println!("Parameter configuration already run (sha {}), exiting", sha);
-                return;
-            }
 
             let (logging_probe, logging_input_handle) =
                 logging::init_count_logging(worker, Rc::clone(&reporter));
