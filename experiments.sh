@@ -62,22 +62,22 @@ function run_web() {
         "bfs" \
         $DATASET
 
-        # # Hyperball
-        # for PARAM in 4 5 6
-        # do
-        # $BIN \
-        #     --ddir /mnt/ssd/graphs \
-        #     --hosts ~/working_hosts \
-        #     --threads 4 \
-        #     --seed $SEED \
-        #     "hyperball($PARAM)" \
-        #     $DATASET
-        # done
+        # Hyperball
+        for PARAM in 4 5
+        do
+        $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "hyperball($PARAM)" \
+            $DATASET
+        done
 
         # Rand cluster
-        for PARAM in 4 8 16
+        for PARAM in 1 2 4 8 16 32
         do
-            for BASE in 2 10
+            for BASE in 2
             do
                 $BIN \
                     --ddir /mnt/ssd/graphs \
