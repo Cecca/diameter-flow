@@ -55,7 +55,7 @@ impl Reporter {
 
     fn get_db_path() -> std::path::PathBuf {
         let mut path = dirs::home_dir().expect("unable to get home directory");
-        path.push("diameter_results.sqlite");
+        path.push("diameter-results.sqlite");
         path
     }
 
