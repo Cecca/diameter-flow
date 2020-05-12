@@ -4,4 +4,6 @@ suppressPackageStartupMessages({
     library(drake)
     library(vlbuildr)
     library(DBI)
+    library(knitr)
+    library(kableExtra)
 })

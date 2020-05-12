@@ -51,3 +51,8 @@ java/dsiutils-2.6.2.jar: java/webgraph-deps.tar.gz
 	 fastutil-8.3.0.jar \
 	 jsap-2.1.jar \
 	 slf4j-api-1.7.26.jar
+
+.PHONY: analysis
+analysis:
+	R -e "drake::r_make()"
+	cp export/* ~/Dropbox/Lavoro/Diameter/Algorithms-MDPI/include
