@@ -150,6 +150,15 @@ fn create_tables_if_needed(conn: &Connection) {
     .expect("Error creating main table");
 
     conn.execute(
+        "CREATE VIEW IF NOT EXISTS main_recent AS
+        SELECT sha, max(date) AS date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms 
+        FROM main
+        GROUP BY seed, threads, hosts, dataset, algorithm, parameters",
+        params![]
+    )
+    .expect("Error creating the main_recent view");
+
+    conn.execute(
         "CREATE TABLE IF NOT EXISTS counters (
             sha       TEXT NOT NULL,
             counter   TEXT NOT NULL,
