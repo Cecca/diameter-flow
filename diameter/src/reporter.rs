@@ -3,6 +3,7 @@ use crate::Config;
 use chrono::prelude::*;
 use flate2::write::GzEncoder;
 use flate2::Compression;
+use rusqlite::*;
 use rusqlite::{params, Connection, Result as SQLResult};
 use sha2::{Digest, Sha256};
 use std::fs::File;
@@ -52,9 +53,41 @@ impl Reporter {
         format!("{:x}", sha.result())[..6].to_owned()
     }
 
+    fn get_db_path() -> std::path::PathBuf {
+        std::path::PathBuf::from("diameter-results.sqlite")
+    }
+
+    pub fn already_run(&self) -> Option<String> {
+        if self.config.rerun {
+            return None;
+        }
+        let dbpath = Self::get_db_path();
+        let conn = Connection::open(dbpath).expect("error connecting to the database");
+        conn.query_row(
+            "SELECT sha FROM main WHERE
+                seed == ?1 AND 
+                threads == ?2 AND 
+                hosts == ?3 AND 
+                dataset == ?4 AND
+                algorithm == ?5 AND 
+                parameters == ?6",
+            params![
+                format!("{}", self.config.seed()),
+                self.config.threads.unwrap_or(1) as u32,
+                self.config.hosts_string(),
+                self.config.dataset,
+                self.config.algorithm.name(),
+                self.config.algorithm.parameters_string(),
+            ],
+            |row| row.get(0),
+        )
+        .optional()
+        .expect("problem running query to check if the experiment was already run")
+    }
+
     pub fn report(&self) {
         let sha = self.sha();
-        let dbpath = std::path::PathBuf::from("diameter-results.sqlite");
+        let dbpath = Self::get_db_path();
         let mut conn = Connection::open(dbpath).expect("error connecting to the database");
         create_tables_if_needed(&conn);
 

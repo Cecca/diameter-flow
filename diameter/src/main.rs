@@ -237,6 +237,11 @@ pub struct Config {
     #[argh(option, description = "the data directory")]
     ddir: PathBuf,
     #[argh(
+        switch,
+        description = "rerun the experiment, appending in the database"
+    )]
+    rerun: bool,
+    #[argh(
         positional,
         description = "algortihm to use",
         from_str_fn(parse_algorithm)
@@ -540,6 +545,10 @@ fn main() {
     } else {
         let ret_status = config.execute(move |worker| {
             let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
+            if let Some(sha) = reporter.borrow().already_run() {
+                println!("Parameter configuration already run (sha {}), exiting", sha);
+                return;
+            }
 
             let (logging_probe, logging_input_handle) =
                 logging::init_count_logging(worker, Rc::clone(&reporter));
