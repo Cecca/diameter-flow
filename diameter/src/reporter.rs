@@ -54,7 +54,9 @@ impl Reporter {
     }
 
     fn get_db_path() -> std::path::PathBuf {
-        std::path::PathBuf::from("diameter-results.sqlite")
+        let mut path = dirs::home_dir().expect("unable to get home directory");
+        path.push("diameter_results.sqlite");
+        path
     }
 
     pub fn already_run(&self) -> Option<String> {
