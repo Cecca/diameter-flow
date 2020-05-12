@@ -98,27 +98,9 @@ impl Reporter {
     }
 }
 
-fn table_names(conn: &Connection) -> Vec<String> {
-    let mut stmt = conn
-        .prepare("SELECT name FROM sqlite_master WHERE type ='table' AND name NOT LIKE 'sqlite_%';")
-        .expect("problem preparing query");
-    let rows = stmt
-        .query_map(params![], |row| row.get(0))
-        .expect("problem executing query");
-    let mut names: Vec<String> = Vec::new();
-    for name in rows {
-        names.push(name.expect("error getting name"));
-    }
-    names
-}
-
 fn create_tables_if_needed(conn: &Connection) {
-    let names = table_names(conn);
-
-    if !names.contains(&"main".to_owned()) {
-        println!("Creating table main");
-        conn.execute(
-            "CREATE TABLE main (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS main (
             sha      TEXT PRIMARY KEY,
             date     TEXT NOT NULL,
             seed     TEXT NOT NULL,
@@ -130,15 +112,12 @@ fn create_tables_if_needed(conn: &Connection) {
             diameter INTEGER NOT NULL,
             total_time_ms  INTEGER NOT NULL
             )",
-            params![],
-        )
-        .expect("Error creating main table");
-    }
+        params![],
+    )
+    .expect("Error creating main table");
 
-    if !names.contains(&"counters".to_owned()) {
-        println!("Creating table counters");
-        conn.execute(
-            "CREATE TABLE counters (
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS counters (
             sha       TEXT NOT NULL,
             counter   TEXT NOT NULL,
             outer_iter INTEGER NOT NULL,
@@ -146,8 +125,7 @@ fn create_tables_if_needed(conn: &Connection) {
             count     INTEGER NOT NULL,
             FOREIGN KEY (sha) REFERENCES main (sha)
             )",
-            params![],
-        )
-        .expect("error creating counters table");
-    }
+        params![],
+    )
+    .expect("error creating counters table");
 }
