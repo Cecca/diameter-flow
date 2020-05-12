@@ -84,7 +84,7 @@ impl Reporter {
             |row| row.get(0),
         )
         .optional()
-        .expect("problem running query to check if the experiment was already run")
+        .unwrap_or(None)
     }
 
     pub fn report(&self) {
