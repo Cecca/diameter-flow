@@ -97,22 +97,22 @@ function run_weighted() {
     do
     for DATASET in USA-E USA-W USA-CTR USA
     do
-        # # Delta-stepping
-        # for DELTA in 100000 1000000 10000000
-        # do
-        #     $BIN \
-        #     --ddir /mnt/ssd/graphs \
-        #     --hosts ~/working_hosts \
-        #     --threads 4 \
-        #     --seed $SEED \
-        #     "delta-stepping($DELTA)" \
-        #     $DATASET
-        # done
+        # Delta-stepping
+        for DELTA in 100000 1000000 10000000 100000000
+        do
+            $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "delta-stepping($DELTA)" \
+            $DATASET
+        done
 
         # Rand cluster
-        for PARAM in 10000 100000 1000000
+        for PARAM in 10000 100000 1000000 10000000
         do
-            for BASE in 2 10
+            for BASE in 2
             do
                 $BIN \
                     --ddir /mnt/ssd/graphs \
