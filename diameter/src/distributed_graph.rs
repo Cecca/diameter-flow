@@ -64,7 +64,7 @@ impl DistributedEdgesBuilder {
                         // exchange the edges to build processor targets
                         let mut nodes = HashSet::new();
                         edges_ref.borrow().iter().for_each(|edges| {
-                            edges.iter().for_each(|(u, v, _)| {
+                            edges.for_each(|u, v, _| {
                                 nodes.insert(u);
                                 nodes.insert(v);
                             });

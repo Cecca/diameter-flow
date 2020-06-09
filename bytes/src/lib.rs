@@ -16,17 +16,12 @@ impl CompressedEdgesBlockSet {
         P: AsRef<Path> + Debug,
         I: IntoIterator<Item = (P, Option<P>)>,
     {
-        let timer = std::time::Instant::now();
         let mut blocks = Vec::new();
         for (path, weights_path) in paths.into_iter() {
             blocks.push(CompressedEdges::from_file(path, weights_path)?);
         }
 
         Ok(Self { blocks })
-    }
-
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = (u32, u32, u32)> + 'a {
-        self.blocks.iter().flat_map(|b| b.iter())
     }
 
     pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) {
@@ -108,37 +103,6 @@ impl CompressedEdges {
 
     pub fn byte_size(&self) -> u64 {
         self.raw.len() as u64 * 8
-    }
-
-    pub fn iter<'a>(&'a self) -> Box<dyn Iterator<Item = (u32, u32, u32)> + 'a> {
-        use std::io::Cursor;
-        let cursor = Cursor::new(&self.raw);
-        let mut reader = stream::DifferenceStreamReader::new(cursor);
-        let _weights = self.weights.as_ref().map(|vec| vec.iter());
-
-        if let Some(weights) = self.weights.as_ref() {
-            let mut weights = weights.iter();
-            Box::new(std::iter::from_fn(move || {
-                let z = reader.read().expect("problem reading form the stream");
-                if z == 0 {
-                    None
-                } else {
-                    let (u, v) = morton::zorder_to_pair(z);
-                    let w = *weights.next().expect("weights exhausted too soon!");
-                    Some((u, v, w))
-                }
-            }))
-        } else {
-            Box::new(std::iter::from_fn(move || {
-                let z = reader.read().expect("problem reading form the stream");
-                if z == 0 {
-                    None
-                } else {
-                    let (u, v) = morton::zorder_to_pair(z);
-                    Some((u, v, 1))
-                }
-            }))
-        }
     }
 }
 
