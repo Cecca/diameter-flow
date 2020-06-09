@@ -35,9 +35,11 @@ impl CompressedEdgesBlockSet {
     }
 }
 
-pub struct CompressedEdges {
-    raw: Vec<u8>,
-    weights: Option<Vec<u32>>,
+pub enum CompressedEdges {
+    InMemory {
+        raw: Vec<u8>,
+        weights: Option<Vec<u32>>,
+    },
 }
 
 impl CompressedEdges {
@@ -67,42 +69,47 @@ impl CompressedEdges {
 
             weights
         });
-        Ok(Self { raw, weights })
+        Ok(Self::InMemory { raw, weights })
     }
 
     pub fn for_each<F: FnMut(u32, u32, u32)>(&self, action: &mut F) {
-        use std::io::Cursor;
-        let cursor = Cursor::new(&self.raw);
-        let mut reader = stream::DifferenceStreamReader::new(cursor);
-        let _weights = self.weights.as_ref().map(|vec| vec.iter());
+        match self {
+            Self::InMemory { raw, weights } => {
+                use std::io::Cursor;
+                let cursor = Cursor::new(&raw);
+                let mut reader = stream::DifferenceStreamReader::new(cursor);
 
-        if let Some(weights) = self.weights.as_ref() {
-            let mut weights = weights.iter();
-            loop {
-                let z = reader.read().expect("problem reading form the stream");
-                if z == 0 {
-                    return;
+                if let Some(weights) = weights.as_ref() {
+                    let mut weights = weights.iter();
+                    loop {
+                        let z = reader.read().expect("problem reading form the stream");
+                        if z == 0 {
+                            return;
+                        } else {
+                            let (u, v) = morton::zorder_to_pair(z);
+                            let w = *weights.next().expect("weights exhausted too soon!");
+                            action(u, v, w);
+                        }
+                    }
                 } else {
-                    let (u, v) = morton::zorder_to_pair(z);
-                    let w = *weights.next().expect("weights exhausted too soon!");
-                    action(u, v, w);
-                }
-            }
-        } else {
-            loop {
-                let z = reader.read().expect("problem reading form the stream");
-                if z == 0 {
-                    return;
-                } else {
-                    let (u, v) = morton::zorder_to_pair(z);
-                    action(u, v, 1);
+                    loop {
+                        let z = reader.read().expect("problem reading form the stream");
+                        if z == 0 {
+                            return;
+                        } else {
+                            let (u, v) = morton::zorder_to_pair(z);
+                            action(u, v, 1);
+                        }
+                    }
                 }
             }
         }
     }
 
     pub fn byte_size(&self) -> u64 {
-        self.raw.len() as u64 * 8
+        match self {
+            Self::InMemory { raw, weights } => raw.len() as u64 * 8,
+        }
     }
 }
 
