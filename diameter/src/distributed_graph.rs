@@ -20,6 +20,7 @@ pub struct DistributedEdgesBuilder {
 
 impl DistributedEdgesBuilder {
     pub fn new<G: Scope>(
+        load_type: LoadType,
         stream: &Stream<G, (String, Option<String>)>,
     ) -> (Self, ProbeHandle<G::Timestamp>) {
         use std::collections::HashSet;
@@ -57,7 +58,7 @@ impl DistributedEdgesBuilder {
                             )
                         });
                         edges_ref.borrow_mut().replace(
-                            CompressedEdgesBlockSet::from_files(paths)
+                            CompressedEdgesBlockSet::from_files(load_type, paths)
                                 .expect("problem loading blocks"),
                         );
 

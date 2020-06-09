@@ -6,19 +6,25 @@ use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, Copy)]
+pub enum LoadType {
+    InMemory,
+    Offline,
+}
+
 pub struct CompressedEdgesBlockSet {
     blocks: Vec<CompressedEdges>,
 }
 
 impl CompressedEdgesBlockSet {
-    pub fn from_files<P, I>(paths: I) -> IOResult<Self>
+    pub fn from_files<P, I>(load: LoadType, paths: I) -> IOResult<Self>
     where
         P: AsRef<Path> + Debug,
         I: IntoIterator<Item = (P, Option<P>)>,
     {
         let mut blocks = Vec::new();
         for (path, weights_path) in paths.into_iter() {
-            blocks.push(CompressedEdges::from_file(path, weights_path)?);
+            blocks.push(CompressedEdges::from_file(load, path, weights_path)?);
         }
 
         Ok(Self { blocks })
@@ -40,36 +46,52 @@ pub enum CompressedEdges {
         raw: Vec<u8>,
         weights: Option<Vec<u32>>,
     },
+    Offline {
+        raw_path: PathBuf,
+        weights_path: Option<PathBuf>,
+    },
 }
 
 impl CompressedEdges {
     /// Loads the contents of the file in memory, for doing multiple iterations faster
-    pub fn from_file<P: AsRef<Path> + Debug>(path: P, weights_path: Option<P>) -> IOResult<Self> {
-        use std::fs::File;
-        use std::io::BufReader;
-        use std::io::ErrorKind::UnexpectedEof;
-        let mut reader = BufReader::new(File::open(path)?);
-        let mut raw = Vec::new();
-        reader.read_to_end(&mut raw)?;
-        let weights = weights_path.map(|path| {
-            println!("reading weights from {:?}", path);
-            let mut weights = Vec::new();
-            let mut reader = BitReader::<_, BE>::new(BufReader::new(
-                File::open(path).expect("failed to open the weights file"),
-            ));
-            loop {
-                match reader.read(32) {
-                    Ok(w) => weights.push(w),
-                    Err(e) => match e.kind() {
-                        UnexpectedEof => break,
-                        _ => panic!("{:?}", e),
-                    },
-                }
-            }
+    pub fn from_file<P: AsRef<Path> + Debug>(
+        load: LoadType,
+        path: P,
+        weights_path: Option<P>,
+    ) -> IOResult<Self> {
+        match load {
+            LoadType::Offline => Ok(Self::Offline {
+                raw_path: path.as_ref().to_path_buf(),
+                weights_path: weights_path.map(|p| p.as_ref().to_path_buf()),
+            }),
+            LoadType::InMemory => {
+                use std::fs::File;
+                use std::io::BufReader;
+                use std::io::ErrorKind::UnexpectedEof;
+                let mut reader = BufReader::new(File::open(path)?);
+                let mut raw = Vec::new();
+                reader.read_to_end(&mut raw)?;
+                let weights = weights_path.map(|path| {
+                    println!("reading weights from {:?}", path);
+                    let mut weights = Vec::new();
+                    let mut reader = BitReader::<_, BE>::new(BufReader::new(
+                        File::open(path).expect("failed to open the weights file"),
+                    ));
+                    loop {
+                        match reader.read(32) {
+                            Ok(w) => weights.push(w),
+                            Err(e) => match e.kind() {
+                                UnexpectedEof => break,
+                                _ => panic!("{:?}", e),
+                            },
+                        }
+                    }
 
-            weights
-        });
-        Ok(Self::InMemory { raw, weights })
+                    weights
+                });
+                Ok(Self::InMemory { raw, weights })
+            }
+        }
     }
 
     pub fn for_each<F: FnMut(u32, u32, u32)>(&self, action: &mut F) {
@@ -103,12 +125,60 @@ impl CompressedEdges {
                     }
                 }
             }
+            Self::Offline {
+                raw_path,
+                weights_path,
+            } => {
+                use std::fs::File;
+                use std::io::{BufRead, BufReader, Read};
+                let file_reader = BufReader::new(File::open(raw_path).unwrap());
+                let mut reader = stream::DifferenceStreamReader::new(file_reader);
+
+                if let Some(weights_path) = weights_path.as_ref() {
+                    let mut weights = BitReader::<_, BE>::new(BufReader::new(
+                        File::open(weights_path).expect("failed to open the weights file"),
+                    ));
+
+                    loop {
+                        let z = reader.read().expect("problem reading form the stream");
+                        if z == 0 {
+                            return;
+                        } else {
+                            let (u, v) = morton::zorder_to_pair(z);
+                            let w = weights.read(32).expect("weights exhausted too soon!");
+                            action(u, v, w);
+                        }
+                    }
+                } else {
+                    loop {
+                        let z = reader.read().expect("problem reading form the stream");
+                        if z == 0 {
+                            return;
+                        } else {
+                            let (u, v) = morton::zorder_to_pair(z);
+                            action(u, v, 1);
+                        }
+                    }
+                }
+            }
         }
     }
 
     pub fn byte_size(&self) -> u64 {
         match self {
             Self::InMemory { raw, weights } => raw.len() as u64 * 8,
+            Self::Offline {
+                raw_path,
+                weights_path,
+            } => {
+                use std::fs::File;
+                use std::io::Seek;
+                use std::io::SeekFrom;
+                File::open(raw_path)
+                    .unwrap()
+                    .seek(SeekFrom::End(0))
+                    .unwrap()
+            }
         }
     }
 }

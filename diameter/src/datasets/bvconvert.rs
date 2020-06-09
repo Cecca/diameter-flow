@@ -7,13 +7,12 @@ use flate2::read::GzDecoder;
 use std::collections::HashSet;
 use std::fs::File;
 
-
 use std::io::BufWriter;
 
 use std::io::Write;
 use std::iter::FromIterator;
 use std::path::PathBuf;
-use std::process::{Command};
+use std::process::Command;
 use tar::Archive;
 
 pub fn maybe_download_file(url: &str, dest: PathBuf) -> PathBuf {

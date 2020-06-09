@@ -41,6 +41,7 @@ use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Operator;
 use timely::dataflow::operators::Probe;
 use timely::worker::Worker;
+use bytes::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Host {
@@ -235,6 +236,11 @@ pub struct Config {
         description = "rerun the experiment, appending in the database"
     )]
     rerun: bool,
+    #[argh(
+        switch,
+        description = "keep the datasets on disk"
+    )]
+    offline: bool,
     #[argh(
         positional,
         description = "algortihm to use",
@@ -548,7 +554,15 @@ fn main() {
             let (logging_probe, logging_input_handle) =
                 logging::init_count_logging(worker, Rc::clone(&reporter));
 
-            let static_edges = dataset.load_static(worker);
+            let load_type = if config2.offline {
+                println!("keeping dataset on disk");
+                LoadType::Offline
+            } else {
+                println!("reading dataset in memory");
+                LoadType::InMemory
+            };
+
+            let static_edges = dataset.load_static(worker, load_type);
             let diameter_result = Rc::new(RefCell::new(None));
             let diameter_result_ref = Rc::clone(&diameter_result);
 
