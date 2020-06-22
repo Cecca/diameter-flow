@@ -92,6 +92,52 @@ function run_web() {
     done
 }
 
+function run_web_large() {
+    for SEED in 112985 #246134 346235 2356
+    do
+    for DATASET in clueweb12
+    do
+        # BFS
+        $BIN \
+        --ddir /mnt/ssd/graphs \
+        --hosts ~/working_hosts \
+        --threads 4 \
+        --seed $SEED \
+        --offline
+        "bfs" \
+        $DATASET
+
+        # Hyperball
+        for PARAM in 4 5
+        do
+        $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "hyperball($PARAM)" \
+            $DATASET
+        done
+
+        # Rand cluster
+        for PARAM in 1 2 4 8 16 32
+        do
+            for BASE in 2
+            do
+                $BIN \
+                    --ddir /mnt/ssd/graphs \
+                    --hosts ~/working_hosts \
+                    --threads 4 \
+                    --seed $SEED \
+                    "rand-cluster($PARAM,$BASE)" \
+                    $DATASET
+            done
+        done
+    done
+    done
+}
+
+
 function run_weighted() {
     for SEED in 11985714 524098 124098
     do
@@ -218,6 +264,9 @@ case $1 in
     ;;
     web)
         run_web
+    ;;
+    web_large)
+        run_web_large
     ;;
     mesh)
         run_mesh
