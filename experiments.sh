@@ -103,7 +103,7 @@ function run_web_large() {
         --hosts ~/working_hosts \
         --threads 4 \
         --seed $SEED \
-        --offline
+        --offline \
         "bfs" \
         $DATASET
 
@@ -115,6 +115,7 @@ function run_web_large() {
             --hosts ~/working_hosts \
             --threads 4 \
             --seed $SEED \
+            --offline \
             "hyperball($PARAM)" \
             $DATASET
         done
@@ -129,6 +130,7 @@ function run_web_large() {
                     --hosts ~/working_hosts \
                     --threads 4 \
                     --seed $SEED \
+                    --offline \
                     "rand-cluster($PARAM,$BASE)" \
                     $DATASET
             done
