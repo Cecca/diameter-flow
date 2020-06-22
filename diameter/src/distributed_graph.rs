@@ -20,6 +20,7 @@ pub struct DistributedEdgesBuilder {
 
 impl DistributedEdgesBuilder {
     pub fn new<G: Scope>(
+        load_type: LoadType,
         stream: &Stream<G, (String, Option<String>)>,
     ) -> (Self, ProbeHandle<G::Timestamp>) {
         use std::collections::HashSet;
@@ -57,14 +58,14 @@ impl DistributedEdgesBuilder {
                             )
                         });
                         edges_ref.borrow_mut().replace(
-                            CompressedEdgesBlockSet::from_files(paths)
+                            CompressedEdgesBlockSet::from_files(load_type, paths)
                                 .expect("problem loading blocks"),
                         );
 
                         // exchange the edges to build processor targets
                         let mut nodes = HashSet::new();
                         edges_ref.borrow().iter().for_each(|edges| {
-                            edges.iter().for_each(|(u, v, _)| {
+                            edges.for_each(|u, v, _| {
                                 nodes.insert(u);
                                 nodes.insert(v);
                             });

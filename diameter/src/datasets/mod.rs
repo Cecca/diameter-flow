@@ -133,7 +133,7 @@ impl Dataset {
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w2, seed)
-            },
+            }
             DatasetKind::MeshRWeight(side, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}", side, w1, w2, seed)
             }
@@ -388,8 +388,8 @@ impl Dataset {
                 }
             }
             DatasetKind::MeshRWeight(side, w1, w2, seed) => {
-                use rand::prelude::*;
                 use rand::distributions::Uniform;
+                use rand::prelude::*;
 
                 let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
                 let uniform = Uniform::new(w1, w2);
@@ -428,7 +428,7 @@ impl Dataset {
             .binary_edge_files()
             .map(|triplet| (triplet.1, triplet.2));
         files.for_each(|(pe, pw)| {
-            CompressedEdges::from_file(pe, pw)
+            CompressedEdges::from_file(LoadType::Offline, pe, pw)
                 .expect("problem creating compressed edges from file")
                 .for_each(&mut |u, v, w| action(u, v, w));
         });
@@ -461,7 +461,7 @@ impl Dataset {
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w2, seed)
-            },
+            }
             DatasetKind::MeshRWeight(side, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}", side, w1, w2, seed)
             }
@@ -521,13 +521,13 @@ impl Dataset {
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
-    pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>) -> DistributedEdges {
+    pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>, load_type: LoadType) -> DistributedEdges {
         use timely::dataflow::operators::Input as TimelyInput;
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
 
-            let (builder, probe) = DistributedEdgesBuilder::new(&stream);
+            let (builder, probe) = DistributedEdgesBuilder::new(load_type, &stream);
 
             (input, probe, builder)
         });
