@@ -72,7 +72,8 @@ impl Reporter {
                 hosts == ?3 AND 
                 dataset == ?4 AND
                 algorithm == ?5 AND 
-                parameters == ?6",
+                parameters == ?6 AND
+                offline == ?7",
             params![
                 format!("{}", self.config.seed()),
                 self.config.threads.unwrap_or(1) as u32,
@@ -80,6 +81,7 @@ impl Reporter {
                 self.config.dataset,
                 self.config.algorithm.name(),
                 self.config.algorithm.parameters_string(),
+                self.config.offline
             ],
             |row| row.get(0),
         )
@@ -98,8 +100,8 @@ impl Reporter {
         {
             // Insert into main table
             tx.execute(
-                "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms )
-                 VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10 )",
+                "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms, offline )
+                 VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 )",
                 params![
                     sha,
                     self.date.to_rfc3339(),
@@ -111,6 +113,7 @@ impl Reporter {
                     self.config.algorithm.parameters_string(),
                     self.diameter.expect("missing diameter"),
                     self.duration.expect("missing total time").as_millis() as u32,
+                    self.config.offline
                 ],
             )
             .expect("error inserting into main table");
@@ -203,6 +206,23 @@ fn create_tables_if_needed(conn: &Connection) {
         .expect("Error creating main table");
 
         bump(conn, 2);
+    }
+
+    if version < 3 {
+        println!("applying changes for version 3");
+
+        conn.execute("DROP VIEW main_recent", params![])
+            .expect("error dropping view");
+        conn.execute(
+            "CREATE VIEW IF NOT EXISTS main_recent AS
+            SELECT sha, max(date) AS date, seed, threads, hosts, dataset, offline, algorithm, parameters, diameter, total_time_ms 
+            FROM main
+            GROUP BY seed, threads, hosts, dataset, offline, algorithm, parameters",
+            params![]
+        )
+        .expect("Error creating the main_recent view");
+
+        bump(conn, 3);
     }
 
     println!("database schema up tp date");
