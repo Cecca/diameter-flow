@@ -76,7 +76,7 @@ impl DistributedEdgesBuilder {
                         debug!("The edges on this processor touch {} nodes", nodes.len());
                         output
                             .session(&t)
-                            .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
+                            .give_iterator(nodes.into_iter().take(100).map(|u| (u, worker_id)));
                     });
                 },
             )
