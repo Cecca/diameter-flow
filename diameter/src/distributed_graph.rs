@@ -73,7 +73,7 @@ impl DistributedEdgesBuilder {
                                 nodes.insert(v);
                             });
                         });
-                        debug!("This processor is responsible for {} nodes, exchanging this information", nodes.len());
+                        debug!("The edges on this processor touch {} nodes", nodes.len());
                         output
                             .session(&t)
                             .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
@@ -86,7 +86,6 @@ impl DistributedEdgesBuilder {
                 move |_, _| {
                     move |input, output| {
                         input.for_each(|t, data| {
-                            debug!("Building chunk of map between nodes and processors");
                             let data = data.replace(Vec::new());
                             let mut opt = nodes_ref.borrow_mut();
                             let map = opt.get_or_insert_with(HashMap::new);
@@ -94,7 +93,6 @@ impl DistributedEdgesBuilder {
                                 map.entry(u).or_insert_with(Vec::new).push(proc_id);
                             }
                             output.session(&t).give(());
-                            debug!("Done building map between nodes and processors");
                         });
                     }
                 },
@@ -117,14 +115,14 @@ impl DistributedEdgesBuilder {
             .borrow_mut()
             .take()
             .expect("Missing nodes processors");
-        let mut histogram = std::collections::BTreeMap::new();
-        for (_, procs) in nodes_processors.iter() {
-            let len = procs.len();
-            histogram
-                .entry(len)
-                .and_modify(|c| *c += len)
-                .or_insert(len);
-        }
+        // let mut histogram = std::collections::BTreeMap::new();
+        // for (_, procs) in nodes_processors.iter() {
+        //     let len = procs.len();
+        //     histogram
+        //         .entry(len)
+        //         .and_modify(|c| *c += len)
+        //         .or_insert(len);
+        // }
         // info!("Distribution of destination sets {:#?}", histogram);
         debug!("Loaded edges: {} bytes", edges.byte_size());
         DistributedEdges {
