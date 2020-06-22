@@ -47,7 +47,7 @@ impl DistributedEdgesBuilder {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
                         paths_stash.extend(data.into_iter());
-                        info!("added paths to the stash");
+                        debug!("added paths to the stash");
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
@@ -57,12 +57,15 @@ impl DistributedEdgesBuilder {
                                 weights_path.as_ref().map(|s| PathBuf::from(s)),
                             )
                         });
+                        debug!("Start loading blocks");
                         edges_ref.borrow_mut().replace(
                             CompressedEdgesBlockSet::from_files(load_type, paths)
                                 .expect("problem loading blocks"),
                         );
+                        debug!("Blocks loaded");
 
                         // exchange the edges to build processor targets
+                        debug!("Get the nodes this processor is responsible for");
                         let mut nodes = HashSet::new();
                         edges_ref.borrow().iter().for_each(|edges| {
                             edges.for_each(|u, v, _| {
@@ -70,6 +73,7 @@ impl DistributedEdgesBuilder {
                                 nodes.insert(v);
                             });
                         });
+                        debug!("This processor is responsible for {} nodes, exchanging this information", nodes.len());
                         output
                             .session(&t)
                             .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
@@ -120,7 +124,7 @@ impl DistributedEdgesBuilder {
                 .or_insert(len);
         }
         // info!("Distribution of destination sets {:#?}", histogram);
-        info!("Loaded edges: {} bytes", edges.byte_size());
+        debug!("Loaded edges: {} bytes", edges.byte_size());
         DistributedEdges {
             edges: Rc::new(edges),
             nodes_processors: Rc::new(nodes_processors),
@@ -231,7 +235,7 @@ impl DistributedEdges {
                                 }
                             });
                             if cnt == 0 {
-                                info!("Warning: no output triplets");
+                                warn!("no output triplets");
                             }
                         }
                     });
