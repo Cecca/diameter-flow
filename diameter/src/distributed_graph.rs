@@ -86,6 +86,7 @@ impl DistributedEdgesBuilder {
                 move |_, _| {
                     move |input, output| {
                         input.for_each(|t, data| {
+                            debug!("Building chunk of map between nodes and processors");
                             let data = data.replace(Vec::new());
                             let mut opt = nodes_ref.borrow_mut();
                             let map = opt.get_or_insert_with(HashMap::new);
@@ -93,6 +94,7 @@ impl DistributedEdgesBuilder {
                                 map.entry(u).or_insert_with(Vec::new).push(proc_id);
                             }
                             output.session(&t).give(());
+                            debug!("Done building map between nodes and processors");
                         });
                     }
                 },

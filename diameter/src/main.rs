@@ -564,6 +564,7 @@ fn main() {
             };
 
             let static_edges = dataset.load_static(worker, load_type);
+            debug!("loaded edges statically");
             let diameter_result = Rc::new(RefCell::new(None));
             let diameter_result_ref = Rc::clone(&diameter_result);
 
