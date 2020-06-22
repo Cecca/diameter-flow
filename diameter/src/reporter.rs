@@ -133,9 +133,25 @@ impl Reporter {
     }
 }
 
+fn bump(conn: &Connection, ver: u32) {
+    conn.pragma_update(None, "user_version", &ver)
+        .expect("error updating version");
+}
+
 fn create_tables_if_needed(conn: &Connection) {
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS main (
+    let version: u32 = conn
+        .query_row(
+            "SELECT user_version FROM pragma_user_version",
+            params![],
+            |row| row.get(0),
+        )
+        .unwrap();
+    println!("Current database version is {}", version);
+
+    if version < 1 {
+        println!("applying changes for version 1");
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS main (
             sha      TEXT PRIMARY KEY,
             date     TEXT NOT NULL,
             seed     TEXT NOT NULL,
@@ -147,21 +163,21 @@ fn create_tables_if_needed(conn: &Connection) {
             diameter INTEGER NOT NULL,
             total_time_ms  INTEGER NOT NULL
             )",
-        params![],
-    )
-    .expect("Error creating main table");
+            params![],
+        )
+        .expect("Error creating main table");
 
-    conn.execute(
-        "CREATE VIEW IF NOT EXISTS main_recent AS
-        SELECT sha, max(date) AS date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms 
-        FROM main
-        GROUP BY seed, threads, hosts, dataset, algorithm, parameters",
-        params![]
-    )
-    .expect("Error creating the main_recent view");
+        conn.execute(
+            "CREATE VIEW IF NOT EXISTS main_recent AS
+            SELECT sha, max(date) AS date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms 
+            FROM main
+            GROUP BY seed, threads, hosts, dataset, algorithm, parameters",
+            params![]
+        )
+        .expect("Error creating the main_recent view");
 
-    conn.execute(
-        "CREATE TABLE IF NOT EXISTS counters (
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS counters (
             sha       TEXT NOT NULL,
             counter   TEXT NOT NULL,
             outer_iter INTEGER NOT NULL,
@@ -169,7 +185,25 @@ fn create_tables_if_needed(conn: &Connection) {
             count     INTEGER NOT NULL,
             FOREIGN KEY (sha) REFERENCES main (sha)
             )",
-        params![],
-    )
-    .expect("error creating counters table");
+            params![],
+        )
+        .expect("error creating counters table");
+
+        bump(conn, 1);
+    }
+
+    if version < 2 {
+        println!("applying changes for version 2");
+        conn.execute(
+            "ALTER TABLE main ADD COLUMN
+            offline    BOOL NOT NULL DEFAULT FALSE
+            ",
+            params![],
+        )
+        .expect("Error creating main table");
+
+        bump(conn, 2);
+    }
+
+    println!("database schema up tp date");
 }
