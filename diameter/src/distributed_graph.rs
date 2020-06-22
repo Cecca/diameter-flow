@@ -36,6 +36,7 @@ impl DistributedEdgesBuilder {
         let nodes_processors = nodes_ref.clone();
 
         let worker_id = stream.scope().index();
+        let peers = stream.scope().peers();
         let mut paths_stash = Vec::new();
 
         let probe = stream
@@ -66,22 +67,26 @@ impl DistributedEdgesBuilder {
 
                         // exchange the edges to build processor targets
                         debug!("Get the nodes this processor is responsible for");
-                        let mut nodes = HashSet::new();
+                        let mut nodes = Vec::new();
+                        for _ in 0..peers {
+                            nodes.push(HashSet::new());
+                        }
                         edges_ref.borrow().iter().for_each(|edges| {
                             edges.for_each(|u, v, _| {
-                                nodes.insert(u);
-                                nodes.insert(v);
+                                nodes[u as usize % peers].insert(u);
+                                nodes[v as usize % peers].insert(v);
                             });
                         });
                         debug!("The edges on this processor touch {} nodes", nodes.len());
-                        output
-                            .session(&t)
-                            .give_iterator(nodes.into_iter().take(100).map(|u| (u, worker_id)));
+                        for (proc, nodes) in nodes.drain(..).enumerate() {
+                            let nodes: Vec<u32> = nodes.into_iter().collect();
+                            output.session(&t).give((proc, worker_id, nodes));
+                        }
                     });
                 },
             )
             .unary(
-                ExchangePact::new(|pair: &(u32, usize)| pair.0.into()),
+                ExchangePact::new(|triplet: &(usize, usize, Vec<u32>)| triplet.0 as u64),
                 "nodes_builder",
                 move |_, _| {
                     move |input, output| {
@@ -89,8 +94,10 @@ impl DistributedEdgesBuilder {
                             let data = data.replace(Vec::new());
                             let mut opt = nodes_ref.borrow_mut();
                             let map = opt.get_or_insert_with(HashMap::new);
-                            for (u, proc_id) in data {
-                                map.entry(u).or_insert_with(Vec::new).push(proc_id);
+                            for (_, peer_id, nodes) in data {
+                                for u in nodes {
+                                    map.entry(u).or_insert_with(Vec::new).push(peer_id);
+                                }
                             }
                             output.session(&t).give(());
                         });
