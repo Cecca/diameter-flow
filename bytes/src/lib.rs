@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate serde;
+
 mod morton;
 mod stream;
 
@@ -13,11 +16,12 @@ pub enum LoadType {
 }
 
 pub struct CompressedEdgesBlockSet {
+    arrangement: Matrix,
     blocks: Vec<CompressedEdges>,
 }
 
 impl CompressedEdgesBlockSet {
-    pub fn from_files<P, I>(load: LoadType, paths: I) -> IOResult<Self>
+    pub fn from_files<P, I>(arrangement: Matrix, load: LoadType, paths: I) -> IOResult<Self>
     where
         P: AsRef<Path> + Debug,
         I: IntoIterator<Item = (P, Option<P>)>,
@@ -27,7 +31,14 @@ impl CompressedEdgesBlockSet {
             blocks.push(CompressedEdges::from_file(load, path, weights_path)?);
         }
 
-        Ok(Self { blocks })
+        Ok(Self {
+            arrangement,
+            blocks,
+        })
+    }
+
+    pub fn node_processors(&self, x: u32) -> impl Iterator<Item = u32> {
+        self.arrangement.node_processors(x)
     }
 
     pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) {
@@ -38,6 +49,10 @@ impl CompressedEdgesBlockSet {
 
     pub fn byte_size(&self) -> u64 {
         self.blocks.iter().map(|b| b.byte_size()).sum()
+    }
+
+    pub fn num_blocks(&self) -> usize {
+        self.blocks.len()
     }
 }
 
@@ -183,22 +198,79 @@ impl CompressedEdges {
     }
 }
 
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct Matrix {
+    blocks_per_side: u32,
+    elems_per_block: u32,
+}
+
+impl Matrix {
+    pub fn new(blocks_per_side: u32, side_elements: u32) -> Self {
+        let elems_per_block = (side_elements as f64 / blocks_per_side as f64).ceil() as u32;
+        Self {
+            blocks_per_side,
+            elems_per_block,
+        }
+    }
+
+    /// Gets the processors that might have edges incident to a node
+    pub fn node_processors(&self, node: u32) -> impl Iterator<Item = u32> {
+        let block_idx = node / self.elems_per_block;
+        let n_blocks = self.blocks_per_side;
+        let mut row_idx = 0;
+        let mut col_idx = 0;
+        std::iter::from_fn(move || {
+            if row_idx < n_blocks {
+                let res = Some(row_idx * n_blocks + block_idx);
+                row_idx += 1;
+                return res;
+            } else if col_idx < n_blocks {
+                let res = Some(block_idx * n_blocks + col_idx);
+                col_idx += 1;
+                return res;
+            } else {
+                return None;
+            }
+        })
+    }
+
+    pub fn row_major_block(&self, (x, y): (u32, u32)) -> u32 {
+        // The index within a block
+        let inner_x = x % self.elems_per_block;
+        let inner_y = y % self.elems_per_block;
+        // The index of the (square) block
+        let block_x = x / self.elems_per_block;
+        let block_y = y / self.elems_per_block;
+
+        if inner_x < inner_y {
+            // Upper triangle
+            block_x * self.blocks_per_side + block_y
+        } else {
+            // Lower triangle
+            block_y * self.blocks_per_side + block_x
+        }
+    }
+}
+
 pub struct CompressedPairsWriter {
     output_path: PathBuf,
     encoded: Vec<u64>,
-    block_size: u64,
+    node_blocks: u32,
+    max_id: u32,
 }
 
 impl CompressedPairsWriter {
-    pub fn to_file<P: AsRef<Path>>(path: P, block_size: u64) -> Self {
+    pub fn to_file<P: AsRef<Path>>(path: P, node_blocks: u32) -> Self {
         Self {
             output_path: path.as_ref().to_path_buf(),
             encoded: Vec::new(),
-            block_size,
+            node_blocks,
+            max_id: 0,
         }
     }
 
     pub fn write(&mut self, pair: (u32, u32)) {
+        self.max_id = std::cmp::max(self.max_id, std::cmp::max(pair.0, pair.1));
         self.encoded.push(morton::pair_to_zorder(pair));
     }
 
@@ -220,29 +292,32 @@ impl CompressedPairsWriter {
             path
         };
 
-        let mut part_id = 0;
-        let p = get_path(part_id);
-        println!("opening {:?}", p);
-        let writer = BufWriter::new(File::create(p)?);
-        let mut writer = stream::DifferenceStreamWriter::new(writer);
-        let mut cnt = 0;
+        let mut writers = Vec::new();
+        for part_id in 0..(self.node_blocks * self.node_blocks) {
+            let p = get_path(part_id);
+            println!("opening {:?}", p);
+            let writer = BufWriter::new(File::create(p)?);
+            let writer = stream::DifferenceStreamWriter::new(writer);
+            writers.push(writer);
+        }
+
+        let matrix = Matrix::new(self.node_blocks, self.max_id + 1);
+
         for &x in self.encoded.iter() {
-            if cnt % self.block_size == 0 {
-                part_id += 1;
-                let p = get_path(part_id);
-                println!("opening {:?}", p);
-                let mut writer2 =
-                    stream::DifferenceStreamWriter::new(BufWriter::new(File::create(p)?));
-                std::mem::swap(&mut writer, &mut writer2);
-                writer2.close()?;
-            }
+            let writer = &mut writers[matrix.row_major_block(morton::zorder_to_pair(x)) as usize];
             if writer.is_new_elem(x) {
                 // Remove duplicate edges
                 writer.write(x)?;
             }
-            cnt += 1;
         }
-        writer.close()?;
+
+        for writer in writers.into_iter() {
+            writer.close()?;
+        }
+
+        let writer = File::create(self.output_path.join("arrangement.bin"))
+            .expect("error creating metadata file");
+        bincode::serialize_into(writer, &matrix).expect("problem serializing matrix arrangement");
         Ok(())
     }
 }
@@ -256,19 +331,22 @@ impl Drop for CompressedPairsWriter {
 pub struct CompressedTripletsWriter {
     output_path: PathBuf,
     encoded: Vec<(u64, u32)>,
-    block_size: u64,
+    node_blocks: u32,
+    max_id: u32,
 }
 
 impl CompressedTripletsWriter {
-    pub fn to_file<P: AsRef<Path>>(path: P, block_size: u64) -> Self {
+    pub fn to_file<P: AsRef<Path>>(path: P, node_blocks: u32) -> Self {
         Self {
             output_path: path.as_ref().to_path_buf(),
             encoded: Vec::new(),
-            block_size,
+            node_blocks,
+            max_id: 0,
         }
     }
 
     pub fn write(&mut self, (u, v, w): (u32, u32, u32)) {
+        self.max_id = std::cmp::max(self.max_id, std::cmp::max(u, v));
         self.encoded.push((morton::pair_to_zorder((u, v)), w));
     }
 
@@ -295,37 +373,36 @@ impl CompressedTripletsWriter {
             path
         };
 
-        let mut part_id = 0;
-        let p = get_path(part_id);
-        println!("opening {:?}", p);
-        let writer = BufWriter::new(File::create(p)?);
-        let mut writer = stream::DifferenceStreamWriter::new(writer);
-        let mut weights_writer =
-            BitWriter::<_, BE>::new(BufWriter::new(File::create(get_path_weights(part_id))?));
-        let mut cnt = 0;
+        let matrix = Matrix::new(self.node_blocks, self.max_id + 1);
+
+        let mut writers = Vec::new();
+        for part_id in 0..(self.node_blocks * self.node_blocks) {
+            let p = get_path(part_id);
+            println!("opening {:?}", p);
+            let writer = BufWriter::new(File::create(p)?);
+            let weights_writer =
+                BitWriter::<_, BE>::new(BufWriter::new(File::create(get_path_weights(part_id))?));
+            let writer = stream::DifferenceStreamWriter::new(writer);
+            writers.push((writer, weights_writer));
+        }
         for &(x, w) in self.encoded.iter() {
-            if cnt % self.block_size == 0 {
-                part_id += 1;
-                let p = get_path(part_id);
-                println!("opening {:?}", p);
-                let mut writer2 =
-                    stream::DifferenceStreamWriter::new(BufWriter::new(File::create(p)?));
-                let mut weights_writer2 =
-                    BitWriter::new(BufWriter::new(File::create(get_path_weights(part_id))?));
-                std::mem::swap(&mut writer, &mut writer2);
-                std::mem::swap(&mut weights_writer, &mut weights_writer2);
-                writer2.close()?;
-                weights_writer2.into_writer().flush()?;
-            }
+            let (writer, weights_writer) =
+                &mut writers[matrix.row_major_block(morton::zorder_to_pair(x)) as usize];
             if writer.is_new_elem(x) {
                 // Remove duplicate edges
                 writer.write(x)?;
                 weights_writer.write(32, w);
             }
-            cnt += 1;
         }
-        writer.close()?;
-        weights_writer.into_writer().flush()?;
+
+        for (writer, weights_writer) in writers.into_iter() {
+            writer.close()?;
+            weights_writer.into_writer().flush()?;
+        }
+        let writer = File::create(self.output_path.join("arrangement.bin"))
+            .expect("error creating metadata file");
+        bincode::serialize_into(writer, &matrix).expect("problem serializing matrix arrangement");
+
         Ok(())
     }
 }

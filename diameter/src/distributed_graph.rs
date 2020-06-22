@@ -20,6 +20,7 @@ pub struct DistributedEdgesBuilder {
 
 impl DistributedEdgesBuilder {
     pub fn new<G: Scope>(
+        arrangement: Matrix,
         load_type: LoadType,
         stream: &Stream<G, (String, Option<String>)>,
     ) -> (Self, ProbeHandle<G::Timestamp>) {
@@ -59,7 +60,7 @@ impl DistributedEdgesBuilder {
                         });
                         debug!("Start loading blocks");
                         edges_ref.borrow_mut().replace(
-                            CompressedEdgesBlockSet::from_files(load_type, paths)
+                            CompressedEdgesBlockSet::from_files(arrangement, load_type, paths)
                                 .expect("problem loading blocks"),
                         );
                         debug!("Blocks loaded");

@@ -214,7 +214,7 @@ impl Dataset {
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
-                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 100_000);
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 32);
                     let mut pl = progress_logger::ProgressLogger::builder()
                         .with_items_name("edges")
                         .start();
@@ -237,7 +237,7 @@ impl Dataset {
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
-                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 1_000_000);
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 32);
                     let mut pl = progress_logger::ProgressLogger::builder()
                         .with_items_name("edges")
                         .start();
@@ -308,7 +308,7 @@ impl Dataset {
                     .start();
                 let mut remapper = Remapper::default();
                 if inner_meta.max_weight == 1 {
-                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 500_000);
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 32);
                     inner.for_each(|u, v, _| {
                         if lcc.is_in_lcc(u) {
                             let mut src = remapper.remap(u);
@@ -321,7 +321,7 @@ impl Dataset {
                         }
                     });
                 } else {
-                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 500_000);
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 32);
                     inner.for_each(|u, v, w| {
                         if lcc.is_in_lcc(u) {
                             let mut src = remapper.remap(u);
@@ -343,7 +343,8 @@ impl Dataset {
                 let blocks = 128;
                 let mut compressor = CompressedPairsWriter::to_file(
                     edges_dir,
-                    std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                    // std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                    32,
                 );
                 for i in 0..*side {
                     for j in 0..*side {
@@ -369,7 +370,7 @@ impl Dataset {
                 let blocks = 128;
                 let mut compressor = CompressedTripletsWriter::to_file(
                     edges_dir,
-                    std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                    32, // std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
                 );
                 for i in 0..*side {
                     for j in 0..*side {
@@ -395,11 +396,9 @@ impl Dataset {
                 let uniform = Uniform::new(w1, w2);
                 let edges_dir = self.edges_directory();
                 std::fs::create_dir_all(edges_dir.clone()).expect("problem creating directory");
-                let edges = 2 * side * side;
-                let blocks = 128;
                 let mut compressor = CompressedTripletsWriter::to_file(
                     edges_dir,
-                    std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
+                    32, // std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
                 );
                 for i in 0..*side {
                     for j in 0..*side {
@@ -528,10 +527,14 @@ impl Dataset {
     ) -> DistributedEdges {
         use timely::dataflow::operators::Input as TimelyInput;
 
+        let reader = std::fs::File::open(self.edges_directory().join("arrangement.bin"))
+            .expect("error opening arrangement file");
+        let arrangement: Matrix = bincode::deserialize_from(reader).unwrap();
+
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
 
-            let (builder, probe) = DistributedEdgesBuilder::new(load_type, &stream);
+            let (builder, probe) = DistributedEdgesBuilder::new(arrangement, load_type, &stream);
 
             (input, probe, builder)
         });
