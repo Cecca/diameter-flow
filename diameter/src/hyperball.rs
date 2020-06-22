@@ -149,7 +149,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
-                        println!(
+                        info!(
                             "{:?} are exiting at time {:?}",
                             counters.remove(t.time()),
                             t.time()
@@ -165,7 +165,7 @@ pub fn hyperball<G: Scope<Timestamp = usize>>(
         .accumulate(0u32, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })
-        .inspect(|partial| println!("Partial maximum {:?}", partial))
+        .inspect(|partial| info!("Partial maximum {:?}", partial))
         .exchange(|_| 0)
         .accumulate(0u32, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)

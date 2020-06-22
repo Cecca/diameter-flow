@@ -26,6 +26,7 @@ base64 = "0.11"
 chrono = "0.4"
 progress-logger = "0.1.1"
 env_logger = "0.7"
+log = "0.4"
 dirs = "2"
 rusqlite = {version = "0.23", features = ["bundled"]}
 

@@ -167,7 +167,7 @@ impl Dataset {
         if meta_map.contains_key(&key) {
             meta_map.get(&key).unwrap().clone()
         } else {
-            println!("Missing metadata computing it");
+            info!("Missing metadata computing it");
             let mut num_nodes = 0;
             let mut num_edges = 0;
             let mut min_weight = std::u32::MAX;
@@ -210,7 +210,7 @@ impl Dataset {
             DatasetKind::Dimacs(url) => {
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
-                    println!("Compressing into {:?}", edges_dir);
+                    info!("Compressing into {:?}", edges_dir);
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
@@ -233,7 +233,7 @@ impl Dataset {
             DatasetKind::Snap(url) => {
                 let edges_dir = self.edges_directory();
                 if !edges_dir.is_dir() {
-                    println!("Compressing into {:?}", edges_dir);
+                    info!("Compressing into {:?}", edges_dir);
                     std::fs::create_dir_all(&edges_dir);
                     let mut remapper = Remapper::default();
                     let raw = maybe_download_file(&url, self.dataset_directory());
@@ -255,7 +255,7 @@ impl Dataset {
             }
             DatasetKind::WebGraph(name) => {
                 let dir = self.dataset_directory();
-                println!("Destination directory is {:?}", dir);
+                info!("Destination directory is {:?}", dir);
                 let graph_url = format!(
                     "http://data.law.di.unimi.it/webdata/{}/{}-hc.graph",
                     name, name
@@ -283,14 +283,14 @@ impl Dataset {
                 if !compressed_path.is_dir() {
                     let timer = std::time::Instant::now();
                     bvconvert::convert(&tool_graph_path, &compressed_path);
-                    println!("Compression took {:?}", timer.elapsed());
+                    info!("Compression took {:?}", timer.elapsed());
                 }
             }
 
             DatasetKind::LCC(inner) => {
                 inner.prepare();
                 let edges_dir = self.edges_directory();
-                println!(
+                info!(
                     "Compressing the largest connected component into {:?}",
                     edges_dir
                 );
@@ -496,7 +496,7 @@ impl Dataset {
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 edges_files.insert(chunk_id, path);
             } else if let Some(captures) = rex_weights.captures(str_name) {
-                println!("Loading edge weight file");
+                info!("Loading edge weight file");
                 let digits = captures.get(1).unwrap();
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 weights_files.insert(chunk_id, path);
@@ -521,7 +521,11 @@ impl Dataset {
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers
-    pub fn load_static<A: Allocate>(&self, worker: &mut Worker<A>, load_type: LoadType) -> DistributedEdges {
+    pub fn load_static<A: Allocate>(
+        &self,
+        worker: &mut Worker<A>,
+        load_type: LoadType,
+    ) -> DistributedEdges {
         use timely::dataflow::operators::Input as TimelyInput;
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
@@ -540,7 +544,7 @@ impl Dataset {
             worker.peers()
         );
 
-        println!("loading input from {} edge files", n_files);
+        info!("loading input from {} edge files", n_files);
         self.binary_edge_files()
             .for_each(|(id, path, weights_path)| {
                 if id % worker.peers() == worker.index() {
@@ -558,7 +562,7 @@ impl Dataset {
             });
         input.close();
         worker.step_while(|| !probe.done());
-        println!("loaded input {:?}", worker.timer().elapsed());
+        info!("loaded input {:?}", worker.timer().elapsed());
 
         builder.build()
     }
@@ -568,10 +572,10 @@ impl Dataset {
 //     let path = std::env::var("GRAPH_DATA_DIR")
 //         .map(|p| PathBuf::from(p))
 //         .unwrap_or_else(|e| {
-//             println!("error getting graph data dir from env: {:?}", e);
+//             info!("error getting graph data dir from env: {:?}", e);
 //             std::env::home_dir().unwrap().join(".graph-datasets")
 //         });
-//     println!("Graph data directory is {:?}", path);
+//     info!("Graph data directory is {:?}", path);
 //     if !path.exists() {
 //         fs::create_dir_all(&path).expect("Problem creating dataset directory");
 //     }
@@ -609,12 +613,12 @@ fn remapped_dataset_file_path(url: &str, mut dir: PathBuf) -> PathBuf {
 fn maybe_download_file(url: &str, dir: PathBuf) -> PathBuf {
     let dataset_path = dataset_file_path(url, dir);
     if !dataset_path.exists() {
-        println!("Downloading dataset");
+        info!("Downloading dataset");
         let mut resp = reqwest::get(url).expect("problem while getting the url");
         let mut out = File::create(&dataset_path).expect("failed to create file");
         std::io::copy(&mut resp, &mut out).expect("failed to copy content");
     } else {
-        //println!("Dataset {:?} already exists, doing nothing", dataset_path);
+        //info!("Dataset {:?} already exists, doing nothing", dataset_path);
     }
     dataset_path
 }
@@ -622,7 +626,7 @@ fn maybe_download_file(url: &str, dir: PathBuf) -> PathBuf {
 fn maybe_download_and_remap_file(url: &str, dir: PathBuf) -> PathBuf {
     let remapped_path = remapped_dataset_file_path(url, dir.clone());
     if !remapped_path.exists() {
-        println!("Remapping the file");
+        info!("Remapping the file");
         text_edge_file_remap(&maybe_download_file(url, dir), &remapped_path);
     }
     remapped_path
@@ -631,7 +635,7 @@ fn maybe_download_and_remap_file(url: &str, dir: PathBuf) -> PathBuf {
 fn maybe_download_and_remap_dimacs_file(url: &str, dir: PathBuf) -> PathBuf {
     let remapped_path = remapped_dataset_file_path(url, dir.clone());
     if !remapped_path.exists() {
-        println!("Remapping the file");
+        info!("Remapping the file");
         dimacs_file_remap(&maybe_download_file(url, dir), &remapped_path);
     }
     remapped_path

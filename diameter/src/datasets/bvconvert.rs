@@ -17,7 +17,7 @@ use tar::Archive;
 
 pub fn maybe_download_file(url: &str, dest: PathBuf) -> PathBuf {
     if !dest.exists() {
-        println!("Downloading {} to {:?}", url, dest);
+        info!("Downloading {} to {:?}", url, dest);
         let mut resp = reqwest::get(url).expect("problem while getting the url");
         assert!(resp.status().is_success());
         let mut out = File::create(&dest).expect("failed to create file");

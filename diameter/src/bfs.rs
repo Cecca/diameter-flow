@@ -41,7 +41,7 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
         let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
         let dist = Uniform::new(0u32, n + 1);
         let root: u32 = dist.sample(&mut rng);
-        println!("Root is {}", root);
+        info!("Root is {}", root);
         vec![(
             root,
             State {
@@ -108,11 +108,11 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
 
     distances
         .map(|(_, state)| state.distance.expect("missing distance"))
-        // .inspect(|c| println!("{:?}", c))
+        // .inspect(|c| info!("{:?}", c))
         .accumulate(0, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })
-        .inspect(|partial| println!("Partial maximum {:?}", partial))
+        .inspect(|partial| info!("Partial maximum {:?}", partial))
         .exchange(|_| 0)
         .accumulate(0, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)

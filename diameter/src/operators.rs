@@ -69,7 +69,7 @@ where
                         if let Some(updated_count) = stash_counts.remove(&time) {
                             let branch = updated_count > 0;
                             if worker_id == 0 {
-                                println!(
+                                info!(
                                     ">> {} nodes passing predicate at time {:?}",
                                     updated_count,
                                     time.time()

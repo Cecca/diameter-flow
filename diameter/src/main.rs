@@ -1,6 +1,8 @@
 extern crate abomonation;
 #[macro_use]
 extern crate abomonation_derive;
+#[macro_use]
+extern crate log;
 extern crate base64;
 extern crate flate2;
 extern crate regex;
@@ -22,6 +24,7 @@ mod reporter;
 mod sequential;
 
 use argh::FromArgs;
+use bytes::*;
 use datasets::*;
 use delta_stepping::*;
 use serde::{Deserialize, Serialize};
@@ -41,7 +44,6 @@ use timely::dataflow::operators::Inspect;
 use timely::dataflow::operators::Operator;
 use timely::dataflow::operators::Probe;
 use timely::worker::Worker;
-use bytes::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Host {
@@ -73,7 +75,7 @@ impl Host {
         } else {
             path_str.to_owned().clone()
         };
-        // println!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
+        // info!("Rsync from {:?} to {:?}", path_with_slash, path_no_slash);
         Command::new("rsync")
             .arg("--update")
             .arg("-r")
@@ -236,10 +238,9 @@ pub struct Config {
         description = "rerun the experiment, appending in the database"
     )]
     rerun: bool,
-    #[argh(
-        switch,
-        description = "keep the datasets on disk"
-    )]
+    #[argh(switch, description = "toggle verbose logging", short = 'v')]
+    verbose: bool,
+    #[argh(switch, description = "keep the datasets on disk")]
     offline: bool,
     #[argh(
         positional,
@@ -342,7 +343,7 @@ impl Config {
     {
         if self.hosts.is_some() && self.process_id.is_none() {
             let exec = std::env::args().nth(0).unwrap();
-            println!("spawning executable {:?}", exec);
+            info!("spawning executable {:?}", exec);
             // This is the top level invocation, which should spawn the processes with ssh
             let handles: Vec<std::process::Child> = self
                 .hosts
@@ -353,7 +354,7 @@ impl Config {
                 .enumerate()
                 .map(|(pid, host)| {
                     let encoded_config = self.with_process_id(pid).encode();
-                    println!("Connecting to {}", host.name);
+                    info!("Connecting to {}", host.name);
                     Command::new("ssh")
                         .arg(&host.name)
                         .arg(&exec)
@@ -364,7 +365,7 @@ impl Config {
                 .collect();
 
             for mut h in handles {
-                println!("Waiting for ssh process to finish");
+                info!("Waiting for ssh process to finish");
                 h.wait().expect("problem waiting for the ssh process");
             }
 
@@ -405,7 +406,7 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
         .iter()
         .map(|(name, dataset)| {
             if dataset.is_prepared() {
-                // println!("{} ({:?})", name, dataset.edges_directory());
+                // info!("{} ({:?})", name, dataset.edges_directory());
                 let meta = dataset.metadata();
                 (
                     name.clone(),
@@ -421,11 +422,11 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
         .collect();
 
     table.sort_by_cached_key(|tuple| (tuple.2, tuple.0.clone()));
-    println!(
+    info!(
         "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
         "name", "nodes", "edges", "minimum weight", "maximum weight"
     );
-    println!(
+    info!(
         "{}|{}|{}|{}|{}",
         "--------------------",
         "---------------",
@@ -434,7 +435,7 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
         "---------------"
     );
     for (name, nodes, edges, minw, maxw) in table.into_iter() {
-        println!(
+        info!(
             "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
             name,
             nodes.map(|n| format!("{}", n)).unwrap_or(String::new()),
@@ -487,14 +488,13 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
 }
 
 fn main() {
-    env_logger::init();
     if let Some("list") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
         if let Some(ddir) = std::env::args().nth(2) {
             let ddir = PathBuf::from(ddir);
             let datasets = datasets_map(ddir);
             list_datasets(&datasets);
         } else {
-            println!("Specify a directory containing the datasets");
+            info!("Specify a directory containing the datasets");
         }
         return;
     }
@@ -509,14 +509,15 @@ fn main() {
                     .clean_edges();
             }
         } else {
-            println!("Specify a directory containing the datasets");
+            info!("Specify a directory containing the datasets");
         }
         return;
     }
 
     let config = Config::create();
+    logging::init_logging(config.verbose);
     if let Some(sha) = reporter::Reporter::new(config.clone()).already_run() {
-        println!("Parameter configuration already run (sha {}), exiting", sha);
+        info!("Parameter configuration already run (sha {}), exiting", sha);
         return;
     }
 
@@ -528,10 +529,10 @@ fn main() {
     dataset.prepare();
     let meta = dataset.metadata();
     let n = meta.num_nodes;
-    println!("Input graph stats: {:?}", meta);
+    info!("Input graph stats: {:?}", meta);
 
     if config.hosts.is_some() && config.process_id.is_none() {
-        println!("Syncing the dataset to the other hosts, if needed");
+        info!("Syncing the dataset to the other hosts, if needed");
         config.hosts.as_ref().unwrap().rsync(config.ddir.clone());
     }
 
@@ -546,7 +547,7 @@ fn main() {
             .into_iter()
             .max_by_key(|pair| pair.0)
             .unwrap();
-        println!("Diameter {}, computed in {:?}", diam, timer.elapsed());
+        info!("Diameter {}, computed in {:?}", diam, timer.elapsed());
     } else {
         let ret_status = config.execute(move |worker| {
             let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
@@ -555,10 +556,10 @@ fn main() {
                 logging::init_count_logging(worker, Rc::clone(&reporter));
 
             let load_type = if config2.offline {
-                println!("keeping dataset on disk");
+                info!("keeping dataset on disk");
                 LoadType::Offline
             } else {
-                println!("reading dataset in memory");
+                info!("reading dataset in memory");
                 LoadType::InMemory
             };
 
@@ -584,7 +585,7 @@ fn main() {
                 };
 
                 diameter_stream
-                    .inspect_batch(|t, d| println!("[{:?}] The diameter lower bound is {:?}", t, d))
+                    .inspect_batch(|t, d| info!("[{:?}] The diameter lower bound is {:?}", t, d))
                     .unary(Pipeline, "diameter collect", move |_, _| {
                         move |input, output| {
                             input.for_each(|t, data| {
@@ -601,7 +602,7 @@ fn main() {
             // Run the dataflow and record the time
             let timer = Instant::now();
             worker.step_while(|| !probe.done());
-            println!("{:?}\tcomputed diameter", timer.elapsed());
+            info!("{:?}\tcomputed diameter", timer.elapsed());
             let elapsed = timer.elapsed();
 
             // close the logging input and perform any outstanding work
@@ -618,8 +619,8 @@ fn main() {
             }
         });
         match ret_status {
-            Ok(_) => println!(""),
-            Err(ExecError::RemoteExecution) => println!(""),
+            Ok(_) => info!(""),
+            Err(ExecError::RemoteExecution) => info!(""),
             Err(e) => panic!("{:?}", e),
         }
     }

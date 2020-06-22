@@ -149,10 +149,10 @@ fn create_tables_if_needed(conn: &Connection) {
             |row| row.get(0),
         )
         .unwrap();
-    println!("Current database version is {}", version);
+    info!("Current database version is {}", version);
 
     if version < 1 {
-        println!("applying changes for version 1");
+        info!("applying changes for version 1");
         conn.execute(
             "CREATE TABLE IF NOT EXISTS main (
             sha      TEXT PRIMARY KEY,
@@ -196,7 +196,7 @@ fn create_tables_if_needed(conn: &Connection) {
     }
 
     if version < 2 {
-        println!("applying changes for version 2");
+        info!("applying changes for version 2");
         conn.execute(
             "ALTER TABLE main ADD COLUMN
             offline    BOOL NOT NULL DEFAULT FALSE
@@ -209,7 +209,7 @@ fn create_tables_if_needed(conn: &Connection) {
     }
 
     if version < 3 {
-        println!("applying changes for version 3");
+        info!("applying changes for version 3");
 
         conn.execute("DROP VIEW main_recent", params![])
             .expect("error dropping view");
@@ -225,5 +225,5 @@ fn create_tables_if_needed(conn: &Connection) {
         bump(conn, 3);
     }
 
-    println!("database schema up tp date");
+    info!("database schema up tp date");
 }

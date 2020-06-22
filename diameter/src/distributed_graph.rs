@@ -47,7 +47,7 @@ impl DistributedEdgesBuilder {
                     input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
                         paths_stash.extend(data.into_iter());
-                        println!("added paths to the stash");
+                        info!("added paths to the stash");
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|t, _, _| {
@@ -119,8 +119,8 @@ impl DistributedEdgesBuilder {
                 .and_modify(|c| *c += len)
                 .or_insert(len);
         }
-        // println!("Distribution of destination sets {:#?}", histogram);
-        println!("Loaded edges: {} bytes", edges.byte_size());
+        // info!("Distribution of destination sets {:#?}", histogram);
+        info!("Loaded edges: {} bytes", edges.byte_size());
         DistributedEdges {
             edges: Rc::new(edges),
             nodes_processors: Rc::new(nodes_processors),
@@ -147,7 +147,7 @@ impl DistributedEdges {
         F: FnMut(u32, u32, u32),
     {
         self.edges.for_each(action);
-        // println!("time to iterate over all the edges {:?}", timer.elapsed());
+        // info!("time to iterate over all the edges {:?}", timer.elapsed());
     }
 
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
@@ -231,7 +231,7 @@ impl DistributedEdges {
                                 }
                             });
                             if cnt == 0 {
-                                println!("Warning: no output triplets");
+                                info!("Warning: no output triplets");
                             }
                         }
                     });
@@ -310,7 +310,9 @@ impl DistributedEdges {
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
                             let n_states = states.len();
+                            debug!("Trying to allocate stats map for {} states", n_states);
                             let states = ArrayMap::new(states);
+                            debug!("Allocated states vector for {} states", states.len());
                             let mut output_messages = MessageBuffer::with_capacity(
                                 4_000_000,
                                 aggregate,
@@ -339,15 +341,15 @@ impl DistributedEdges {
                             });
                             let elapsed = timer.elapsed();
                             let throughput = cnt as f64 / elapsed.as_secs_f64();
-                            // println!(
-                            //     "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
-                            //     worker_id,
-                            //     cnt,
-                            //     elapsed,
-                            //     throughput,
-                            //     n_states,
-                            //     cnt_out
-                            // );
+                            debug!(
+                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
+                                worker_id,
+                                cnt,
+                                elapsed,
+                                throughput,
+                                n_states,
+                                cnt_out
+                            );
                         }
                     });
                 },
@@ -496,6 +498,10 @@ impl<S> ArrayMap<S> {
         let mut data: Vec<(u32, S)> = iter.into_iter().collect();
         data.sort_by_key(|pair| pair.0);
         Self { data }
+    }
+
+    fn len(&self) -> usize {
+        self.data.len()
     }
 
     fn get(&self, key: u32) -> Option<&S> {

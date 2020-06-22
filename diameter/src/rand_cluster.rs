@@ -293,7 +293,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                     let mut cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
                     let p = base.powi(t.time().inner as i32) / n as f64;
                     if p <= 1.0 {
-                        // println!("Probability is less than one (n is {}, p is {})", n, p);
+                        // info!("Probability is less than one (n is {}, p is {})", n, p);
                         for (id, state) in nodes.into_iter() {
                             if state.is_uncovered() && rand.borrow_mut().gen_bool(p) {
                                 out.give((id, state.as_center(id, generation)));
@@ -303,7 +303,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }
                     } else {
-                        // println!("Selecting all uncovered nodes as centers (n is {})", n);
+                        // info!("Selecting all uncovered nodes as centers (n is {})", n);
                         cnt = cnt_uncovered;
                         out.give_iterator(nodes.into_iter().map(|(id, state)| {
                             if state.is_uncovered() {
@@ -314,7 +314,7 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                             }
                         }));
                     }
-                    // println!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
+                    // info!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
                     l1.log((CountEvent::Centers(t.inner), cnt as u64));
                     l1.log((CountEvent::Uncovered(t.inner), cnt_uncovered as u64));
                 }
@@ -531,13 +531,13 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         .max()
                         .expect("could not compute n from edge stream")
                         as usize;
-                    println!(
+                    info!(
                         "Size of the auxiliary graph: {} nodes and {} edges",
                         n,
                         edges.len()
                     );
                     if n == 1 {
-                        println!("Auxiliary graph with a single node");
+                        info!("Auxiliary graph with a single node");
                         // In this case the max radius is a two approximation, so we have to
                         // double it to make an upper bound estimate like in the other cases
                         output.session(&t).give(2 * max_radius);
@@ -551,10 +551,10 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                             .max()
                             .unwrap();
                         if max_radius > diameter {
-                            println!("Outputting max radius: {}!", max_radius);
+                            info!("Outputting max radius: {}!", max_radius);
                             output.session(&t).give(max_radius);
                         } else {
-                            println!("Outputting combined diameter: {}", diameter);
+                            info!("Outputting combined diameter: {}", diameter);
                             output.session(&t).give(diameter);
                         }
                     }

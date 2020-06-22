@@ -15,14 +15,14 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     let timer = Instant::now();
     for i in 0..n {
         if !reachable[i as usize] {
-            // println!("starting sssp from {}", i);
+            // info!("starting sssp from {}", i);
             let pair = sssp(&neighbourhoods, i, &mut reachable);
             let v1 = (pair.1).1;
             distant_pairs.push(pair);
             distant_pairs.push(sssp(&neighbourhoods, v1, &mut reachable));
         }
     }
-    println!("diameter computation: elapsed {:?}", timer.elapsed());
+    info!("diameter computation: elapsed {:?}", timer.elapsed());
 
     // distant_pairs.into_iter().max_by_key(|pair| pair.0).unwrap()
     distant_pairs

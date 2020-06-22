@@ -121,7 +121,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
             .branch_all(|_, pair| pair.1.updated);
 
         further
-            // .inspect(|p| println!("{:?}", p))
+            // .inspect(|p| info!("{:?}", p))
             .connect_loop(handle);
 
         output.leave()
@@ -194,7 +194,7 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
         .accumulate(0, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
         })
-        .inspect(|partial| println!("Partial maximum {:?}", partial))
+        .inspect(|partial| info!("Partial maximum {:?}", partial))
         .exchange(|_| 0)
         .accumulate(0, |max, data| {
             *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)

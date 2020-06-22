@@ -1,7 +1,9 @@
 use crate::reporter::Reporter;
+use env_logger::Builder;
 use std::cell::RefCell;
 use std::hash::Hash;
 use std::rc::Rc;
+use std::time::*;
 use timely::dataflow::operators::aggregation::Aggregate;
 use timely::dataflow::operators::Input as TimelyInput;
 use timely::dataflow::operators::*;
@@ -10,6 +12,40 @@ use timely::dataflow::ProbeHandle;
 use timely::logging::Logger;
 use timely::order::Product;
 use timely::worker::{AsWorker, Worker};
+
+pub fn get_hostname() -> String {
+    let output = std::process::Command::new("hostname")
+        .output()
+        .expect("Failed to run the hostname command");
+    String::from_utf8_lossy(&output.stdout).trim().to_owned()
+}
+
+// This is the place to hook into if we want to use syslog
+pub fn init_logging(verbose: bool) {
+    use std::io::Write;
+
+    let hostname = get_hostname();
+    let start = Instant::now();
+    let mut builder = Builder::from_default_env();
+    builder.format(move |buf, record| {
+        writeln!(
+            buf,
+            "[{}, {:?}] {:.2?} - {}: {}",
+            hostname,
+            std::thread::current().id(),
+            Instant::now() - start,
+            record.level(),
+            record.args()
+        )
+    });
+    if verbose {
+        builder.filter_level(log::LevelFilter::Debug);
+    } else {
+        builder.filter_level(log::LevelFilter::Info);
+    }
+    builder.init();
+    // log_panics::init();
+}
 
 #[derive(Abomonation, Eq, Ord, PartialEq, PartialOrd, Clone, Hash, Debug)]
 pub enum CountEvent {
@@ -117,7 +153,7 @@ where
                 |key, agg: u64| (key, agg),
                 |_key| 0,
             )
-            // .inspect(|(tag, value)| println!("{:?}, {:?}", tag, value))
+            // .inspect(|(tag, value)| info!("{:?}, {:?}", tag, value))
             .unary_notify(
                 Pipeline,
                 "report",
