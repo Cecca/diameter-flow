@@ -65,6 +65,18 @@ impl DistributedEdgesBuilder {
                         );
                         debug!("Blocks loaded");
 
+                        debug!("Exchange information to build processor targets");
+                        let mut min_id = 0;
+                        let mut max_id = 0;
+                        edges_ref.borrow().iter().for_each(|edges| {
+                            edges.for_each(|u, v, _| {
+                                min_id = std::cmp::min(min_id, std::cmp::min(u, v));
+                                max_id = std::cmp::max(max_id, std::cmp::max(u, v));
+                            });
+                        });
+                        debug!("{} -> {} to {}", worker_id, min_id, max_id);
+
+                        // output.session(&t).give((worker_id, (min_id, max_id)))
                         // exchange the edges to build processor targets
                         debug!("Get the nodes this processor is responsible for");
                         let mut nodes = Vec::new();
@@ -77,15 +89,18 @@ impl DistributedEdgesBuilder {
                                 nodes[v as usize % peers].insert(v);
                             });
                         });
-                        debug!("The edges on this processor touch {} nodes", nodes.len());
                         for (proc, nodes) in nodes.drain(..).enumerate() {
                             let nodes: Vec<u32> = nodes.into_iter().collect();
                             output.session(&t).give((proc, worker_id, nodes));
                         }
+                        debug!("Sent all the processor information");
                     });
                 },
             )
+            // .inspect(|pair| info!("{} -> {:?}", pair.0, pair.1))
+            // .broadcast()
             .unary(
+                // Pipeline,
                 ExchangePact::new(|triplet: &(usize, usize, Vec<u32>)| triplet.0 as u64),
                 "nodes_builder",
                 move |_, _| {
