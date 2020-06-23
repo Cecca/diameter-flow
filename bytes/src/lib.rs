@@ -213,6 +213,58 @@ impl Matrix {
         }
     }
 
+    pub fn from_file<P: AsRef<Path>>(path: P) -> Self {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader, Read};
+
+        let mut elems_per_block = None;
+        let mut blocks_per_side = None;
+
+        let reader = BufReader::new(File::open(path.as_ref()).expect("couldn't open file"));
+        for line in reader.lines() {
+            let line = line.expect("Problem getting line");
+            let mut tokens = line.split("=");
+            let key = tokens.next().expect("missing key");
+            if key.starts_with("elems_per_block") {
+                elems_per_block.replace(
+                    tokens
+                        .next()
+                        .expect("problem getting value")
+                        .parse::<u32>()
+                        .expect("problem parsing value"),
+                );
+            }
+            if key.starts_with("blocks_per_side") {
+                blocks_per_side.replace(
+                    tokens
+                        .next()
+                        .expect("problem getting value")
+                        .parse::<u32>()
+                        .expect("problem parsing value"),
+                );
+            }
+        }
+
+        match (elems_per_block, blocks_per_side) {
+            (Some(elems_per_block), Some(blocks_per_side)) => Self {
+                elems_per_block,
+                blocks_per_side,
+            },
+            _ => panic!("badly formatted arrangement file"),
+        }
+    }
+
+    pub fn to_file<P: AsRef<Path>>(&self, path: P) {
+        use std::fs::File;
+        let mut f = File::create(path.as_ref()).expect("Couldn't create file");
+        writeln!(
+            f,
+            "elems_per_block={}\nblocks_per_side={}",
+            self.elems_per_block, self.blocks_per_side
+        )
+        .expect("Error writing properties");
+    }
+
     /// Gets the processors that might have edges incident to a node
     pub fn node_processors(&self, node: u32) -> impl Iterator<Item = u32> {
         let block_idx = node / self.elems_per_block;
@@ -315,9 +367,7 @@ impl CompressedPairsWriter {
             writer.close()?;
         }
 
-        let writer = File::create(self.output_path.join("arrangement.bin"))
-            .expect("error creating metadata file");
-        bincode::serialize_into(writer, &matrix).expect("problem serializing matrix arrangement");
+        matrix.to_file(self.output_path.join("arrangement.txt"));
         Ok(())
     }
 }
@@ -399,9 +449,7 @@ impl CompressedTripletsWriter {
             writer.close()?;
             weights_writer.into_writer().flush()?;
         }
-        let writer = File::create(self.output_path.join("arrangement.bin"))
-            .expect("error creating metadata file");
-        bincode::serialize_into(writer, &matrix).expect("problem serializing matrix arrangement");
+        matrix.to_file(self.output_path.join("arrangement.txt"));
 
         Ok(())
     }

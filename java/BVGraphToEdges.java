@@ -64,6 +64,8 @@ public class BVGraphToEdges {
         long cntSelfLoops = 0;
         long cntDuplicates = 0;
 
+        int maxId = 0;
+
         long cnt = 0;
         System.out.println("Encoding the values... ");
         pl.start();
@@ -79,6 +81,8 @@ public class BVGraphToEdges {
                 if (u != v) { // ignore self loops
                     int src = u;
                     int dst = v;
+                    maxId = (src > maxId)? src : maxId;
+                    maxId = (dst > maxId)? dst : maxId;
                     // We consider the graphs symmetric, and we take as canonical the
                     // order that results in the upper right triangle of the
                     // adjacency matrix.
@@ -95,9 +99,6 @@ public class BVGraphToEdges {
                     cntSelfLoops++;
                 }
                 pl.lightUpdate();
-                // if (cnt++ % 10000000 == 0) {
-                // System.out.print((cnt / totEdges * 100) + "% \r");
-                // }
             }
         }
         cntDuplicates += writePartial(buffer, pos, new File(scratch, Integer.toString(chunksCount++)));
@@ -109,10 +110,14 @@ public class BVGraphToEdges {
         File mergedFile = mergeAndCompress(scratch);
         System.out.println("sort and compress " + (System.currentTimeMillis() - start) / 1000.0 + "s");
 
+        Matrix arrangement = new Matrix(32, maxId + 1);
+
         System.out.println("Split the file in chunks, and check that there are no duplicates");
         start = System.currentTimeMillis();
-        splitFiles(mergedFile, new File(outputPath), chunkLen);
+        splitFiles(mergedFile, new File(outputPath), arrangement);
         System.out.println("file split " + (System.currentTimeMillis() - start) / 1000.0 + "s");
+
+        arrangement.save(new File(outputPath));
 
         // try (FileOutputStream fos = new FileOutputStream(new File(outputPath,
         // "metadata.properties"))) {
@@ -136,33 +141,30 @@ public class BVGraphToEdges {
         return x;
     }
 
-    static void splitFiles(File mergedFile, File outputDir, long chunkLen) throws IOException {
+    static void splitFiles(File mergedFile, File outputDir, Matrix arrangement) throws IOException {
         InputDifferenceStream input = new InputDifferenceStream(mergedFile);
         outputDir.mkdir();
         long writtenEdges = 0;
-        long currentChunk = 0;
 
-        OutputDifferenceStream output = new OutputDifferenceStream(
-                new File(outputDir, "part-" + currentChunk + ".bin"));
-
+        int nBlocks = arrangement.blocksPerSide * arrangement.blocksPerSide;
+        OutputDifferenceStream[] writers = new OutputDifferenceStream[nBlocks];
         try {
+            for (int i=0; i<nBlocks; i++) {
+                writers[i] = new OutputDifferenceStream(new File(outputDir, "part-" + i + ".bin"));
+            }
+
             while (true) {
                 long z = input.read();
-
-                if (writtenEdges % chunkLen == 0) {
-                    currentChunk++;
-                    output.close();
-                    output = new OutputDifferenceStream(new File(outputDir, "part-" + currentChunk + ".bin"));
-                }
-
-                output.write(z);
+                int[] xy = zorderToPair(z);
+                writers[arrangement.rowMajorBlock(xy[0], xy[1])].write(z);
                 writtenEdges++;
             }
         } catch (EOFException e) {
             // done
         } finally {
-            System.out.println("closing last chunk " + currentChunk);
-            output.close();
+            for (int i=0; i<nBlocks; i++) {
+                writers[i].close();
+            }
         }
         System.out.println("num edges written " + writtenEdges);
 
@@ -193,6 +195,15 @@ public class BVGraphToEdges {
             } else {
                 // Lower triangle
                 return block_y * this.blocksPerSide + block_x;
+            }
+        }
+
+        public void save(File output) throws IOException {
+            try (FileOutputStream fos = new FileOutputStream(new File(output, "arrangement.txt"))) {
+                Properties metadata = new Properties();
+                metadata.setProperty("blocks_per_side", Long.toString(this.blocksPerSide));
+                metadata.setProperty("elems_per_block", Long.toString(this.elemsPerBlock));
+                metadata.store(fos, "");
             }
         }
     }

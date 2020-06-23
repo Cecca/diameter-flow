@@ -527,9 +527,9 @@ impl Dataset {
     ) -> DistributedEdges {
         use timely::dataflow::operators::Input as TimelyInput;
 
-        let reader = std::fs::File::open(self.edges_directory().join("arrangement.bin"))
-            .expect("error opening arrangement file");
-        let arrangement: Matrix = bincode::deserialize_from(reader).unwrap();
+        let arr_path = self.edges_directory().join("arrangement.txt");
+        debug!("Reading arrangement from {:?}", arr_path);
+        let arrangement = Matrix::from_file(arr_path);
 
         let (mut input, probe, builder) = worker.dataflow::<usize, _, _>(|scope| {
             let (input, stream) = scope.new_input();
