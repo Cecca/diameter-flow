@@ -175,9 +175,16 @@ impl DistributedEdges {
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
 
-        let nodes_processors = Rc::clone(&self.nodes_processors);
-        let nodes: Vec<u32> = nodes_processors.keys().cloned().collect();
-        nodes.to_stream(scope).map(|u| (u, S::default()))
+        // let nodes_processors = Rc::clone(&self.nodes_processors);
+        // let nodes: Vec<u32> = nodes_processors.keys().cloned().collect();
+        // nodes.to_stream(scope).map(|u| (u, S::default()))
+
+        let peers = scope.peers();
+        let index = scope.index();
+        (0..self.edges.total_nodes())
+            .filter(move |v| *v as usize % peers == index)
+            .to_stream(scope)
+            .map(|u| (u, S::default()))
     }
 
     fn for_each_processor<F: FnMut(usize)>(&self, node: u32, mut action: F) {

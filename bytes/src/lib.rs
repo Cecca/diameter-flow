@@ -37,6 +37,10 @@ impl CompressedEdgesBlockSet {
         })
     }
 
+    pub fn total_nodes(&self) -> u32 {
+        self.arrangement.side_elements
+    }
+
     /// Iterates through the blocks responsible for a node
     pub fn node_blocks(&self, x: u32) -> impl Iterator<Item = u32> {
         self.arrangement.node_blocks(x)
@@ -203,6 +207,7 @@ impl CompressedEdges {
 pub struct Matrix {
     blocks_per_side: u32,
     elems_per_block: u32,
+    side_elements: u32,
 }
 
 impl Matrix {
@@ -211,6 +216,7 @@ impl Matrix {
         Self {
             blocks_per_side,
             elems_per_block,
+            side_elements,
         }
     }
 
@@ -218,6 +224,7 @@ impl Matrix {
         use std::fs::File;
         use std::io::{BufRead, BufReader, Read};
 
+        let mut side_elements = None;
         let mut elems_per_block = None;
         let mut blocks_per_side = None;
 
@@ -244,12 +251,22 @@ impl Matrix {
                         .expect("problem parsing value"),
                 );
             }
+            if key.starts_with("side_elements") {
+                side_elements.replace(
+                    tokens
+                        .next()
+                        .expect("problem getting value")
+                        .parse::<u32>()
+                        .expect("problem parsing value"),
+                );
+            }
         }
 
-        match (elems_per_block, blocks_per_side) {
-            (Some(elems_per_block), Some(blocks_per_side)) => Self {
+        match (elems_per_block, blocks_per_side, side_elements) {
+            (Some(elems_per_block), Some(blocks_per_side), Some(side_elements)) => Self {
                 elems_per_block,
                 blocks_per_side,
+                side_elements,
             },
             _ => panic!("badly formatted arrangement file"),
         }
@@ -260,8 +277,8 @@ impl Matrix {
         let mut f = File::create(path.as_ref()).expect("Couldn't create file");
         writeln!(
             f,
-            "elems_per_block={}\nblocks_per_side={}",
-            self.elems_per_block, self.blocks_per_side
+            "elems_per_block={}\nblocks_per_side={}\nside_elements={}",
+            self.elems_per_block, self.blocks_per_side, self.side_elements
         )
         .expect("Error writing properties");
     }

@@ -174,11 +174,13 @@ public class BVGraphToEdges {
     static class Matrix {
         int blocksPerSide;
         int elemsPerBlock;
+        int sideElements;
 
         Matrix(int blocksPerSide, int sideElements) {
             int elemsPerBlock = (int) Math.ceil((sideElements / (double) blocksPerSide));
             this.blocksPerSide = blocksPerSide;
             this.elemsPerBlock = elemsPerBlock;
+            this.sideElements = sideElements;
         }
 
         public int rowMajorBlock(int x, int y) {
@@ -201,6 +203,7 @@ public class BVGraphToEdges {
         public void save(File output) throws IOException {
             try (FileOutputStream fos = new FileOutputStream(new File(output, "arrangement.txt"))) {
                 Properties metadata = new Properties();
+                metadata.setProperty("side_elements", Long.toString(this.sideElements));
                 metadata.setProperty("blocks_per_side", Long.toString(this.blocksPerSide));
                 metadata.setProperty("elems_per_block", Long.toString(this.elemsPerBlock));
                 metadata.store(fos, "");
