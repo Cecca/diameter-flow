@@ -169,6 +169,34 @@ public class BVGraphToEdges {
         input.close();
     }
 
+    static class Matrix {
+        int blocksPerSide;
+        int elemsPerBlock;
+
+        Matrix(int blocksPerSide, int sideElements) {
+            int elemsPerBlock = (int) Math.ceil((sideElements / (double) blocksPerSide));
+            this.blocksPerSide = blocksPerSide;
+            this.elemsPerBlock = elemsPerBlock;
+        }
+
+        public int rowMajorBlock(int x, int y) {
+            // The index within a block
+            int inner_x = x % this.elemsPerBlock;
+            int inner_y = y % this.elemsPerBlock;
+            // The index of the (square) block
+            int block_x = x / this.elemsPerBlock;
+            int block_y = y / this.elemsPerBlock;
+
+            if (inner_x < inner_y) {
+                // Upper triangle
+                return block_x * this.blocksPerSide + block_y;
+            } else {
+                // Lower triangle
+                return block_y * this.blocksPerSide + block_x;
+            }
+        }
+    }
+
     static class OutputDifferenceStream {
         OutputBitStream stream;
         long last;
@@ -378,33 +406,6 @@ public class BVGraphToEdges {
         return cntDuplicates;
     }
 
-    // static class DataChunk implements Comparable<DataChunk> {
-    // private DataInputStream stream;
-    // private long top;
-
-    // DataChunk(File f) throws IOException, FileNotFoundException {
-    // this.stream = new DataInputStream(new BufferedInputStream(new
-    // FileInputStream(f)));
-    // this.top = stream.readLong();
-    // }
-
-    // boolean advance() throws IOException {
-    // if (this.stream.available() > 0) {
-    // this.top = this.stream.readLong();
-    // return true;
-    // } else {
-    // return false;
-    // }
-    // }
-
-    // public int compareTo(DataChunk other) {
-    // if (this.top < other.top) {
-    // return -1;
-    // } else {
-    // return 1;
-    // }
-    // }
-    // }
 
     static long blockEdge(int sqrtEdgesPerBlock, int src, int dst) {
         int cellI = src / sqrtEdgesPerBlock;

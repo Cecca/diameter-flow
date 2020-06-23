@@ -422,11 +422,11 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
         .collect();
 
     table.sort_by_cached_key(|tuple| (tuple.2, tuple.0.clone()));
-    info!(
+    println!(
         "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
         "name", "nodes", "edges", "minimum weight", "maximum weight"
     );
-    info!(
+    println!(
         "{}|{}|{}|{}|{}",
         "--------------------",
         "---------------",
@@ -435,7 +435,7 @@ fn list_datasets(datasets: &HashMap<String, Dataset>) {
         "---------------"
     );
     for (name, nodes, edges, minw, maxw) in table.into_iter() {
-        info!(
+        println!(
             "{:20}|{:>15}|{:>15}|{:>15}|{:>15}",
             name,
             nodes.map(|n| format!("{}", n)).unwrap_or(String::new()),
