@@ -37,8 +37,9 @@ impl CompressedEdgesBlockSet {
         })
     }
 
-    pub fn node_processors(&self, x: u32) -> impl Iterator<Item = u32> {
-        self.arrangement.node_processors(x)
+    /// Iterates through the blocks responsible for a node
+    pub fn node_blocks(&self, x: u32) -> impl Iterator<Item = u32> {
+        self.arrangement.node_blocks(x)
     }
 
     pub fn for_each<F: FnMut(u32, u32, u32)>(&self, mut action: F) {
@@ -266,7 +267,7 @@ impl Matrix {
     }
 
     /// Gets the processors that might have edges incident to a node
-    pub fn node_processors(&self, node: u32) -> impl Iterator<Item = u32> {
+    pub fn node_blocks(&self, node: u32) -> impl Iterator<Item = u32> {
         let block_idx = node / self.elems_per_block;
         let n_blocks = self.blocks_per_side;
         let mut row_idx = 0;

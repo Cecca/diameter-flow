@@ -15,6 +15,7 @@ use timely::ExchangeData;
 
 pub struct DistributedEdgesBuilder {
     edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
+    num_procs: usize,
     nodes_processors: Rc<RefCell<Option<HashMap<u32, Vec<usize>>>>>,
 }
 
@@ -103,6 +104,7 @@ impl DistributedEdgesBuilder {
         (
             Self {
                 edges,
+                num_procs: stream.scope().peers(),
                 nodes_processors,
             },
             probe,
@@ -126,24 +128,38 @@ impl DistributedEdgesBuilder {
         // }
         // info!("Distribution of destination sets {:#?}", histogram);
         debug!("Loaded edges: {} bytes", edges.byte_size());
-        DistributedEdges {
-            edges: Rc::new(edges),
-            nodes_processors: Rc::new(nodes_processors),
-        }
+        DistributedEdges::new(Rc::new(edges), self.num_procs, Rc::new(nodes_processors))
     }
 }
 
 /// A distributed static collection of edges that can be accessed by
 pub struct DistributedEdges {
     edges: Rc<CompressedEdgesBlockSet>,
+    num_procs: usize,
     nodes_processors: Rc<HashMap<u32, Vec<usize>>>,
+    procs_sent: RefCell<Vec<bool>>,
 }
 
 impl DistributedEdges {
+    fn new(
+        edges: Rc<CompressedEdgesBlockSet>,
+        num_procs: usize,
+        nodes_processors: Rc<HashMap<u32, Vec<usize>>>,
+    ) -> Self {
+        Self {
+            edges,
+            num_procs,
+            nodes_processors,
+            procs_sent: RefCell::new(vec![false; num_procs]),
+        }
+    }
+
     pub fn clone(obj: &Self) -> Self {
         Self {
             edges: Rc::clone(&obj.edges),
+            num_procs: obj.num_procs,
             nodes_processors: Rc::clone(&obj.nodes_processors),
+            procs_sent: obj.procs_sent.clone(),
         }
     }
 
@@ -165,13 +181,25 @@ impl DistributedEdges {
     }
 
     fn for_each_processor<F: FnMut(usize)>(&self, node: u32, mut action: F) {
-        for &p in self
-            .nodes_processors
-            .get(&node)
-            .expect("missing procesor for node")
-        {
-            action(p);
+        let mut procs_sent = self.procs_sent.borrow_mut();
+        for flag in procs_sent.iter_mut() {
+            *flag = false;
         }
+        for block in self.edges.node_blocks(node) {
+            let p = block as usize % self.num_procs;
+            if !procs_sent[p] {
+                action(p);
+                procs_sent[p] = true;
+            }
+        }
+
+        // for &p in self
+        //     .nodes_processors
+        //     .get(&node)
+        //     .expect("missing procesor for node")
+        // {
+        //     action(p);
+        // }
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
