@@ -16,7 +16,6 @@ use timely::ExchangeData;
 pub struct DistributedEdgesBuilder {
     edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
     num_procs: usize,
-    nodes_processors: Rc<RefCell<Option<HashMap<u32, Vec<usize>>>>>,
 }
 
 impl DistributedEdgesBuilder {
@@ -33,9 +32,6 @@ impl DistributedEdgesBuilder {
 
         let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
-
-        let nodes_ref = Rc::new(RefCell::new(None));
-        let nodes_processors = nodes_ref.clone();
 
         let worker_id = stream.scope().index();
         let mut paths_stash = Vec::new();
@@ -65,38 +61,8 @@ impl DistributedEdgesBuilder {
                                 .expect("problem loading blocks"),
                         );
                         debug!("Blocks loaded");
-
-                        // exchange the edges to build processor targets
-                        debug!("Get the nodes this processor is responsible for");
-                        let mut nodes = HashSet::new();
-                        edges_ref.borrow().iter().for_each(|edges| {
-                            edges.for_each(|u, v, _| {
-                                nodes.insert(u);
-                                nodes.insert(v);
-                            });
-                        });
-                        debug!("The edges on this processor touch {} nodes", nodes.len());
-                        output
-                            .session(&t)
-                            .give_iterator(nodes.into_iter().map(|u| (u, worker_id)));
+                        output.session(&t).give(());
                     });
-                },
-            )
-            .unary(
-                ExchangePact::new(|pair: &(u32, usize)| pair.0.into()),
-                "nodes_builder",
-                move |_, _| {
-                    move |input, output| {
-                        input.for_each(|t, data| {
-                            let data = data.replace(Vec::new());
-                            let mut opt = nodes_ref.borrow_mut();
-                            let map = opt.get_or_insert_with(HashMap::new);
-                            for (u, proc_id) in data {
-                                map.entry(u).or_insert_with(Vec::new).push(proc_id);
-                            }
-                            output.session(&t).give(());
-                        });
-                    }
                 },
             )
             .probe();
@@ -105,7 +71,6 @@ impl DistributedEdgesBuilder {
             Self {
                 edges,
                 num_procs: stream.scope().peers(),
-                nodes_processors,
             },
             probe,
         )
@@ -113,11 +78,6 @@ impl DistributedEdgesBuilder {
 
     pub fn build(self) -> DistributedEdges {
         let edges = self.edges.borrow_mut().take().expect("Missing edges!");
-        let nodes_processors = self
-            .nodes_processors
-            .borrow_mut()
-            .take()
-            .expect("Missing nodes processors");
         // let mut histogram = std::collections::BTreeMap::new();
         // for (_, procs) in nodes_processors.iter() {
         //     let len = procs.len();
@@ -128,7 +88,7 @@ impl DistributedEdgesBuilder {
         // }
         // info!("Distribution of destination sets {:#?}", histogram);
         debug!("Loaded edges: {} bytes", edges.byte_size());
-        DistributedEdges::new(Rc::new(edges), self.num_procs, Rc::new(nodes_processors))
+        DistributedEdges::new(Rc::new(edges), self.num_procs)
     }
 }
 
@@ -136,20 +96,14 @@ impl DistributedEdgesBuilder {
 pub struct DistributedEdges {
     edges: Rc<CompressedEdgesBlockSet>,
     num_procs: usize,
-    nodes_processors: Rc<HashMap<u32, Vec<usize>>>,
     procs_sent: RefCell<Vec<bool>>,
 }
 
 impl DistributedEdges {
-    fn new(
-        edges: Rc<CompressedEdgesBlockSet>,
-        num_procs: usize,
-        nodes_processors: Rc<HashMap<u32, Vec<usize>>>,
-    ) -> Self {
+    fn new(edges: Rc<CompressedEdgesBlockSet>, num_procs: usize) -> Self {
         Self {
             edges,
             num_procs,
-            nodes_processors,
             procs_sent: RefCell::new(vec![false; num_procs]),
         }
     }
@@ -158,7 +112,6 @@ impl DistributedEdges {
         Self {
             edges: Rc::clone(&obj.edges),
             num_procs: obj.num_procs,
-            nodes_processors: Rc::clone(&obj.nodes_processors),
             procs_sent: obj.procs_sent.clone(),
         }
     }
@@ -174,10 +127,6 @@ impl DistributedEdges {
     pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
         use timely::dataflow::operators::to_stream::ToStream;
         use timely::dataflow::operators::Map;
-
-        // let nodes_processors = Rc::clone(&self.nodes_processors);
-        // let nodes: Vec<u32> = nodes_processors.keys().cloned().collect();
-        // nodes.to_stream(scope).map(|u| (u, S::default()))
 
         let peers = scope.peers();
         let index = scope.index();
@@ -199,14 +148,6 @@ impl DistributedEdges {
                 procs_sent[p] = true;
             }
         }
-
-        // for &p in self
-        //     .nodes_processors
-        //     .get(&node)
-        //     .expect("missing procesor for node")
-        // {
-        //     action(p);
-        // }
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
