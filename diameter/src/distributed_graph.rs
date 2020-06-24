@@ -235,7 +235,7 @@ impl DistributedEdges {
 
         let scope = nodes.scope();
 
-        let message_batch = 4096;
+        let message_batch = 100_000;
 
         let l1 = nodes.scope().count_logger().expect("Missing logger");
         let l2 = l1.clone();
