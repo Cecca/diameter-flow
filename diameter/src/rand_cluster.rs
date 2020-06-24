@@ -549,7 +549,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                                 res
                             })
                             .max()
-                            .unwrap();
+                            .expect("called max on an empty collection");
                         if max_radius > diameter {
                             info!("Outputting max radius: {}!", max_radius);
                             output.session(&t).give(max_radius);

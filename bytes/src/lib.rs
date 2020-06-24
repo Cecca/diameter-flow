@@ -392,7 +392,7 @@ impl CompressedPairsWriter {
 
 impl Drop for CompressedPairsWriter {
     fn drop(&mut self) {
-        self.flush().unwrap();
+        self.flush().expect("problems flushing the compressed pairs writer");
     }
 }
 
@@ -475,6 +475,6 @@ impl CompressedTripletsWriter {
 
 impl Drop for CompressedTripletsWriter {
     fn drop(&mut self) {
-        self.flush().unwrap();
+        self.flush().expect("problems flushing the compressed triplets writer");
     }
 }
