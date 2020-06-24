@@ -8,6 +8,7 @@ use bitstream_io::*;
 use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[derive(Clone, Copy)]
 pub enum LoadType {
@@ -392,7 +393,8 @@ impl CompressedPairsWriter {
 
 impl Drop for CompressedPairsWriter {
     fn drop(&mut self) {
-        self.flush().expect("problems flushing the compressed pairs writer");
+        self.flush()
+            .expect("problems flushing the compressed pairs writer");
     }
 }
 
@@ -475,6 +477,7 @@ impl CompressedTripletsWriter {
 
 impl Drop for CompressedTripletsWriter {
     fn drop(&mut self) {
-        self.flush().expect("problems flushing the compressed triplets writer");
+        self.flush()
+            .expect("problems flushing the compressed triplets writer");
     }
 }

@@ -6,7 +6,7 @@ use timely::dataflow::channels::Bundle;
 use timely::progress::Timestamp;
 // use bytes::CompressedEdgesBlockSet;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 use timely::dataflow::Scope;
@@ -78,15 +78,6 @@ impl DistributedEdgesBuilder {
 
     pub fn build(self) -> DistributedEdges {
         let edges = self.edges.borrow_mut().take().expect("Missing edges!");
-        // let mut histogram = std::collections::BTreeMap::new();
-        // for (_, procs) in nodes_processors.iter() {
-        //     let len = procs.len();
-        //     histogram
-        //         .entry(len)
-        //         .and_modify(|c| *c += len)
-        //         .or_insert(len);
-        // }
-        // info!("Distribution of destination sets {:#?}", histogram);
         debug!("Loaded edges: {} bytes", edges.byte_size());
         DistributedEdges::new(Rc::new(edges), self.num_procs)
     }
@@ -242,6 +233,10 @@ impl DistributedEdges {
         use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
         use timely::dataflow::operators::*;
 
+        let scope = nodes.scope();
+
+        let message_batch = 4096;
+
         let l1 = nodes.scope().count_logger().expect("Missing logger");
         let l2 = l1.clone();
 
@@ -250,6 +245,7 @@ impl DistributedEdges {
         let mut msg_stash = HashMap::new();
         let edges = Self::clone(&self);
         let edges1 = Self::clone(&self);
+        let mut output_stash = HashMap::new();
 
         let worker_id = nodes.scope().index();
 
@@ -271,68 +267,86 @@ impl DistributedEdges {
                 }
             })
             // Propagate to the destination
-            .unary_notify(
+            .unary_frontier(
                 ExchangePact::new(|pair: &(usize, (u32, S))| pair.0 as u64),
                 "msg_propagate",
-                None,
-                move |input, output, notificator| {
-                    input.for_each(|t, data| {
-                        let data = data.replace(Vec::new());
-                        l1.log((
-                            CountEvent::load_state_exchange(t.time().clone()),
-                            data.len() as u64,
-                        ));
-                        stash
-                            .entry(t.time().clone())
-                            .or_insert_with(HashMap::new)
-                            .extend(data.into_iter().map(|pair| pair.1));
-                        notificator.notify_at(t.retain());
-                    });
-                    notificator.for_each(|t, _, _| {
-                        if let Some(states) = stash.remove(&t) {
-                            let n_states = states.len();
-                            debug!("Trying to allocate stats map for {} states", n_states);
-                            let states = ArrayMap::new(states);
-                            debug!("Allocated states vector for {} states", states.len());
-                            let mut output_messages = MessageBuffer::with_capacity(
-                                4_000_000,
-                                aggregate,
-                                output.session(&t),
-                            );
-                            let timer = std::time::Instant::now();
-                            let mut cnt = 0;
-                            let mut cnt_out = 0;
+                move |_, info| {
+                    use timely::scheduling::Scheduler;
+                    let activator = scope.activator_for(&info.address[..]);
+                    let mut notificator = FrontierNotificator::new();
+                    move |input, output| {
+                        // Collect the input information
+                        input.for_each(|t, data| {
+                            let data = data.replace(Vec::new());
+                            l1.log((
+                                CountEvent::load_state_exchange(t.time().clone()),
+                                data.len() as u64,
+                            ));
+                            stash
+                                .entry(t.time().clone())
+                                .or_insert_with(HashMap::new)
+                                .extend(data.into_iter().map(|pair| pair.1));
+                            notificator.notify_at(t.retain());
+                        });
 
-                            // Accumulate messages going over the edges
-                            // This is the hot loop, where most of the time is spent
-                            edges.for_each(|u, v, w| {
-                                cnt += 1;
-                                if let Some(state_u) = states.get(u) {
-                                    if let Some(msg) = message(t.time().clone(), state_u, w) {
-                                        cnt_out += 1;
-                                        output_messages.push(v, msg);
+                        // Build the output messages
+                        notificator.for_each(&[input.frontier()], |t, _| {
+                            if let Some(states) = stash.remove(&t) {
+                                let n_states = states.len();
+                                debug!("Trying to allocate stats map for {} states", n_states);
+                                let states = ArrayMap::new(states);
+                                debug!("Allocated states vector for {} states", states.len());
+                                let mut output_messages = BTreeMap::new();
+                                let timer = std::time::Instant::now();
+                                let mut cnt = 0;
+
+                                // Accumulate messages going over the edges
+                                // This is the hot loop, where most of the time is spent
+                                edges.for_each(|u, v, w| {
+                                    cnt += 1;
+                                    if let Some(state_u) = states.get(u) {
+                                        if let Some(msg) = message(t.time().clone(), state_u, w) {
+                                            // output_messages.push(v, msg);
+                                            output_messages.entry(v).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
+                                        }
                                     }
-                                }
-                                if let Some(state_v) = states.get(v) {
-                                    if let Some(msg) = message(t.time().clone(), state_v, w) {
-                                        cnt_out += 1;
-                                        output_messages.push(u, msg);
+                                    if let Some(state_v) = states.get(v) {
+                                        if let Some(msg) = message(t.time().clone(), state_v, w) {
+                                            // output_messages.push(u, msg);
+                                            output_messages.entry(u).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
+                                        }
                                     }
-                                }
-                            });
-                            let elapsed = timer.elapsed();
-                            let throughput = cnt as f64 / elapsed.as_secs_f64();
-                            debug!(
-                                "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
-                                worker_id,
-                                cnt,
-                                elapsed,
-                                throughput,
-                                n_states,
-                                cnt_out
-                            );
+                                });
+                                let elapsed = timer.elapsed();
+                                let throughput = cnt as f64 / elapsed.as_secs_f64();
+                                debug!(
+                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
+                                    worker_id,
+                                    cnt,
+                                    elapsed,
+                                    throughput,
+                                    n_states,
+                                    output_messages.len()
+                                );
+
+                                output_stash.insert(t, output_messages.into_iter().fuse().peekable());
+                            }
+                        });
+
+                        // Send out the output messages a few at a time
+                        for (t, iter) in output_stash.iter_mut() {
+                            debug!("Outputting {} messages (out of at least {})", message_batch, iter.size_hint().0);
+                            output.session(t).give_iterator(iter.take(message_batch));
                         }
-                    });
+
+                        // Clean exhausted iterators
+                        output_stash.retain(|_t, iterator| iterator.peek().is_some());
+
+                        // Re-schedule the operator, if needed
+                        if !output_stash.is_empty() {
+                            activator.activate();
+                        }
+                    }
                 },
             )
             // Take the messages to the destination and aggregate them
@@ -345,6 +359,7 @@ impl DistributedEdges {
                 move |message_input, node_input, output, notificator| {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
+                        debug!("Got {} messages", data.len());
                         l2.log((
                             CountEvent::load_message_exchange(t.time().clone()),
                             data.len() as u64,
@@ -396,6 +411,7 @@ impl DistributedEdges {
 }
 
 /// Buffers messages and aggregates ones with duplicate keys
+#[deprecated = "better implementation available"]
 struct MessageBuffer<'a, T, M, F, P>
 where
     T: Timestamp,
