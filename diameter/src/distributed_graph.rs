@@ -124,7 +124,6 @@ pub struct DistributedEdges {
     edges: Rc<CompressedEdgesBlockSet>,
     procs_neighs: Rc<HashMap<u32, Vec<usize>>>,
     num_procs: usize,
-    procs_sent: RefCell<Vec<bool>>,
 }
 
 impl DistributedEdges {
@@ -137,7 +136,6 @@ impl DistributedEdges {
             edges,
             procs_neighs,
             num_procs,
-            procs_sent: RefCell::new(vec![false; num_procs]),
         }
     }
 
@@ -146,7 +144,6 @@ impl DistributedEdges {
             edges: Rc::clone(&obj.edges),
             procs_neighs: Rc::clone(&obj.procs_neighs),
             num_procs: obj.num_procs,
-            procs_sent: obj.procs_sent.clone(),
         }
     }
 
@@ -171,25 +168,10 @@ impl DistributedEdges {
     }
 
     fn for_each_processor<F: FnMut(usize)>(&self, node: u32, mut action: F) {
-        let mut cnt = 0;
         for &p in self.procs_neighs[&node].iter() {
             action(p);
-            cnt += 1;
         }
-        // let mut procs_sent = self.procs_sent.borrow_mut();
-        // for flag in procs_sent.iter_mut() {
-        //     *flag = false;
-        // }
-        // let mut cnt = 0;
-        // for block in self.edges.node_blocks(node) {
-        //     let p = block as usize % self.num_procs;
-        //     if !procs_sent[p] {
-        //         action(p);
-        //         procs_sent[p] = true;
-        //         cnt += 1;
-        //     }
-        // }
-        debug!("Sent to {} processors", cnt);
+        // debug!("Sent to {} processors", cnt);
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
@@ -286,7 +268,7 @@ impl DistributedEdges {
 
         let scope = nodes.scope();
 
-        let message_batch = 1024;
+        let message_batch = 8192;
 
         let l1 = nodes.scope().count_logger().expect("Missing logger");
         let l2 = l1.clone();
@@ -344,9 +326,9 @@ impl DistributedEdges {
                         notificator.for_each(&[input.frontier()], |t, _| {
                             if let Some(states) = stash.remove(&t) {
                                 let n_states = states.len();
-                                debug!("Trying to allocate stats map for {} states", n_states);
+                                // debug!("Trying to allocate stats map for {} states", n_states);
                                 let states = ArrayMap::new(states);
-                                debug!("Allocated states vector for {} states", states.len());
+                                // debug!("Allocated states vector for {} states", states.len());
                                 let mut output_messages = BTreeMap::new();
                                 let timer = std::time::Instant::now();
                                 let mut cnt = 0;
@@ -391,7 +373,7 @@ impl DistributedEdges {
 
                         // Send out the output messages a few at a time
                         for (t, iter) in output_stash.iter_mut() {
-                            debug!("Outputting {} messages (out of at least {})", message_batch, iter.size_hint().0);
+                            // debug!("Outputting {} messages (out of at least {})", message_batch, iter.size_hint().0);
                             output.session(t).give_iterator(iter.take(message_batch));
                         }
 
@@ -415,7 +397,7 @@ impl DistributedEdges {
                 move |message_input, node_input, output, notificator| {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
-                        debug!("Got {} messages", data.len());
+                        // debug!("Got {} messages", data.len());
                         l2.log((
                             CountEvent::load_message_exchange(t.time().clone()),
                             data.len() as u64,
