@@ -132,13 +132,16 @@ impl DistributedEdges {
         for flag in procs_sent.iter_mut() {
             *flag = false;
         }
+        let mut cnt = 0;
         for block in self.edges.node_blocks(node) {
             let p = block as usize % self.num_procs;
             if !procs_sent[p] {
                 action(p);
                 procs_sent[p] = true;
+                cnt += 1;
             }
         }
+        debug!("Sent to {} processors", cnt);
     }
 
     /// Brings together the states of the endpoints of each edge with the edge itself
@@ -235,7 +238,7 @@ impl DistributedEdges {
 
         let scope = nodes.scope();
 
-        let message_batch = 100_000;
+        let message_batch = 1024;
 
         let l1 = nodes.scope().count_logger().expect("Missing logger");
         let l2 = l1.clone();
