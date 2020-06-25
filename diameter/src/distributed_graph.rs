@@ -15,6 +15,7 @@ use timely::ExchangeData;
 
 pub struct DistributedEdgesBuilder {
     edges: Rc<RefCell<Option<CompressedEdgesBlockSet>>>,
+    proc_neighs: Rc<RefCell<HashMap<u32, Vec<usize>>>>,
     num_procs: usize,
 }
 
@@ -32,6 +33,8 @@ impl DistributedEdgesBuilder {
 
         let edges_ref = Rc::new(RefCell::new(None));
         let edges = edges_ref.clone();
+        let procs_ref = Rc::new(RefCell::new(HashMap::new()));
+        let proc_neighs = procs_ref.clone();
 
         let worker_id = stream.scope().index();
         let mut paths_stash = Vec::new();
@@ -61,6 +64,37 @@ impl DistributedEdgesBuilder {
                                 .expect("problem loading blocks"),
                         );
                         debug!("Blocks loaded");
+
+                        let mut procs = HashSet::new();
+                        edges_ref.borrow().as_ref().unwrap().for_each(|u, v, _w| {
+                            procs.insert(u);
+                            procs.insert(v);
+                        });
+
+                        output
+                            .session(&t)
+                            .give_iterator(procs.into_iter().map(|x| (x, worker_id)));
+                    });
+                },
+            )
+            .unary_notify(
+                ExchangePact::new(|pair: &(u32, usize)| pair.0 as u64),
+                "neighborhoods builder",
+                None,
+                move |input, output, notificator| {
+                    input.for_each(|t, data| {
+                        let data = data.replace(Vec::new());
+                        for (u, proc) in data.into_iter() {
+                            procs_ref
+                                .borrow_mut()
+                                .entry(u)
+                                .or_insert_with(Vec::new)
+                                .push(proc)
+                        }
+                        notificator.notify_at(t.retain());
+                    });
+
+                    notificator.for_each(|t, _, _| {
                         output.session(&t).give(());
                     });
                 },
@@ -70,6 +104,7 @@ impl DistributedEdgesBuilder {
         (
             Self {
                 edges,
+                proc_neighs,
                 num_procs: stream.scope().peers(),
             },
             probe,
@@ -78,22 +113,29 @@ impl DistributedEdgesBuilder {
 
     pub fn build(self) -> DistributedEdges {
         let edges = self.edges.borrow_mut().take().expect("Missing edges!");
+        let procs_neighs = self.proc_neighs.replace(HashMap::new());
         debug!("Loaded edges: {} bytes", edges.byte_size());
-        DistributedEdges::new(Rc::new(edges), self.num_procs)
+        DistributedEdges::new(Rc::new(edges), Rc::new(procs_neighs), self.num_procs)
     }
 }
 
 /// A distributed static collection of edges that can be accessed by
 pub struct DistributedEdges {
     edges: Rc<CompressedEdgesBlockSet>,
+    procs_neighs: Rc<HashMap<u32, Vec<usize>>>,
     num_procs: usize,
     procs_sent: RefCell<Vec<bool>>,
 }
 
 impl DistributedEdges {
-    fn new(edges: Rc<CompressedEdgesBlockSet>, num_procs: usize) -> Self {
+    fn new(
+        edges: Rc<CompressedEdgesBlockSet>,
+        procs_neighs: Rc<HashMap<u32, Vec<usize>>>,
+        num_procs: usize,
+    ) -> Self {
         Self {
             edges,
+            procs_neighs,
             num_procs,
             procs_sent: RefCell::new(vec![false; num_procs]),
         }
@@ -102,6 +144,7 @@ impl DistributedEdges {
     pub fn clone(obj: &Self) -> Self {
         Self {
             edges: Rc::clone(&obj.edges),
+            procs_neighs: Rc::clone(&obj.procs_neighs),
             num_procs: obj.num_procs,
             procs_sent: obj.procs_sent.clone(),
         }
@@ -128,19 +171,24 @@ impl DistributedEdges {
     }
 
     fn for_each_processor<F: FnMut(usize)>(&self, node: u32, mut action: F) {
-        let mut procs_sent = self.procs_sent.borrow_mut();
-        for flag in procs_sent.iter_mut() {
-            *flag = false;
-        }
         let mut cnt = 0;
-        for block in self.edges.node_blocks(node) {
-            let p = block as usize % self.num_procs;
-            if !procs_sent[p] {
-                action(p);
-                procs_sent[p] = true;
-                cnt += 1;
-            }
+        for &p in self.procs_neighs[&node].iter() {
+            action(p);
+            cnt += 1;
         }
+        // let mut procs_sent = self.procs_sent.borrow_mut();
+        // for flag in procs_sent.iter_mut() {
+        //     *flag = false;
+        // }
+        // let mut cnt = 0;
+        // for block in self.edges.node_blocks(node) {
+        //     let p = block as usize % self.num_procs;
+        //     if !procs_sent[p] {
+        //         action(p);
+        //         procs_sent[p] = true;
+        //         cnt += 1;
+        //     }
+        // }
         debug!("Sent to {} processors", cnt);
     }
 
@@ -309,15 +357,15 @@ impl DistributedEdges {
                                 // This is the hot loop, where most of the time is spent
                                 edges.for_each(|u, v, w| {
                                     cnt += 1;
-                                    touched.insert(u);
-                                    touched.insert(v);
                                     if let Some(state_u) = states.get(u) {
+                                        touched.insert(u);
                                         if let Some(msg) = message(t.time().clone(), state_u, w) {
                                             // output_messages.push(v, msg);
                                             output_messages.entry(v).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
                                         }
                                     }
                                     if let Some(state_v) = states.get(v) {
+                                        touched.insert(v);
                                         if let Some(msg) = message(t.time().clone(), state_v, w) {
                                             // output_messages.push(u, msg);
                                             output_messages.entry(u).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
@@ -327,14 +375,14 @@ impl DistributedEdges {
                                 let elapsed = timer.elapsed();
                                 let throughput = cnt as f64 / elapsed.as_secs_f64();
                                 debug!(
-                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. ({} actually touched by edges)",
+                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. ({:.2}% actually touched by edges)",
                                     worker_id,
                                     cnt,
                                     elapsed,
                                     throughput,
                                     n_states,
                                     output_messages.len(),
-                                    touched.len()
+                                    (touched.len() as f64 / n_states as f64) * 100.0
                                 );
 
                                 output_stash.insert(t, output_messages.into_iter().fuse().peekable());
