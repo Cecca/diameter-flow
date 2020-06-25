@@ -303,10 +303,14 @@ impl DistributedEdges {
                                 let timer = std::time::Instant::now();
                                 let mut cnt = 0;
 
+                                let mut touched = std::collections::BTreeSet::new();
+
                                 // Accumulate messages going over the edges
                                 // This is the hot loop, where most of the time is spent
                                 edges.for_each(|u, v, w| {
                                     cnt += 1;
+                                    touched.insert(u);
+                                    touched.insert(v);
                                     if let Some(state_u) = states.get(u) {
                                         if let Some(msg) = message(t.time().clone(), state_u, w) {
                                             // output_messages.push(v, msg);
@@ -323,13 +327,14 @@ impl DistributedEdges {
                                 let elapsed = timer.elapsed();
                                 let throughput = cnt as f64 / elapsed.as_secs_f64();
                                 debug!(
-                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
+                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. ({} actually touched by edges)",
                                     worker_id,
                                     cnt,
                                     elapsed,
                                     throughput,
                                     n_states,
-                                    output_messages.len()
+                                    output_messages.len(),
+                                    touched.len()
                                 );
 
                                 output_stash.insert(t, output_messages.into_iter().fuse().peekable());
