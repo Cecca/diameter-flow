@@ -333,21 +333,17 @@ impl DistributedEdges {
                                 let timer = std::time::Instant::now();
                                 let mut cnt = 0;
 
-                                let mut touched = std::collections::BTreeSet::new();
-
                                 // Accumulate messages going over the edges
                                 // This is the hot loop, where most of the time is spent
                                 edges.for_each(|u, v, w| {
                                     cnt += 1;
                                     if let Some(state_u) = states.get(u) {
-                                        touched.insert(u);
                                         if let Some(msg) = message(t.time().clone(), state_u, w) {
                                             // output_messages.push(v, msg);
                                             output_messages.entry(v).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
                                         }
                                     }
                                     if let Some(state_v) = states.get(v) {
-                                        touched.insert(v);
                                         if let Some(msg) = message(t.time().clone(), state_v, w) {
                                             // output_messages.push(u, msg);
                                             output_messages.entry(u).and_modify(|cur| *cur = aggregate(cur, &msg)).or_insert(msg);
@@ -357,14 +353,13 @@ impl DistributedEdges {
                                 let elapsed = timer.elapsed();
                                 let throughput = cnt as f64 / elapsed.as_secs_f64();
                                 debug!(
-                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages. ({:.2}% actually touched by edges)",
+                                    "[{}] {} edges traversed in {:.2?} ({:.3?} edges/sec) with {} node states, and {} output messages.",
                                     worker_id,
                                     cnt,
                                     elapsed,
                                     throughput,
                                     n_states,
                                     output_messages.len(),
-                                    (touched.len() as f64 / n_states as f64) * 100.0
                                 );
 
                                 output_stash.insert(t, output_messages.into_iter().fuse().peekable());
