@@ -2,9 +2,10 @@ con <- db_connection()
 
 plan <- drake_plan(
     main_data = table_main(con, file_in("diameter-results.sqlite")) %>%
-        select(-hosts, everything()) %>%
         collect() %>%
-        filter(!(dataset %in% c("sk-2005"))) %>%
+        filter(hosts == "eridano11.fast:10000__eridano12.fast:10000__eridano13.fast:10000__eridano14.fast:10000__eridano15.fast:10000__eridano16.fast:10000__eridano17.fast:10000__eridano18.fast:10000__eridano19.fast:10000__eridano21.fast:10000__eridano22.fast:10000__eridano23.fast:10000__eridano25.fast:10000") %>%
+        select(-hosts, everything()) %>%
+        filter(!(dataset %in% c("sk-2005", "USA-E"))) %>%
         mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
                                   as.integer(2 * diameter),
                                   diameter)) %>%

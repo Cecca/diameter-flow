@@ -1,3 +1,5 @@
+DATE=`date +%Y-%m-%d.%H.%m`
+
 .PHONY: default
 default: build-java test-rust
 
@@ -56,3 +58,8 @@ java/dsiutils-2.6.2.jar: java/webgraph-deps.tar.gz
 analysis:
 	R -e "drake::r_make()"
 	cp export/* ~/Dropbox/Lavoro/Diameter/Algorithms-MDPI/include
+
+.PHONY: sync
+sync:
+	cp diameter-results.sqlite diameter-results.sqlite.bak.${DATE}
+	rsync --progress eridano11:diameter-results.sqlite .

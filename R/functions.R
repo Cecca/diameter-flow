@@ -38,6 +38,17 @@ scale_color_category10 <- function() {
     )
 }
 
+scale_color_algorithm <- function() {
+    scale_color_manual(
+        values = c(
+            "Bfs" = "#1f77b4",
+            "HyperBall" = "#ff7f0e",
+            "RandCluster" = "#2ca02c",
+            "DeltaStepping" = "#d62728"
+        )
+    )
+}
+
 add_graph_type <- function(data) {
     data %>%
         mutate(graph_type = case_when(
@@ -122,7 +133,7 @@ static_diam_vs_time <- function(to_plot) {
             geom_point(aes(x = diameter, y = total_time, color = algorithm)) +
             facet_wrap(vars(dataset), scales = "free",
                     ncol = 4) +
-            scale_color_category10() +
+            scale_color_algorithm() +
             # scale_y_log10() +
             labs(x = "diameter",
                 y = "total time (s)") +
@@ -143,9 +154,10 @@ static_param_dependency_time <- function(to_plot) {
     to_plot <- to_plot %>%
         filter(algorithm == "RandCluster") %>%
             separate(parameters, into = c("radius", "base"), convert = TRUE) %>%
+            filter(base == 2) %>%
             mutate(total_time = total_time_ms / 1000)
 
-    ggplot(to_plot, aes(x = radius, y = total_time, color = factor(base))) +
+    ggplot(to_plot, aes(x = radius, y = total_time)) +
         stat_summary() +
         geom_line(stat = "summary") +
         facet_wrap(vars(dataset), scales = "free", ncol = 4) +
@@ -162,10 +174,11 @@ static_param_dependency_diam <- function(to_plot) {
         filter(algorithm == "RandCluster") %>%
             separate(parameters, into = c("radius", "base"), convert = TRUE) %>%
             mutate(total_time = total_time_ms / 1000) %>%
+        filter(base == 2) %>%
         group_by(dataset, radius, base) %>%
         summarise(diameter = mean(diameter))
 
-    ggplot(to_plot, aes(x = radius, y = diameter, color = factor(base))) +
+    ggplot(to_plot, aes(x = radius, y = diameter)) +
         geom_point() +
         geom_line() +
         facet_wrap(vars(dataset), scales = "free", ncol = 4) +
@@ -180,12 +193,12 @@ static_param_dependency_diam <- function(to_plot) {
 static_auxiliary_graph_size <- function(to_plot) {
     to_plot <- to_plot %>%
         mutate(fraction = centers / num_nodes) %>%
+        filter(base == 2) %>%
         group_by(dataset, radius, base) %>%
         summarise(fraction = mean(fraction))
 
     ggplot(to_plot, aes(x = radius,
-                        y = fraction,
-                        color = factor(base))) +
+                        y = fraction)) +
         geom_point() +
         geom_line() +
         facet_wrap(vars(dataset), scales = "free", ncol = 4) +
