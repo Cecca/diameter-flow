@@ -48,6 +48,50 @@ function run_test() {
     done
 }
 
+function run_social() {
+    for SEED in 112985 246134 346235 2356
+    do
+    for DATASET in livejournal friendster
+    do
+        # BFS
+        $BIN \
+        --ddir /mnt/ssd/graphs \
+        --hosts ~/working_hosts \
+        --threads 4 \
+        --seed $SEED \
+        "bfs" \
+        $DATASET
+
+        # Hyperball
+        for PARAM in 4 5
+        do
+        $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "hyperball($PARAM)" \
+            $DATASET
+        done
+
+        # Rand cluster
+        for PARAM in 1 2 4 8 16 32
+        do
+            for BASE in 2
+            do
+                $BIN \
+                    --ddir /mnt/ssd/graphs \
+                    --hosts ~/working_hosts \
+                    --threads 4 \
+                    --seed $SEED \
+                    "rand-cluster($PARAM,$BASE)" \
+                    $DATASET
+            done
+        done
+    done
+    done
+}
+
 function run_web() {
     for SEED in 112985 246134 346235 2356
     do
@@ -263,6 +307,9 @@ case $1 in
     ;;
     weighted)
         run_weighted
+    ;;
+    social)
+        run_social
     ;;
     web)
         run_web
