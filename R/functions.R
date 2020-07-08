@@ -38,6 +38,15 @@ scale_color_category10 <- function() {
     )
 }
 
+add_graph_type <- function(data) {
+    data %>%
+        mutate(graph_type = case_when(
+            (dataset %in% c("livejournal", "friendster")) ~ "social",
+            (dataset %in% c("sk-2005", "uk-2014-host-lcc", "uk-2005-lcc", "sk-2005-lcc")) ~ "web",
+            (dataset %in% c("USA-E", "USA-W", "USA-CTR", "USA")) ~ "roads"
+        ))
+}
+
 do_plot_diam_vs_time_interactive <- function(to_plot) {
     bounds <- to_plot %>%
         filter(algorithm %in% c("Bfs", "DeltaStepping")) %>%
@@ -85,56 +94,49 @@ do_plot_diam_vs_time_interactive <- function(to_plot) {
 }
 
 static_diam_vs_time <- function(to_plot) {
-    # lower_bounds <- to_plot %>%
-    #     filter(algorithm != "RandCluster") %>%
-    #     mutate(diameter_lower = if_else(algorithm == "HyperBall",
-    #                                     as.integer(diameter),
-    #                                     as.integer(diameter / 2))) %>%
-    #     group_by(dataset) %>%
-    #     summarise(diameter_lower = max(diameter_lower))
-
-    # upper_bounds <- to_plot %>%
-    #     filter(algorithm != "HyperBall") %>%
-    #     filter(algorithm != "RandCluster") %>%
-    #     group_by(dataset) %>%
-    #     summarise(diameter_upper = min(diameter))
-
-    # bounds <- inner_join(lower_bounds, upper_bounds)
-    # print(bounds)
-
-    bounds <- to_plot %>%
-        filter(algorithm %in% c("Bfs", "DeltaStepping")) %>%
-        group_by(dataset) %>%
-        summarise(
-            diameter_lower = max(diameter / 2),
-            diameter_upper = min(diameter)
-        )
 
     to_plot <- to_plot %>%
         mutate(total_time = total_time_ms / 1000) %>%
-        group_by(dataset, algorithm, parameters) %>%
+        group_by(graph_type, dataset, algorithm, parameters) %>%
         summarise(
             total_time = mean(total_time),
             diameter = mean(diameter)
         )
 
-    ggplot(to_plot, aes()) +
-        geom_rect(mapping = aes(xmin = diameter_lower,
-                                xmax = diameter_upper,
-                                ymin = 0,
-                                ymax = Inf),
-                  data = bounds,
-                  alpha = 0.6,
-                  fill = "lightgray") +
-        geom_point(aes(x = diameter, y = total_time, color = algorithm)) +
-        facet_wrap(vars(dataset), scales = "free",
-                   ncol = 4) +
-        scale_color_category10() +
-        scale_y_log10() +
-        labs(x = "diameter",
-             y = "total time (s)") +
-        theme_bw() +
-        theme(legend.position = "top")
+    subplot <- function (data) {
+        bounds <- data %>%
+            filter(algorithm %in% c("Bfs", "DeltaStepping")) %>%
+            group_by(graph_type, dataset) %>%
+            summarise(
+                diameter_lower = max(diameter / 2),
+                diameter_upper = min(diameter)
+            )
+        ggplot(data, aes()) +
+            geom_rect(mapping = aes(xmin = diameter_lower,
+                                    xmax = diameter_upper,
+                                    ymin = 0,
+                                    ymax = Inf),
+                    data = bounds,
+                    alpha = 0.6,
+                    fill = "lightgray") +
+            geom_point(aes(x = diameter, y = total_time, color = algorithm)) +
+            facet_wrap(vars(dataset), scales = "free",
+                    ncol = 4) +
+            scale_color_category10() +
+            # scale_y_log10() +
+            labs(x = "diameter",
+                y = "total time (s)") +
+            theme_bw() +
+            theme(legend.position = "top")
+    }
+
+    plot_grid(
+        to_plot %>% filter(graph_type == "web") %>% subplot(),
+        to_plot %>% filter(graph_type == "social") %>% subplot(),
+        to_plot %>% filter(graph_type == "roads") %>% subplot(),
+        ncol = 1,
+        labels = c("Web", "Social", "Roads")
+    )
 }
 
 static_param_dependency_time <- function(to_plot) {

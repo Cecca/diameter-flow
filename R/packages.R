@@ -6,4 +6,5 @@ suppressPackageStartupMessages({
     library(DBI)
     library(knitr)
     library(kableExtra)
+    library(cowplot)
 })

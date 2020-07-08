@@ -4,9 +4,11 @@ plan <- drake_plan(
     main_data = table_main(con, file_in("diameter-results.sqlite")) %>%
         select(-hosts, everything()) %>%
         collect() %>%
+        filter(!(dataset %in% c("sk-2005"))) %>%
         mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
                                   as.integer(2 * diameter),
-                                  diameter)),
+                                  diameter)) %>%
+        add_graph_type(),
 
     data_info_table = semi_join(data_info, main_data) %>%
         arrange(max_weight, num_edges),
@@ -62,26 +64,11 @@ plan <- drake_plan(
     ,
 
     # Plots
-    plot_diam_vs_time_interactive =
-        do_plot_diam_vs_time_interactive(main_data),
-
     plot_static_diam_vs_time =
         static_diam_vs_time((main_data)) %>%
         ggsave(filename = file_out("export/diam_vs_time.png"),
                width = 8,
-               height = 4),
-
-    plot_centers_interactive = vl_chart(autosize = "fit") %>%
-        vl_add_data(values = centers_data) %>%
-        vl_mark_point(tooltip = T) %>%
-        vl_mark_line(tooltip = F) %>%
-        vl_encode_x(field = "iteration", type = "quantitative") %>%
-        vl_encode_y(field = "Centers", type = "quantitative") %>%
-        vl_encode_color(field = "radius", type = "nominal") %>%
-        vl_facet_row(field = "base", type = "nominal") %>%
-        vl_facet_column(field = "dataset", type = "nominal") %>%
-        vl_resolve_scale_y("independent")
-    ,
+               height = 8),
 
     plot_static_param_dependency_time =
         static_param_dependency_time(main_data) %>%
@@ -100,21 +87,6 @@ plan <- drake_plan(
         ggsave(filename = file_out("export/dep_size.png"),
                width = 8,
                height = 4),
-
-    plot_uncovered_interactive = vl_chart(autosize = "fit") %>%
-        vl_add_data(values = centers_data) %>%
-        vl_mark_point(tooltip = T) %>%
-        vl_mark_line(tooltip = F) %>%
-        vl_encode_x(field = "iteration", type = "quantitative") %>%
-        vl_encode_y(field = "Uncovered", type = "quantitative") %>%
-        vl_encode_color(field = "radius", type = "nominal") %>%
-        vl_facet_row(field = "base", type = "nominal") %>%
-        vl_facet_column(field = "dataset", type = "nominal") %>%
-        vl_resolve_scale_y("independent") %>%
-        vl_scale_y(type = "log") %>%
-        vl_add_interval_selection(selection_name = "zoom",
-                                  bind = "scales", type = "interval")
-    ,
 
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),
