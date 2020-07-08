@@ -70,24 +70,28 @@ plan <- drake_plan(
         ggsave(filename = file_out("export/diam_vs_time.png"),
                width = 8,
                height = 8),
+    plot_interactive_diam_vs_time = girafe(ggobj = static_diam_vs_time((main_data)), width_svg=8, height_svg=8),
 
     plot_static_param_dependency_time =
         static_param_dependency_time(main_data) %>%
         ggsave(filename = file_out("export/dep_time.png"),
                width = 8,
                height = 4),
+    # plot_interactive_param_dependency_time = girafe(p = static_param_dependency_time(main_data)),
 
     plot_static_param_dependency_diam =
         static_param_dependency_diam(main_data) %>%
         ggsave(filename = file_out("export/dep_diam.png"),
                width = 8,
                height = 4),
+    # plot_interactive_param_dependency_diam = girafe(ggobj = static_param_dependency_diam(main_data)),
 
     plot_static_auxiliary_graph_size =
         static_auxiliary_graph_size(data_auxiliary_graph_size) %>%
         ggsave(filename = file_out("export/dep_size.png"),
                width = 8,
                height = 4),
+    # plot_interactive_auxiliary_graph_size = girafe(ggobj = static_auxiliary_graph_size(data_auxiliary_graph_size)),
 
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),

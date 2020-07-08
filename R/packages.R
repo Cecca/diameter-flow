@@ -7,5 +7,5 @@ suppressPackageStartupMessages({
     library(knitr)
     library(kableExtra)
     library(cowplot)
-    library(plotly)
+    library(ggiraph)
 })

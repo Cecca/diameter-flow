@@ -58,54 +58,7 @@ add_graph_type <- function(data) {
         ))
 }
 
-do_plot_diam_vs_time_interactive <- function(to_plot) {
-    bounds <- to_plot %>%
-        filter(algorithm %in% c("Bfs", "DeltaStepping")) %>%
-        group_by(dataset) %>%
-        mutate(
-            diameter_lower = max(diameter),
-            diameter_upper = min(2 * diameter)
-        )
-
-    bands <- function() {
-        vl_chart() %>%
-        vl_filter(filter = "datum.algorithm == 'Bfs' | datum.algorithm == 'DeltaStepping'") %>%
-        vl_calculate(calculate = "datum.diameter/2", as="diameter2") %>%
-        vl_mark_rect(opacity = 0.4, color = "lightgray") %>%
-        vl_encode_x(field = "diameter", type = "quantitative",
-                    aggregate = "min") %>%
-        vl_encode_x2(field = "diameter2",
-                     aggregate = "max")
-    }
-
-
-    scatter <- function() {
-        vl_chart()  %>%
-        vl_mark_point(tooltip = TRUE,
-                      filled = TRUE) %>%
-        vl_encode_x(field = "diameter",
-                    aggregate = "mean",
-                    type = "quantitative") %>%
-        vl_encode_y(field = "total_time_ms",
-                    aggregate = "mean",
-                    type = "quantitative") %>%
-        vl_scale_y(type = "log") %>%
-        vl_encode_detail(field = "parameters",
-                         type = "nominal") %>%
-        vl_encode_color(field = "algorithm",
-                        type = "nominal",
-                        scale = list(scheme = "category10"))
-    }
-
-    vl_layer(bands(), scatter()) %>%
-        vl_add_data(to_plot) %>%
-        vl_facet_wrap(field = "dataset", type = "nominal") %>%
-        vl_resolve_scale_x("independent") %>%
-        vl_resolve_scale_y("independent")
-}
-
 static_diam_vs_time <- function(to_plot) {
-
     to_plot <- to_plot %>%
         mutate(total_time = total_time_ms / 1000) %>%
         group_by(graph_type, dataset, algorithm, parameters) %>%
@@ -130,7 +83,8 @@ static_diam_vs_time <- function(to_plot) {
                     data = bounds,
                     alpha = 0.6,
                     fill = "lightgray") +
-            geom_point(aes(x = diameter, y = total_time, color = algorithm)) +
+            geom_point_interactive(aes(x = diameter, y = total_time, color = algorithm, 
+                                       tooltip=str_c("total time:", scales::number(total_time, accuracy=.1, suffix="s"), "diameter:", diameter, sep=" "))) +
             facet_wrap(vars(dataset), scales = "free",
                     ncol = 4) +
             scale_color_algorithm() +

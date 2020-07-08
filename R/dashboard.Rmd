@@ -12,8 +12,8 @@ knitr::opts_chunk$set(echo=FALSE)
 Down and to the left is better.
 When the auxiliary graph has a single node (happens when the radius parameter is too large) then we have to multiply the radius estimate by two, to continue an estimate upper bounding the radius.
 
-```{r fig.width=8, fig.height=4}
-readd(plot_diam_vs_time_interactive)
+```{r fig.width=8, fig.height=8}
+readd(plot_interactive_diam_vs_time)
 ```
 
 ### Center selection by iteration
