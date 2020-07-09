@@ -51,7 +51,7 @@ function run_test() {
 function run_social() {
     for SEED in 112985 246134 346235 2356
     do
-    for DATASET in livejournal friendster
+    for DATASET in orkut #livejournal friendster
     do
         # BFS
         $BIN \

@@ -471,7 +471,7 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "facebook" => builder.snap("http://snap.stanford.edu/data/facebook_combined.txt.gz"),
         "twitter" => builder.snap("http://snap.stanford.edu/data/twitter_combined.txt.gz"),
         "livejournal" => builder.snap("http://snap.stanford.edu/data/soc-LiveJournal1.txt.gz"),
-        "orkut" => builder.snap("https://snap.stanford.edu/data/bigdata/communities/com-orkut.ungraph.txt.gz"),
+        "orkut" => builder.snap("http://snap.stanford.edu/data/bigdata/communities/com-orkut.ungraph.txt.gz"),
         "colorado" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.COL.gr.gz"),
         "USA" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.USA.gr.gz"),
         "USA-CTR" => builder.dimacs("http://users.diag.uniroma1.it/challenge9/data/USA-road-d/USA-road-d.CTR.gr.gz"),
