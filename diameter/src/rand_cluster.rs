@@ -16,6 +16,8 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
 
+const AUXILIARY_THRESHOLD: usize = 1000;
+
 #[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct Message {
     distance: u32,
@@ -352,11 +354,21 @@ where
                     |state, message| state.updated(*message),
                     |state| state.deactivate(), // deactivate nodes with no messages
                 )
-                .branch_all(move |t, pair| pair.1.can_send(radius, t.outer.inner)); // Circulate while someone has something to say
+                .branch_all(
+                    "can_send",
+                    move |t, pair| pair.1.can_send(radius, t.outer.inner),
+                    0,
+                ); // Circulate while someone has something to say
 
-            further.connect_loop(handle);
+            let (output2, further2) = further.branch_all(
+                "uncovered_count_inner",
+                move |_t, pair| pair.1.is_uncovered(),
+                AUXILIARY_THRESHOLD,
+            ); // Circulate while the auxiliary graph is too large
 
-            output.leave()
+            further2.connect_loop(handle);
+
+            output.concat(&output2).leave()
         })
         .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.inner)))
 }
@@ -430,25 +442,40 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     }
     let rand = Rc::new(RefCell::new(rand));
 
-    let clustering = nodes.scope().iterative::<u32, _, _>(|inner_scope| {
-        let nodes = nodes.enter(&inner_scope);
+    let clustering = nodes
+        .scope()
+        .iterative::<u32, _, _>(|inner_scope| {
+            let nodes = nodes.enter(&inner_scope);
 
-        let summary = Product::new(Default::default(), 1);
-        let (handle, cycle) = inner_scope.feedback(summary);
+            let summary = Product::new(Default::default(), 1);
+            let (handle, cycle) = inner_scope.feedback(summary);
 
-        let (stable, further) = expand_clusters(
-            &edges,
-            &sample_centers(&nodes.concat(&cycle), base, n, rand),
-            radius,
-            n,
-        )
-        .branch(move |_t, (_id, state)| !state.is_frozen());
-        // .branch_all(move |_, (id, state)| state.is_uncovered());
+            let (stable, further) = expand_clusters(
+                &edges,
+                &sample_centers(&nodes.concat(&cycle), base, n, rand),
+                radius,
+                n,
+            )
+            .branch(move |_t, (_id, state)| !state.is_frozen());
+            // .branch_all(move |_, (id, state)| state.is_uncovered());
 
-        further.connect_loop(handle);
+            let (stable2, further2) = further.branch_all(
+                "uncovered_count_outer",
+                move |_t, pair| pair.1.is_uncovered(),
+                AUXILIARY_THRESHOLD,
+            ); // Circulate while the auxiliary graph is too large
 
-        stable.leave()
-    });
+            further2.connect_loop(handle);
+
+            stable.concat(&stable2).leave()
+        })
+        .map(|(id, state)| {
+            if state.is_uncovered() {
+                (id, state.as_center(id, std::u32::MAX))
+            } else {
+                (id, state)
+            }
+        });
 
     let l_radius = nodes.scope().count_logger().expect("missing logger");
     let auxiliary_graph = remap_edges(&edges, &clustering);

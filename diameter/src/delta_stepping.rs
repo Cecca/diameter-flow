@@ -118,7 +118,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
                 |state, message| state.update_distance(*message),
                 |state| state.deactivate(), // deactivate nodes with no messages
             )
-            .branch_all(|_, pair| pair.1.updated);
+            .branch_all("updated", |_, pair| pair.1.updated, 0);
 
         further
             // .inspect(|p| info!("{:?}", p))
@@ -177,12 +177,16 @@ pub fn delta_stepping<G: Scope<Timestamp = usize>>(
         )
         // We should also keep the old states because otherwise we enter
         // and endless loop
-        .branch_all(move |t, (_id, state)| {
-            state
-                .distance
-                .map(|d| d > delta * (t.inner + 1))
-                .unwrap_or(true)
-        });
+        .branch_all(
+            "updated",
+            move |t, (_id, state)| {
+                state
+                    .distance
+                    .map(|d| d > delta * (t.inner + 1))
+                    .unwrap_or(true)
+            },
+            0,
+        );
 
         further.connect_loop(handle);
 
