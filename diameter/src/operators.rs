@@ -8,7 +8,15 @@ use timely::dataflow::Stream;
 use timely::Data;
 
 pub trait BranchAll<G: Scope, D: Data> {
-    fn branch_all<P>(&self, condition: P) -> (Stream<G, D>, Stream<G, D>)
+    /// The right branch contains nodes if and only if
+    /// the count of nodes matching the condition is strictly
+    /// greater than the given threshold
+    fn branch_all<P>(
+        &self,
+        name: &'static str,
+        condition: P,
+        threshold: usize,
+    ) -> (Stream<G, D>, Stream<G, D>)
     where
         P: Fn(G::Timestamp, &D) -> bool + 'static;
 }
@@ -17,7 +25,12 @@ impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D>
 where
     G::Timestamp: ToPair,
 {
-    fn branch_all<P>(&self, condition: P) -> (Stream<G, D>, Stream<G, D>)
+    fn branch_all<P>(
+        &self,
+        name: &'static str,
+        condition: P,
+        threshold: usize,
+    ) -> (Stream<G, D>, Stream<G, D>)
     where
         P: Fn(G::Timestamp, &D) -> bool + 'static,
     {
@@ -28,7 +41,7 @@ where
         let stash = Rc::new(RefCell::new(HashMap::new()));
         let stash2 = Rc::clone(&stash);
 
-        let updated_counts = self
+        let matching_counts = self
             .unary(Pipeline, "count updated", move |_, _| {
                 move |input, output| {
                     input.for_each(|t, data| {
@@ -50,7 +63,7 @@ where
             .broadcast();
 
         let mut stash_counts = HashMap::new();
-        let (stable, some_updated) = updated_counts
+        let (stable, some_matches) = matching_counts
             .unary_notify(
                 Pipeline,
                 "splitter",
@@ -66,12 +79,13 @@ where
                         notificator.notify_at(t.retain());
                     });
                     notificator.for_each(|time, _, _| {
-                        if let Some(updated_count) = stash_counts.remove(&time) {
-                            let branch = updated_count > 0;
+                        if let Some(matching_count) = stash_counts.remove(&time) {
+                            let branch = matching_count > threshold;
                             if worker_id == 0 {
                                 info!(
-                                    ">> {} nodes passing predicate at time {:?}",
-                                    updated_count,
+                                    ">> {} nodes passing predicate {} at time {:?}",
+                                    matching_count,
+                                    name,
                                     time.time()
                                 );
                             }
@@ -86,7 +100,7 @@ where
             )
             .branch(|_t, (some_updated, _pair)| *some_updated);
 
-        (stable.map(|pair| pair.1), some_updated.map(|pair| pair.1))
+        (stable.map(|pair| pair.1), some_matches.map(|pair| pair.1))
     }
 }
 

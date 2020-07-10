@@ -1,3 +1,5 @@
+theme_set(theme_bw())
+
 db_connection <- function() {
     DBI::dbConnect(RSQLite::SQLite(), dbname = "diameter-results.sqlite")
 }
@@ -41,8 +43,8 @@ scale_color_category10 <- function() {
 scale_color_algorithm <- function() {
     scale_color_manual(
         values = c(
-            "Bfs" = "#1f77b4",
-            "HyperBall" = "#ff7f0e",
+            "HyperBall" = "#1f77b4",
+            "Bfs" = "#ff7f0e",
             "RandCluster" = "#2ca02c",
             "DeltaStepping" = "#d62728"
         )
@@ -52,9 +54,10 @@ scale_color_algorithm <- function() {
 add_graph_type <- function(data) {
     data %>%
         mutate(graph_type = case_when(
-            (dataset %in% c("livejournal", "friendster")) ~ "social",
-            (dataset %in% c("sk-2005", "uk-2014-host-lcc", "uk-2005-lcc", "sk-2005-lcc")) ~ "web",
-            (dataset %in% c("USA-E", "USA-W", "USA-CTR", "USA")) ~ "roads"
+            (dataset %in% c("livejournal", "orkut")) ~ "social",
+            (dataset %in% c("uk-2014-host-lcc", "uk-2005-lcc", "sk-2005-lcc")) ~ "web",
+            (dataset %in% c("USA-E", "USA-W", "USA-CTR", "USA")) ~ "roads",
+            (dataset %in% c("mesh-1000")) ~ "synthetic"
         ))
 }
 
@@ -88,19 +91,40 @@ static_diam_vs_time <- function(to_plot) {
             facet_wrap(vars(dataset), scales = "free",
                     ncol = 4) +
             scale_color_algorithm() +
-            # scale_y_log10() +
+            scale_y_log10() +
             labs(x = "diameter",
                 y = "total time (s)") +
             theme_bw() +
-            theme(legend.position = "top")
+            theme(legend.position = "none")
     }
 
+    legend_plot <- tribble(
+        ~algorithm,
+        "Bfs",
+        "HyperBall",
+        "RandCluster" ,
+        "DeltaStepping" 
+    ) %>% ggplot(aes(color=algorithm)) +
+    geom_point(x=0, y=0) +
+    scale_color_algorithm() +
+    theme_void() +
+    theme(legend.position="top")
+    
+    legend <- get_legend(legend_plot)
+    
     plot_grid(
+        legend,
         to_plot %>% filter(graph_type == "web") %>% subplot(),
-        to_plot %>% filter(graph_type == "social") %>% subplot(),
+        plot_grid(
+            to_plot %>% filter(graph_type == "social") %>% subplot(),
+            to_plot %>% filter(graph_type == "synthetic") %>% subplot(),
+            rel_widths = c(2,1),
+            labels = c("Social", "Synthetic")
+        ),
         to_plot %>% filter(graph_type == "roads") %>% subplot(),
         ncol = 1,
-        labels = c("Web", "Social", "Roads")
+        labels = c("", "Web", "", "Roads"),
+        rel_heights = c(0.2, 1, 1, 1)
     )
 }
 
@@ -163,4 +187,14 @@ static_auxiliary_graph_size <- function(to_plot) {
         theme_bw() +
         theme(legend.position = "top")
 
+}
+
+do_scalability_plot <- function(to_plot) {
+    to_plot %>%
+    mutate(total_time = total_time_ms / 1000) %>%
+    ggplot(aes(x=num_hosts, y=total_time, group=num_hosts)) +
+        stat_summary(fun.data=mean_cl_boot,
+                     geom="pointrange") +
+        facet_wrap(vars(dataset)) +
+        theme_bw()
 }

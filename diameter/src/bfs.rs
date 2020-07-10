@@ -99,7 +99,7 @@ pub fn bfs<G: Scope<Timestamp = usize>>(
                     }
                 },
             )
-            .branch_all(|_t, pair| pair.1.active);
+            .branch_all("active", |_t, pair| pair.1.active, 0);
 
         active_nodes.connect_loop(handle);
 
