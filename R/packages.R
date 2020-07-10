@@ -8,4 +8,5 @@ suppressPackageStartupMessages({
     library(kableExtra)
     library(cowplot)
     library(ggiraph)
+    library(Hmisc)
 })

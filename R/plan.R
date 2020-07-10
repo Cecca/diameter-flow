@@ -11,6 +11,12 @@ plan <- drake_plan(
                                   diameter)) %>%
         add_graph_type(),
 
+    scalability_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        collect() %>%
+        filter((dataset == "USA" & parameters == "10000:2") | (dataset == "uk-2005-lcc" & parameters == "4:2")) %>%
+        mutate(num_hosts = str_count(hosts, "__") + 1)
+    ,
+
     data_info_table = semi_join(data_info, main_data) %>%
         arrange(max_weight, num_edges),
 
@@ -92,6 +98,12 @@ plan <- drake_plan(
                width = 8,
                height = 4),
     # plot_interactive_auxiliary_graph_size = girafe(ggobj = static_auxiliary_graph_size(data_auxiliary_graph_size)),
+
+    plot_static_scalability =
+        do_scalability_plot(scalability_data) %>%
+        ggsave(filename = file_out("export/scalability.png"),
+               width = 8,
+               height= 2),
 
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),
