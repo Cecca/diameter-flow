@@ -16,7 +16,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
 
-const AUXILIARY_THRESHOLD: usize = 1000;
+const AUXILIARY_THRESHOLD: usize = 10000;
 
 #[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct Message {

@@ -83,10 +83,11 @@ where
                             let branch = matching_count > threshold;
                             if worker_id == 0 {
                                 info!(
-                                    ">> {} nodes passing predicate {} at time {:?}",
+                                    ">> {} nodes passing predicate {} at time {:?} (branching out? {})",
                                     matching_count,
                                     name,
-                                    time.time()
+                                    time.time(),
+                                    !branch
                                 );
                             }
                             if let Some(nodes) = stash2.borrow_mut().remove(&time) {
