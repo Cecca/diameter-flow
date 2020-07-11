@@ -485,6 +485,27 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         datasets.insert(format!("{}-lcc", k), builder.lcc(v));
     }
 
+    datasets.insert(
+        "colorado-x2".to_owned(),
+        builder.layered(2, datasets.get("colorado").unwrap().clone()),
+    );
+    datasets.insert(
+        "USA-x2".to_owned(),
+        builder.layered(2, datasets.get("USA").unwrap().clone()),
+    );
+    datasets.insert(
+        "USA-x4".to_owned(),
+        builder.layered(4, datasets.get("USA").unwrap().clone()),
+    );
+    datasets.insert(
+        "USA-x8".to_owned(),
+        builder.layered(8, datasets.get("USA").unwrap().clone()),
+    );
+    datasets.insert(
+        "USA-x16".to_owned(),
+        builder.layered(16, datasets.get("USA").unwrap().clone()),
+    );
+
     datasets
 }
 
