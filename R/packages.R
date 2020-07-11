@@ -9,4 +9,5 @@ suppressPackageStartupMessages({
     library(cowplot)
     library(ggiraph)
     library(Hmisc)
+    library(latex2exp)
 })

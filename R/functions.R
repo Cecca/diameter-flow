@@ -78,7 +78,11 @@ static_diam_vs_time <- function(to_plot) {
                 diameter_lower = max(diameter / 2),
                 diameter_upper = min(diameter)
             )
-        ggplot(data, aes()) +
+        max_diam <- data %>%
+            ungroup() %>%
+            summarise(max(diameter)) %>%
+            pull()
+        p <- ggplot(data, aes()) +
             geom_rect(mapping = aes(xmin = diameter_lower,
                                     xmax = diameter_upper,
                                     ymin = 0,
@@ -88,14 +92,23 @@ static_diam_vs_time <- function(to_plot) {
                     fill = "lightgray") +
             geom_point_interactive(aes(x = diameter, y = total_time, color = algorithm, 
                                        tooltip=str_c("total time:", scales::number(total_time, accuracy=.1, suffix="s"), "diameter:", diameter, sep=" "))) +
-            facet_wrap(vars(dataset), scales = "free",
-                    ncol = 4) +
+            facet_wrap(vars(dataset), 
+                       scales = "free_y",
+                       ncol = 4) +
             scale_color_algorithm() +
-            scale_y_log10() +
+            # scale_y_log10() +
             labs(x = "diameter",
                 y = "total time (s)") +
             theme_bw() +
             theme(legend.position = "none")
+
+        if (max_diam > 10000) {
+            p <- p +
+              scale_x_continuous(labels=scales::number_format(scale=0.0000001, accuracy=1))  +
+              labs(x=TeX("diameter $\\cdot 10^7$"))
+        }
+
+        p
     }
 
     legend_plot <- tribble(
