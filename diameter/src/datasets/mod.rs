@@ -73,6 +73,13 @@ impl DatasetBuilder {
         }
     }
 
+    pub fn layered(&self, layers: usize, inner: Dataset) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::Layered(layers, Box::new(inner)),
+        }
+    }
+
     pub fn mesh(&self, side: u32) -> Dataset {
         Dataset {
             data_dir: self.data_dir.clone(),
@@ -106,6 +113,7 @@ pub enum DatasetKind {
     Snap(String),
     Dimacs(String),
     WebGraph(String),
+    Layered(usize, Box<Dataset>),
     LCC(Box<Dataset>),
     Mesh(u32),
     // A mesh with two different edge weights, assigned randomly with
@@ -129,6 +137,9 @@ impl Dataset {
             DatasetKind::Dimacs(url) => format!("dimacs::{}", url),
             DatasetKind::Snap(url) => format!("snap::{}", url),
             DatasetKind::WebGraph(name) => format!("webgraph::{}", name),
+            DatasetKind::Layered(layers, inner) => {
+                format!("layered::{}-{}", layers, inner.metadata_key())
+            }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
@@ -287,6 +298,64 @@ impl Dataset {
                 }
             }
 
+            DatasetKind::Layered(layers, inner) => {
+                let layers = *layers as u32;
+                assert!(layers >= 1);
+                inner.prepare();
+                let edges_dir = self.edges_directory();
+                info!("creating layered dataset into {:?}", edges_dir);
+                std::fs::create_dir_all(&edges_dir);
+                let inner_meta = inner.metadata();
+                let n = inner_meta.num_nodes;
+
+                let mut pl = progress_logger::ProgressLogger::builder()
+                    .with_items_name("edges")
+                    .start();
+
+                if inner_meta.max_weight == 1 {
+                    let mut compressor = CompressedPairsWriter::to_file(edges_dir, 32);
+                    for u in 0..n {
+                        for i in 0..(layers - 1) {
+                            let src = u + n * i;
+                            let dst = u + n * (i + 1);
+                            compressor.write((src, dst));
+                        }
+                    }
+                    inner.for_each(|u, v, _| {
+                        for i in 0..layers {
+                            let mut src = u + n * i;
+                            let mut dst = v + n * i;
+                            if src > dst {
+                                std::mem::swap(&mut src, &mut dst);
+                            }
+                            compressor.write((src, dst));
+                            pl.update_light(1u64);
+                        }
+                    });
+                } else {
+                    let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 32);
+                    for u in 0..n {
+                        for i in 0..(layers - 1) {
+                            let src = u + n * i;
+                            let dst = u + n * (i + 1);
+                            compressor.write((src, dst, 1));
+                        }
+                    }
+                    inner.for_each(|u, v, w| {
+                        for i in 0..layers {
+                            let mut src = u + n * i;
+                            let mut dst = v + n * i;
+                            if src > dst {
+                                std::mem::swap(&mut src, &mut dst);
+                            }
+                            compressor.write((src, dst, w));
+                            pl.update_light(1u64);
+                        }
+                    });
+                }
+
+                pl.stop();
+            }
             DatasetKind::LCC(inner) => {
                 inner.prepare();
                 let edges_dir = self.edges_directory();
@@ -455,6 +524,9 @@ impl Dataset {
                     name, name
                 );
                 graph_url
+            }
+            DatasetKind::Layered(layers, inner) => {
+                format!("lcc::{}-{}", layers, inner.metadata_key())
             }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
