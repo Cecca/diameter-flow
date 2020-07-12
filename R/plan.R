@@ -17,6 +17,15 @@ plan <- drake_plan(
         mutate(num_hosts = str_count(hosts, "__") + 1)
     ,
 
+    scalability_n_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        collect() %>%
+        filter(dataset %in% c("USA", "USA-x2", "USA-x4", "USA-x8", "USA-x16")) %>%
+        filter(algorithm == "RandCluster", parameters == "10000:2") %>%
+        mutate(scale_factor = as.integer(str_extract(dataset, "\\d+")) %>%
+                                replace_na(1),
+               dataset = str_extract(dataset, "USA"))
+    ,
+
     data_info_table = semi_join(data_info, main_data) %>%
         arrange(max_weight, num_edges),
 
@@ -102,6 +111,12 @@ plan <- drake_plan(
     plot_static_scalability =
         do_scalability_plot(scalability_data) %>%
         ggsave(filename = file_out("export/scalability.png"),
+               width = 8,
+               height= 2),
+
+    plot_static_scalability_n =
+        do_scalability_n_plot(scalability_n_data) %>%
+        ggsave(filename = file_out("export/scalability_n.png"),
                width = 8,
                height= 2),
 

@@ -91,7 +91,10 @@ static_diam_vs_time <- function(to_plot) {
                     alpha = 0.6,
                     fill = "lightgray") +
             geom_point_interactive(aes(x = diameter, y = total_time, color = algorithm, 
-                                       tooltip=str_c("total time:", scales::number(total_time, accuracy=.1, suffix="s"), "diameter:", diameter, sep=" "))) +
+                                       tooltip=str_c("total time:", scales::number(total_time, accuracy=.1, suffix="s"), 
+                                                     "diameter:", diameter, 
+                                                     "parameters:", parameters, 
+                                                     sep=" "))) +
             facet_wrap(vars(dataset), 
                        scales = "free_y",
                        ncol = 4) +
@@ -211,3 +214,14 @@ do_scalability_plot <- function(to_plot) {
         facet_wrap(vars(dataset)) +
         theme_bw()
 }
+
+do_scalability_n_plot <- function(to_plot) {
+    to_plot %>%
+    mutate(total_time = total_time_ms / 1000) %>%
+    ggplot(aes(x=scale_factor, y=total_time)) +
+        stat_summary(fun.data=mean_cl_boot,
+                     geom="pointrange") +
+        facet_wrap(vars(dataset)) +
+        theme_bw()
+}
+

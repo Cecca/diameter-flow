@@ -506,6 +506,23 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         builder.layered(16, datasets.get("USA").unwrap().clone()),
     );
 
+    datasets.insert(
+        "sk-2005-x2".to_owned(),
+        builder.layered(2, datasets.get("sk-2005").unwrap().clone()),
+    );
+    datasets.insert(
+        "sk-2005-x4".to_owned(),
+        builder.layered(4, datasets.get("sk-2005").unwrap().clone()),
+    );
+    datasets.insert(
+        "sk-2005-x8".to_owned(),
+        builder.layered(8, datasets.get("sk-2005").unwrap().clone()),
+    );
+    datasets.insert(
+        "sk-2005-x16".to_owned(),
+        builder.layered(16, datasets.get("sk-2005").unwrap().clone()),
+    );
+
     datasets
 }
 
