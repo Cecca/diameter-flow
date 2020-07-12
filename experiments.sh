@@ -5,9 +5,9 @@ set -e
 BIN=$HOME/.cargo/bin/diameter-flow
 
 function run_test() {
-    for SEED in 112985714 524098 124098
+    for SEED in 112985714 #524098 124098
     do
-    for DATASET in uk-2014-host-lcc # uk-2005 sk-2005
+    for DATASET in uk-2014-host-lcc uk-2005 sk-2005
     do
         # BFS
         $BIN \
@@ -49,9 +49,9 @@ function run_test() {
 }
 
 function run_social() {
-    for SEED in 112985 246134 346235 2356
+    for SEED in 112985 #246134 346235 2356
     do
-    for DATASET in orkut #livejournal friendster
+    for DATASET in orkut livejournal #friendster
     do
         # BFS
         $BIN \
@@ -63,7 +63,7 @@ function run_social() {
         $DATASET
 
         # Hyperball
-        for PARAM in 4 5
+        for PARAM in 4
         do
         $BIN \
             --ddir /mnt/ssd/graphs \
@@ -93,7 +93,7 @@ function run_social() {
 }
 
 function run_web() {
-    for SEED in 112985 246134 346235 2356
+    for SEED in 112985 #246134 346235 2356
     do
     for DATASET in uk-2014-host-lcc uk-2005-lcc sk-2005-lcc
     do
@@ -107,7 +107,7 @@ function run_web() {
         $DATASET
 
         # Hyperball
-        for PARAM in 4 5
+        for PARAM in 4
         do
         $BIN \
             --ddir /mnt/ssd/graphs \
@@ -185,7 +185,7 @@ function run_web_large() {
 
 
 function run_weighted() {
-    for SEED in 11985714 524098 124098
+    for SEED in 11985714 #524098 124098
     do
     for DATASET in USA-E USA-W USA-CTR USA
     do
@@ -202,7 +202,7 @@ function run_weighted() {
         done
 
         # Rand cluster
-        for PARAM in 10000 100000 1000000 10000000
+        for PARAM in 100 1000 10000 100000 1000000
         do
             for BASE in 2
             do
@@ -220,9 +220,9 @@ function run_weighted() {
 }
 
 function run_mesh() {
-    for SEED in 11985714 524098 124098
+    for SEED in 11985714 #524098 124098
     do
-    for DATASET in mesh-2048
+    for DATASET in mesh-1000
     do
 
         # BFS
@@ -235,7 +235,7 @@ function run_mesh() {
         $DATASET
 
         # Hyperball
-        for PARAM in 4 5 6
+        for PARAM in 4
         do
         $BIN \
             --ddir /mnt/ssd/graphs \
@@ -247,9 +247,9 @@ function run_mesh() {
         done
 
         # Rand cluster
-        for PARAM in 16 64 256 1024
+        for PARAM in 8 16 64 256 1024
         do
-            for BASE in 2 10
+            for BASE in 2
             do
                 $BIN \
                     --ddir /mnt/ssd/graphs \
@@ -300,6 +300,27 @@ function run_rwmesh() {
     done
 }
 
+function run_scalability() {
+    for SEED in 13381 #2350982 5089735 135 12346
+    do
+      for NUM_HOSTS in 2 4 6 8 10 12 14
+      do
+        cat ~/working_hosts | head -n$NUM_HOSTS > /tmp/hosts-$NUM_HOSTS
+        # Rand cluster
+        DATASET=uk-2005-lcc
+        for PARAM in 4 # 10000
+        do
+            $BIN \
+                --ddir /mnt/ssd/graphs \
+                --hosts /tmp/hosts-$NUM_HOSTS \
+                --threads 4 \
+                --seed $SEED \
+                "rand-cluster($PARAM,2)" \
+                $DATASET
+        done
+      done
+    done
+}
 
 case $1 in
     test)
@@ -322,5 +343,8 @@ case $1 in
     ;;
     rwmesh)
         run_rwmesh
+    ;;
+    scalability)
+        run_scalability
     ;;
 esac
