@@ -351,7 +351,7 @@ impl CompressedPairsWriter {
 
         println!("Flushing compressed edges in multiple files");
 
-        self.encoded.sort();
+        self.encoded.sort_unstable();
 
         if !self.output_path.is_dir() {
             std::fs::create_dir(self.output_path.clone())?;
@@ -426,7 +426,7 @@ impl CompressedTripletsWriter {
 
         println!("Flushing compressed edges and weights in multiple files");
 
-        self.encoded.sort();
+        self.encoded.sort_unstable();
 
         if !self.output_path.is_dir() {
             std::fs::create_dir(self.output_path.clone())?;

@@ -21,7 +21,7 @@ plan <- drake_plan(
         collect() %>%
         filter(dataset %in% c("USA", "USA-x2", "USA-x4", "USA-x8", "USA-x16")) %>%
         filter(algorithm == "RandCluster", parameters == "10000:2") %>%
-        mutate(scale_factor = as.integer(str_extract(dataset, "\\d+")) %>%
+        mutate(scale_factor = as.integer(str_extract(dataset, "\\d+$")) %>%
                                 replace_na(1),
                dataset = str_extract(dataset, "USA"))
     ,
