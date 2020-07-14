@@ -9,7 +9,8 @@ plan <- drake_plan(
         mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
                                   as.integer(2 * diameter),
                                   diameter)) %>%
-        add_graph_type(),
+        add_graph_type() %>%
+        drop_na(graph_type),
 
     scalability_data = table_main(con, file_in("diameter-results.sqlite")) %>%
         collect() %>%
@@ -19,11 +20,11 @@ plan <- drake_plan(
 
     scalability_n_data = table_main(con, file_in("diameter-results.sqlite")) %>%
         collect() %>%
-        filter(dataset %in% c("USA", "USA-x2", "USA-x4", "USA-x8", "USA-x16")) %>%
-        filter(algorithm == "RandCluster", parameters == "10000:2") %>%
+        filter(((dataset %in% c("USA", "USA-x2", "USA-x4", "USA-x8", "USA-x16")) & (parameters == "10000:2")) |
+                ((str_detect(dataset, "uk-2014-host-lcc")) & (parameters == "16:2"))) %>%
         mutate(scale_factor = as.integer(str_extract(dataset, "\\d+$")) %>%
                                 replace_na(1),
-               dataset = str_extract(dataset, "USA"))
+               dataset = str_extract(dataset, "USA|uk-2014-host-lcc"))
     ,
 
     data_info_table = semi_join(data_info, main_data) %>%
@@ -119,6 +120,10 @@ plan <- drake_plan(
         ggsave(filename = file_out("export/scalability_n.png"),
                width = 8,
                height= 2),
+
+    plot_interactive_scalability_n =
+        ggiraph(ggobj=do_scalability_n_plot(scalability_n_data),
+                width_svg=8, height_svg=4),
 
     dashboard = rmarkdown::render(
         knitr_in("R/dashboard.Rmd"),

@@ -569,6 +569,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                         // double it to make an upper bound estimate like in the other cases
                         output.session(&t).give(2 * max_radius);
                     } else {
+                        let start = std::time::Instant::now();
                         let diameter = approx_diameter(edges, n as u32)
                             .into_iter()
                             .map(|(approx, (u, v))| {
@@ -577,6 +578,12 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                             })
                             .max()
                             .expect("called max on an empty collection");
+                        let end = std::time::Instant::now();
+                        let elapsed = end - start;
+                        info!(
+                            "Diameter approximation on auxiliary graph took {:?}",
+                            elapsed
+                        );
                         if max_radius > diameter {
                             info!("Outputting max radius: {}!", max_radius);
                             output.session(&t).give(max_radius);

@@ -216,12 +216,20 @@ do_scalability_plot <- function(to_plot) {
 }
 
 do_scalability_n_plot <- function(to_plot) {
-    to_plot %>%
-    mutate(total_time = total_time_ms / 1000) %>%
-    ggplot(aes(x=scale_factor, y=total_time)) +
-        stat_summary(fun.data=mean_cl_boot,
-                     geom="pointrange") +
-        facet_wrap(vars(dataset)) +
+    to_plot <- to_plot %>%
+        mutate(total_time = total_time_ms / 1000)
+    averages <- to_plot %>% group_by(dataset, scale_factor) %>% summarise(total_time = mean(total_time))
+    ggplot(to_plot, aes(x=scale_factor, y=total_time)) +
+        geom_linerange(stat="summary",
+                       fun.data=mean_cl_boot) +
+        geom_point_interactive(aes(tooltip=scales::number(total_time, prefix="total time: ", suffix="s")),
+                               data=averages) +
+        geom_line(stat="summary") +
+        scale_x_continuous(trans="log2") +
+        scale_y_continuous(trans="log2") +
+        labs(x="size scale factor",
+             y="total time (s)") +
+        facet_wrap(vars(dataset), scales="free_y") +
         theme_bw()
 }
 
