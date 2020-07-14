@@ -586,6 +586,8 @@ fn main() {
             debug!("loaded edges statically");
             let diameter_result = Rc::new(RefCell::new(None));
             let diameter_result_ref = Rc::clone(&diameter_result);
+            let final_approx_probe = Rc::new(RefCell::new(None));
+            let final_approx_probe_ref = Rc::clone(&final_approx_probe);
 
             let probe = worker.dataflow::<usize, _, _>(move |scope| {
                 let mut probe = Handle::new();
@@ -595,9 +597,15 @@ fn main() {
                         delta_stepping(static_edges, scope, delta, n, seed)
                     }
                     Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, seed),
-                    Algorithm::RandCluster(radius, base) => {
-                        rand_cluster::rand_cluster(static_edges, scope, radius, base, n, seed)
-                    }
+                    Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
+                        static_edges,
+                        scope,
+                        radius,
+                        base,
+                        n,
+                        seed,
+                        final_approx_probe,
+                    ),
                     Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
                     Algorithm::Sequential => {
                         panic!("sequential algorithm not supported in dataflow")
@@ -635,6 +643,11 @@ fn main() {
             if worker.index() == 0 {
                 let diameter: u32 = diameter_result.borrow().expect("missing result");
                 reporter.borrow_mut().set_result(diameter, elapsed);
+                if let Some(final_approx_time) = final_approx_probe_ref.borrow_mut().take() {
+                    reporter
+                        .borrow_mut()
+                        .set_final_approx_time(final_approx_time);
+                }
                 reporter.borrow().report();
             }
         });

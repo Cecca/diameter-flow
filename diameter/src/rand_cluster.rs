@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
+use std::time::Duration;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
 use timely::dataflow::operators::generic::operator::Operator;
@@ -431,6 +432,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
     base: f64,
     n: u32,
     seed: u64,
+    final_approx_probe: Rc<RefCell<Option<Duration>>>,
 ) -> Stream<G, u32> {
     use rand_xoshiro::Xoroshiro128StarStar;
 
@@ -584,6 +586,7 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
                             "Diameter approximation on auxiliary graph took {:?}",
                             elapsed
                         );
+                        final_approx_probe.borrow_mut().replace(elapsed);
                         if max_radius > diameter {
                             info!("Outputting max radius: {}!", max_radius);
                             output.session(&t).give(max_radius);

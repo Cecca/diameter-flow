@@ -18,6 +18,7 @@ pub struct Reporter {
     counters: Vec<(String, u32, u32, u64)>,
     diameter: Option<u32>,
     duration: Option<Duration>,
+    final_approx_time: Option<Duration>,
 }
 
 impl Reporter {
@@ -28,12 +29,17 @@ impl Reporter {
             counters: Vec::new(),
             diameter: None,
             duration: None,
+            final_approx_time: None,
         }
     }
 
     pub fn set_result(&mut self, diameter: u32, elapsed: Duration) {
         self.diameter.replace(diameter);
         self.duration.replace(elapsed);
+    }
+
+    pub fn set_final_approx_time(&mut self, final_approx_time: Duration) {
+        self.final_approx_time.replace(final_approx_time);
     }
 
     pub fn append_counter(&mut self, event: CountEvent, count: u64) {
@@ -100,8 +106,8 @@ impl Reporter {
         {
             // Insert into main table
             tx.execute(
-                "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms, offline )
-                 VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11 )",
+                "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms, offline, final_diameter_time_ms )
+                 VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12 )",
                 params![
                     sha,
                     self.date.to_rfc3339(),
@@ -113,7 +119,8 @@ impl Reporter {
                     self.config.algorithm.parameters_string(),
                     self.diameter.expect("missing diameter"),
                     self.duration.expect("missing total time").as_millis() as u32,
-                    self.config.offline
+                    self.config.offline,
+                    self.final_approx_time.map(|dur| dur.as_millis() as u32)
                 ],
             )
             .expect("error inserting into main table");
@@ -172,7 +179,7 @@ fn create_tables_if_needed(conn: &Connection) {
 
         conn.execute(
             "CREATE VIEW IF NOT EXISTS main_recent AS
-            SELECT sha, max(date) AS date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms 
+            SELECT sha, max(date) AS date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms
             FROM main
             GROUP BY seed, threads, hosts, dataset, algorithm, parameters",
             params![]
@@ -223,6 +230,18 @@ fn create_tables_if_needed(conn: &Connection) {
         .expect("Error creating the main_recent view");
 
         bump(conn, 3);
+    }
+
+    if version < 4 {
+        info!("applying changes for version 4");
+
+        conn.execute(
+            "ALTER TABLE main ADD final_diameter_time_ms INT64 DEFAULT NULL",
+            NO_PARAMS,
+        )
+        .expect("Error changing the table");
+
+        bump(conn, 4);
     }
 
     info!("database schema up tp date");
