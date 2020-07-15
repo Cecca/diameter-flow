@@ -489,19 +489,35 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "colorado-x2".to_owned(),
         builder.layered(2, datasets.get("colorado").unwrap().clone()),
     );
-    for &layers in &[2, 4, 6, 8, 16] {
+    for &layers in &[5, 10, 100] {
         datasets.insert(
             format!("USA-x{}", layers),
             builder.layered(layers, datasets.get("USA").unwrap().clone()),
         );
         datasets.insert(
-            format!("livejournal-x{}", layers),
-            builder.layered(layers, datasets.get("livejournal").unwrap().clone()),
+            format!("livejournal-lcc-x{}", layers),
+            builder.layered(layers, datasets.get("livejournal-lcc").unwrap().clone()),
         );
+    }
+    for &layers in &[5, 10] {
         datasets.insert(
-            format!("uk-2014-host-lcc-x{}", layers),
-            builder.layered(layers, datasets.get("uk-2014-host-lcc").unwrap().clone()),
+            format!("sk-2005-lcc-x{}", layers),
+            builder.layered(layers, datasets.get("sk-2005-lcc").unwrap().clone()),
         );
+    }
+
+    for &layers in &[5, 10, 100] {
+        for (basedata, max_weight) in &[
+            (format!("livejournal-lcc-x{}", layers), 5_000_000),
+            (format!("sk-2005-lcc-x{}", layers), 5_000_000),
+        ] {
+            if let Some(inner) = datasets.get(basedata) {
+                datasets.insert(
+                    format!("{}-rweight", basedata),
+                    builder.rweight(*max_weight, 13098235, inner.clone()),
+                );
+            }
+        }
     }
     datasets
 }

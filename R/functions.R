@@ -54,10 +54,10 @@ scale_color_algorithm <- function() {
 add_graph_type <- function(data) {
     data %>%
         mutate(graph_type = case_when(
-            (dataset %in% c("livejournal", "orkut")) ~ "social",
+            (dataset %in% c("livejournal-lcc", "orkut-lcc")) ~ "social",
             (dataset %in% c("uk-2014-host-lcc", "uk-2005-lcc", "sk-2005-lcc")) ~ "web",
             (dataset %in% c("USA-E", "USA-W", "USA-CTR", "USA")) ~ "roads",
-            (dataset %in% c("mesh-1000")) ~ "synthetic"
+            (dataset %in% c("mesh-2048")) ~ "synthetic"
         ))
 }
 
@@ -147,13 +147,33 @@ static_diam_vs_time <- function(to_plot) {
 static_param_dependency_time <- function(to_plot) {
     to_plot <- to_plot %>%
         filter(algorithm == "RandCluster") %>%
-            separate(parameters, into = c("radius", "base"), convert = TRUE) %>%
-            filter(base == 2) %>%
-            mutate(total_time = total_time_ms / 1000)
+        filter(base == 2) %>%
+        mutate(total_time = total_time_ms / 1000.0,
+               final_diameter_time = final_diameter_time_ms / 1000.0)
+
+    averages <- to_plot %>%
+        group_by(dataset, radius) %>%
+        summarise(total_time = mean(total_time),
+                  final_diameter_time = mean(final_diameter_time),
+                  centers = mean(centers)) 
 
     ggplot(to_plot, aes(x = radius, y = total_time)) +
-        stat_summary() +
-        geom_line(stat = "summary") +
+        geom_area(aes(y=total_time),
+                  stat = "summary",
+                  fun.data=mean_se,
+                  fill="gray",
+                  alpha=0.8) +
+        geom_area(aes(y=final_diameter_time),
+                  stat = "summary",
+                  fun.data=mean_se,
+                  fill="blue") +
+        stat_summary(fun.data=mean_cl_boot, 
+                     geom="pointrange") +
+        geom_point_interactive(aes(tooltip=str_c(scales::number(total_time, prefix="total time ", suffix="s"),
+                                                 scales::number(final_diameter_time, prefix="final diameter time ", suffix="s"),
+                                                 scales::number(centers, prefix="auxiliary graph size "),
+                                                 sep="\n")),
+                               data=averages) +
         facet_wrap(vars(dataset), scales = "free", ncol = 4) +
         scale_color_category10() +
         scale_x_continuous(trans="log2") +
@@ -223,7 +243,9 @@ do_scalability_n_plot <- function(to_plot) {
         geom_linerange(stat="summary",
                        fun.data=mean_cl_boot) +
         geom_point_interactive(aes(tooltip=scales::number(total_time, prefix="total time: ", suffix="s")),
-                               data=averages) +
+                               data=averages,
+                               stat="summary",
+                               fun.data=mean_se) +
         geom_line(stat="summary") +
         scale_x_continuous(trans="log2") +
         scale_y_continuous(trans="log2") +

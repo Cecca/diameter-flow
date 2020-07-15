@@ -12,6 +12,20 @@ plan <- drake_plan(
         add_graph_type() %>%
         drop_na(graph_type),
 
+    # Use only entries that report the time it takes to 
+    time_dependency_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        collect() %>%
+        drop_na(final_diameter_time_ms) %>%
+        filter(hosts == "eridano11.fast:10000__eridano12.fast:10000__eridano13.fast:10000__eridano14.fast:10000__eridano15.fast:10000__eridano16.fast:10000__eridano17.fast:10000__eridano18.fast:10000__eridano19.fast:10000__eridano21.fast:10000__eridano22.fast:10000__eridano23.fast:10000__eridano25.fast:10000") %>%
+        select(-hosts, everything()) %>%
+        filter(!(dataset %in% c("sk-2005", "USA-E"))) %>%
+        mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
+                                  as.integer(2 * diameter),
+                                  diameter)) %>%
+        add_graph_type() %>%
+        drop_na(graph_type) %>%
+        mutate(final_diameter_frac = final_diameter_time_ms / total_time_ms),
+
     scalability_data = table_main(con, file_in("diameter-results.sqlite")) %>%
         collect() %>%
         filter((dataset == "USA" & parameters == "10000:2") | (dataset == "uk-2005-lcc" & parameters == "4:2")) %>%
@@ -80,6 +94,21 @@ plan <- drake_plan(
         separate(parameters, into = c("radius", "base"), convert = T)
     ,
 
+    data_auxiliary_graph_size_raw =
+        table_counters(con, file_in("diameter-results.sqlite")) %>%
+        filter(counter == "Centers") %>%
+        group_by(sha) %>%
+        summarise(centers = sum(count, na.rm=TRUE)) %>%
+        ungroup() %>%
+        collect()
+    ,
+
+    parameter_dependency_data = time_dependency_data %>% 
+        inner_join(data_auxiliary_graph_size_raw) %>%
+        inner_join(data_info) %>%
+        separate(parameters, into = c("radius", "base"), convert = T)
+    ,
+
     # Plots
     plot_static_diam_vs_time =
         static_diam_vs_time((main_data)) %>%
@@ -89,11 +118,13 @@ plan <- drake_plan(
     plot_interactive_diam_vs_time = girafe(ggobj = static_diam_vs_time((main_data)), width_svg=8, height_svg=8),
 
     plot_static_param_dependency_time =
-        static_param_dependency_time(main_data) %>%
+        static_param_dependency_time(parameter_dependency_data) %>%
         ggsave(filename = file_out("export/dep_time.png"),
                width = 8,
                height = 4),
-    # plot_interactive_param_dependency_time = girafe(p = static_param_dependency_time(main_data)),
+    plot_interactive_param_dependency_time = 
+        girafe(ggobj = static_param_dependency_time(parameter_dependency_data),
+               width_svg=8, height_svg=8),
 
     plot_static_param_dependency_diam =
         static_param_dependency_diam(main_data) %>%

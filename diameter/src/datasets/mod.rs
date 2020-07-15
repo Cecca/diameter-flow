@@ -80,6 +80,13 @@ impl DatasetBuilder {
         }
     }
 
+    pub fn rweight(&self, max_weight: u32, seed: u64, inner: Dataset) -> Dataset {
+        Dataset {
+            data_dir: self.data_dir.clone(),
+            kind: DatasetKind::RWeight(max_weight, seed, Box::new(inner)),
+        }
+    }
+
     pub fn mesh(&self, side: u32) -> Dataset {
         Dataset {
             data_dir: self.data_dir.clone(),
@@ -116,6 +123,7 @@ pub enum DatasetKind {
     Layered(usize, Box<Dataset>),
     LCC(Box<Dataset>),
     Mesh(u32),
+    RWeight(u32, u64, Box<Dataset>),
     // A mesh with two different edge weights, assigned randomly with
     // probability p and 1-p
     MeshBiweight(u32, f64, u32, u32, u64),
@@ -141,6 +149,9 @@ impl Dataset {
                 format!("layered::{}-{}", layers, inner.metadata_key())
             }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
+            DatasetKind::RWeight(max_weight, seed, inner) => {
+                format!("rweight: {} {} {}", max_weight, seed, inner.metadata_key())
+            }
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
                 format!("mesh::{}-{}-{}-{}-{}", side, p, w1, w2, seed)
@@ -296,6 +307,34 @@ impl Dataset {
                     bvconvert::convert(&tool_graph_path, &compressed_path);
                     info!("Compression took {:?}", timer.elapsed());
                 }
+            }
+            DatasetKind::RWeight(max_weight, seed, inner) => {
+                assert!(max_weight > &0);
+                use rand::distributions::Distribution;
+                use rand::prelude::*;
+
+                let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
+                let distribution = rand::distributions::Uniform::new_inclusive(1, max_weight);
+                inner.prepare();
+                let edges_dir = self.edges_directory();
+                info!("creating layered dataset into {:?}", edges_dir);
+                std::fs::create_dir_all(&edges_dir);
+                let inner_meta = inner.metadata();
+                let n = inner_meta.num_nodes;
+
+                let mut pl = progress_logger::ProgressLogger::builder()
+                    .with_items_name("edges")
+                    .with_expected_updates(inner_meta.num_edges)
+                    .start();
+
+                let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 32);
+                inner.for_each(|u, v, _orig_weight| {
+                    let w = distribution.sample(&mut rng);
+                    compressor.write((u, v, w));
+                    pl.update_light(1u64);
+                });
+
+                pl.stop();
             }
 
             DatasetKind::Layered(layers, inner) => {
@@ -527,6 +566,9 @@ impl Dataset {
             }
             DatasetKind::Layered(layers, inner) => {
                 format!("lcc::{}-{}", layers, inner.metadata_key())
+            }
+            DatasetKind::RWeight(max_weight, seed, inner) => {
+                format!("lcc::{}-{}-{}", max_weight, seed, inner.metadata_key())
             }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
             DatasetKind::Mesh(side) => format!("mesh::{}", side),

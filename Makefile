@@ -58,6 +58,7 @@ java/dsiutils-2.6.2.jar: java/webgraph-deps.tar.gz
 analysis:
 	R -e "drake::r_make()"
 	cp export/* ~/Dropbox/Lavoro/Diameter/Algorithms-MDPI/include
+	cp dashboard.html docs/dashboard.html
 
 .PHONY: sync
 sync:
