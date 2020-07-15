@@ -49,30 +49,30 @@ function run_test() {
 }
 
 function run_social() {
-    for SEED in 112985 #246134 346235 2356
+    for SEED in 12587 112985 246134 346235 2356 134190 23698 23049830 98743258
     do
-    for DATASET in orkut livejournal #friendster
+    for DATASET in livejournal-lcc orkut-lcc
     do
-        # BFS
-        $BIN \
-        --ddir /mnt/ssd/graphs \
-        --hosts ~/working_hosts \
-        --threads 4 \
-        --seed $SEED \
-        "bfs" \
-        $DATASET
+        # # BFS
+        # $BIN \
+        # --ddir /mnt/ssd/graphs \
+        # --hosts ~/working_hosts \
+        # --threads 4 \
+        # --seed $SEED \
+        # "bfs" \
+        # $DATASET
 
-        # Hyperball
-        for PARAM in 4
-        do
-        $BIN \
-            --ddir /mnt/ssd/graphs \
-            --hosts ~/working_hosts \
-            --threads 4 \
-            --seed $SEED \
-            "hyperball($PARAM)" \
-            $DATASET
-        done
+        # # Hyperball
+        # for PARAM in 4
+        # do
+        # $BIN \
+        #     --ddir /mnt/ssd/graphs \
+        #     --hosts ~/working_hosts \
+        #     --threads 4 \
+        #     --seed $SEED \
+        #     "hyperball($PARAM)" \
+        #     $DATASET
+        # done
 
         # Rand cluster
         for PARAM in 1 2 4 8 16 32
@@ -93,30 +93,30 @@ function run_social() {
 }
 
 function run_web() {
-    for SEED in 112985 #246134 346235 2356
+    for SEED in 2349867983 #112985 246134 346235 2356 134587 25987
     do
     for DATASET in uk-2014-host-lcc uk-2005-lcc sk-2005-lcc
     do
-        # BFS
-        $BIN \
-        --ddir /mnt/ssd/graphs \
-        --hosts ~/working_hosts \
-        --threads 4 \
-        --seed $SEED \
-        "bfs" \
-        $DATASET
+        # # BFS
+        # $BIN \
+        # --ddir /mnt/ssd/graphs \
+        # --hosts ~/working_hosts \
+        # --threads 4 \
+        # --seed $SEED \
+        # "bfs" \
+        # $DATASET
 
-        # Hyperball
-        for PARAM in 4
-        do
-        $BIN \
-            --ddir /mnt/ssd/graphs \
-            --hosts ~/working_hosts \
-            --threads 4 \
-            --seed $SEED \
-            "hyperball($PARAM)" \
-            $DATASET
-        done
+        # # Hyperball
+        # for PARAM in 4
+        # do
+        # $BIN \
+        #     --ddir /mnt/ssd/graphs \
+        #     --hosts ~/working_hosts \
+        #     --threads 4 \
+        #     --seed $SEED \
+        #     "hyperball($PARAM)" \
+        #     $DATASET
+        # done
 
         # Rand cluster
         for PARAM in 1 2 4 8 16 32
@@ -185,24 +185,24 @@ function run_web_large() {
 
 
 function run_weighted() {
-    for SEED in 11985714 #524098 124098
+    for SEED in 4398734 #11985714 #524098 124098
     do
-    for DATASET in USA-E USA-W USA-CTR USA
+    for DATASET in USA USA-W USA-CTR
     do
-        # Delta-stepping
-        for DELTA in 100000 1000000 10000000 100000000
-        do
-            $BIN \
-            --ddir /mnt/ssd/graphs \
-            --hosts ~/working_hosts \
-            --threads 4 \
-            --seed $SEED \
-            "delta-stepping($DELTA)" \
-            $DATASET
-        done
+        # # Delta-stepping
+        # for DELTA in 100000 1000000 10000000 100000000
+        # do
+        #     $BIN \
+        #     --ddir /mnt/ssd/graphs \
+        #     --hosts ~/working_hosts \
+        #     --threads 4 \
+        #     --seed $SEED \
+        #     "delta-stepping($DELTA)" \
+        #     $DATASET
+        # done
 
         # Rand cluster
-        for PARAM in 100 1000 10000 100000 1000000
+        for PARAM in 100 1000 10000 100000 #1000000
         do
             for BASE in 2
             do
@@ -220,9 +220,9 @@ function run_weighted() {
 }
 
 function run_mesh() {
-    for SEED in 11985714 #524098 124098
+    for SEED in 11985714 524098 124098
     do
-    for DATASET in mesh-1000
+    for DATASET in mesh-2048
     do
 
         # BFS
@@ -301,14 +301,14 @@ function run_rwmesh() {
 }
 
 function run_scalability() {
-    for SEED in 13381 #2350982 5089735 135 12346
+    for SEED in 13381 2350982 5089735 135 12346
     do
-      for NUM_HOSTS in 2 4 6 8 10 12 14
+      for NUM_HOSTS in 2 4 6 8 10 12
       do
         cat ~/working_hosts | head -n$NUM_HOSTS > /tmp/hosts-$NUM_HOSTS
         # Rand cluster
         DATASET=uk-2005-lcc
-        for PARAM in 4 # 10000
+        for PARAM in 4
         do
             $BIN \
                 --ddir /mnt/ssd/graphs \
@@ -318,8 +318,48 @@ function run_scalability() {
                 "rand-cluster($PARAM,2)" \
                 $DATASET
         done
+        # DATASET=USA
+        # for PARAM in 10000
+        # do
+        #     $BIN \
+        #         --ddir /mnt/ssd/graphs \
+        #         --hosts /tmp/hosts-$NUM_HOSTS \
+        #         --threads 4 \
+        #         --seed $SEED \
+        #         "rand-cluster($PARAM,2)" \
+        #         $DATASET
+        # done
       done
     done
+}
+
+function run_scalability_n() {
+  for SEED in 13381 2350982 5089735 135 12346
+  do
+    for LAYERS in 2 4 8 16
+    do
+      DATASET=uk-2014-host-lcc-x$LAYERS
+      $BIN \
+          --ddir /mnt/ssd/graphs \
+          --hosts ~/working_hosts \
+          --threads 4 \
+          --seed $SEED \
+          "rand-cluster(16,2)" \
+          $DATASET
+    done
+    for LAYERS in 2 4 8 16
+    do
+      DATASET=USA-x$LAYERS
+      $BIN \
+          --ddir /mnt/ssd/graphs \
+          --hosts ~/working_hosts \
+          --threads 4 \
+          --seed $SEED \
+          "rand-cluster(10000,2)" \
+          $DATASET
+    done
+  done
+
 }
 
 case $1 in
@@ -346,5 +386,8 @@ case $1 in
     ;;
     scalability)
         run_scalability
+    ;;
+    scalability_n)
+        run_scalability_n
     ;;
 esac
