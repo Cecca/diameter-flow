@@ -1,4 +1,4 @@
-use crate::logging::*;
+
 use bytes::*;
 use timely::communication::Push;
 use timely::dataflow::channels::pushers::buffer::Session;
@@ -147,7 +147,7 @@ impl DistributedEdges {
         }
     }
 
-    pub fn for_each<F>(&self, mut action: F)
+    pub fn for_each<F>(&self, action: F)
     where
         F: FnMut(u32, u32, u32),
     {
@@ -220,7 +220,7 @@ impl DistributedEdges {
                     });
                     notificator.for_each(|t, _, _| {
                         if let Some(states) = stash.remove(&t) {
-                            let timer = std::time::Instant::now();
+                            let _timer = std::time::Instant::now();
                             let mut out = output.session(&t);
 
                             let mut cnt = 0;

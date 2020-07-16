@@ -23,8 +23,8 @@ mod rand_cluster;
 mod reporter;
 mod sequential;
 
-use crate::operators::*;
-use anyhow::{anyhow, Result};
+
+use anyhow::{Result};
 use argh::FromArgs;
 use bytes::*;
 use datasets::*;
@@ -39,13 +39,13 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::rc::Rc;
 use std::time::Duration;
-use std::time::Instant;
+
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
-use timely::dataflow::channels::pact::Pipeline;
-use timely::dataflow::operators::probe::Handle;
-use timely::dataflow::operators::Inspect;
-use timely::dataflow::operators::Operator;
-use timely::dataflow::operators::Probe;
+
+
+
+
+
 use timely::worker::Worker;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -648,7 +648,7 @@ fn main() -> Result<()> {
                     seed,
                     final_approx_probe,
                 ),
-                Algorithm::RandClusterGuess(memory, init, step) => todo!(),
+                Algorithm::RandClusterGuess(_memory, _init, _step) => todo!(),
                 Algorithm::Sequential => panic!("sequential algorithm not supported in dataflow"),
             };
 

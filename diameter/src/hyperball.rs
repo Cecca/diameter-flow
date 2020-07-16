@@ -1,5 +1,5 @@
 use crate::distributed_graph::*;
-use crate::logging::*;
+
 use crate::operators::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -8,7 +8,7 @@ use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
-use timely::dataflow::Stream;
+
 use timely::order::Product;
 
 #[derive(Clone, PartialOrd, Ord, Eq, PartialEq, Abomonation, Debug, Hash)]

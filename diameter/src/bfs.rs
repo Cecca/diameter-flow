@@ -5,7 +5,7 @@ use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
 use timely::dataflow::Scope;
-use timely::dataflow::Stream;
+
 
 #[derive(Debug, Clone, Abomonation)]
 struct State {

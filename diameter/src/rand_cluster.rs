@@ -1,5 +1,5 @@
 use crate::distributed_graph::*;
-use crate::logging::*;
+
 use crate::operators::*;
 use crate::sequential::*;
 use rand::Rng;
@@ -11,8 +11,8 @@ use std::rc::Rc;
 use std::time::Duration;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
-use timely::dataflow::operators::capture::event::*;
-use timely::dataflow::operators::capture::replay::Replay;
+
+
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
@@ -82,9 +82,9 @@ impl NodeState {
     fn is_updated(&self) -> bool {
         match self {
             Self::Covered {
-                root,
-                distance,
-                generation,
+                root: _,
+                distance: _,
+                generation: _,
                 updated,
             } => *updated,
             _ => false,
@@ -101,7 +101,7 @@ impl NodeState {
     fn can_send(&self, radius: u32, round: u32) -> bool {
         match *self {
             Self::Covered {
-                root,
+                root: _,
                 distance,
                 generation,
                 updated,
@@ -116,7 +116,7 @@ impl NodeState {
                 root,
                 distance,
                 generation,
-                updated,
+                updated: _,
             } => {
                 if distance >= radius * (round - generation) {
                     Self::Covered {
@@ -142,7 +142,7 @@ impl NodeState {
                 root,
                 distance,
                 generation,
-                updated,
+                updated: _,
             } => {
                 if distance <= radius * (1 + round - generation) {
                     Self::Frozen { root, distance }
@@ -153,7 +153,7 @@ impl NodeState {
         }
     }
 
-    fn propagate(&self, weight: u32, radius: u32) -> Option<Message> {
+    fn propagate(&self, weight: u32, _radius: u32) -> Option<Message> {
         match *self {
             Self::Covered {
                 root,
@@ -176,12 +176,12 @@ impl NodeState {
     fn distance(&self) -> u32 {
         match self {
             Self::Covered {
-                root,
+                root: _,
                 distance,
-                generation,
-                updated,
+                generation: _,
+                updated: _,
             } => *distance,
-            Self::Frozen { root, distance } => *distance,
+            Self::Frozen { root: _, distance } => *distance,
             Self::Uncovered => panic!("Cannot get distance from uncovered node"),
         }
     }
@@ -190,11 +190,11 @@ impl NodeState {
         match self {
             Self::Covered {
                 root,
-                distance,
-                generation,
-                updated,
+                distance: _,
+                generation: _,
+                updated: _,
             } => *root,
-            Self::Frozen { root, distance } => *root,
+            Self::Frozen { root, distance: _ } => *root,
             Self::Uncovered => panic!("Cannot get distance from uncovered node"),
         }
     }
@@ -221,7 +221,7 @@ impl NodeState {
                 root,
                 distance,
                 generation,
-                updated,
+                updated: _,
             } => Self::Covered {
                 root,
                 distance,
@@ -246,7 +246,7 @@ impl NodeState {
                 root,
                 distance,
                 generation,
-                updated,
+                updated: _,
             } => {
                 if message.distance < distance
                     && (message.generation > generation || message.root == root)
@@ -655,7 +655,7 @@ fn collect_and_approximate<G: Scope>(
             |center, agg: u32| (center, agg),
             |key| *key as u64,
         )
-        .inspect_batch(move |t, data| {
+        .inspect_batch(move |_t, data| {
             let mut hist = HashMap::new();
             data.iter().for_each(|(_center, radius)| {
                 hist.entry(radius).and_modify(|c| *c += 1).or_insert(1);

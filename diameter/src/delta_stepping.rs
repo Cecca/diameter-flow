@@ -1,7 +1,7 @@
 use crate::distributed_graph::*;
-use crate::logging::*;
+
 use crate::operators::*;
-use anyhow::{Context, Result};
+
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
@@ -148,7 +148,7 @@ pub fn delta_stepping<A: timely::communication::Allocate>(
     n: u32,
     seed: u64,
 ) -> (Option<u32>, std::time::Duration) {
-    use std::collections::HashSet;
+    
 
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
         let nodes = if scope.index() == 0 {

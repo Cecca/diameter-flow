@@ -320,7 +320,7 @@ impl Dataset {
                 info!("creating layered dataset into {:?}", edges_dir);
                 std::fs::create_dir_all(&edges_dir);
                 let inner_meta = inner.metadata();
-                let n = inner_meta.num_nodes;
+                let _n = inner_meta.num_nodes;
 
                 let mut pl = progress_logger::ProgressLogger::builder()
                     .with_items_name("edges")
@@ -447,8 +447,8 @@ impl Dataset {
             DatasetKind::Mesh(side) => {
                 let edges_dir = self.edges_directory();
                 std::fs::create_dir_all(edges_dir.clone());
-                let edges = 2 * side * side;
-                let blocks = 128;
+                let _edges = 2 * side * side;
+                let _blocks = 128;
                 let mut compressor = CompressedPairsWriter::to_file(
                     edges_dir,
                     // std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),
@@ -474,8 +474,8 @@ impl Dataset {
                 let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
                 let edges_dir = self.edges_directory();
                 std::fs::create_dir_all(edges_dir.clone()).expect("problem creating directory");
-                let edges = 2 * side * side;
-                let blocks = 128;
+                let _edges = 2 * side * side;
+                let _blocks = 128;
                 let mut compressor = CompressedTripletsWriter::to_file(
                     edges_dir,
                     32, // std::cmp::min(1_000_000, std::cmp::max((edges / blocks) as u64, 1)),

@@ -8,7 +8,7 @@ use bitstream_io::*;
 use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+
 
 #[derive(Clone, Copy)]
 pub enum LoadType {
@@ -151,7 +151,7 @@ impl CompressedEdges {
                 weights_path,
             } => {
                 use std::fs::File;
-                use std::io::{BufRead, BufReader, Read};
+                use std::io::{BufReader, Read};
                 let file_reader = BufReader::new(File::open(raw_path).unwrap());
                 let mut reader = stream::DifferenceStreamReader::new(file_reader);
 
@@ -187,10 +187,10 @@ impl CompressedEdges {
 
     pub fn byte_size(&self) -> u64 {
         match self {
-            Self::InMemory { raw, weights } => raw.len() as u64 * 8,
+            Self::InMemory { raw, weights: _ } => raw.len() as u64 * 8,
             Self::Offline {
                 raw_path,
-                weights_path,
+                weights_path: _,
             } => {
                 use std::fs::File;
                 use std::io::Seek;
@@ -223,7 +223,7 @@ impl Matrix {
 
     pub fn from_file<P: AsRef<Path>>(path: P) -> Self {
         use std::fs::File;
-        use std::io::{BufRead, BufReader, Read};
+        use std::io::{BufRead, BufReader};
 
         let mut side_elements = None;
         let mut elems_per_block = None;

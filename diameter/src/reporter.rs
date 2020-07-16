@@ -1,14 +1,14 @@
-use crate::logging::*;
+
 use crate::Config;
 use chrono::prelude::*;
-use flate2::write::GzEncoder;
-use flate2::Compression;
+
+
 use rusqlite::*;
-use rusqlite::{params, Connection, Result as SQLResult};
+use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-use std::fs::File;
-use std::io::{Result as IOResult, Write};
-use std::path::Path;
+
+
+
 use std::time::Duration;
 
 pub struct Reporter {
