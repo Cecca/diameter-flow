@@ -223,13 +223,13 @@ impl TryFrom<&str> for Algorithm {
                 .parse::<u32>()
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
             let init = captures
-                .get(1)
+                .get(2)
                 .ok_or_else(|| format!("unable to get first capture"))?
                 .as_str()
                 .parse::<u32>()
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
             let step = captures
-                .get(1)
+                .get(3)
                 .ok_or_else(|| format!("unable to get first capture"))?
                 .as_str()
                 .parse::<u32>()

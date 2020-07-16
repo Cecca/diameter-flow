@@ -20,8 +20,6 @@ use timely::dataflow::Stream;
 use timely::order::Product;
 use timely::progress::Timestamp;
 
-const AUXILIARY_THRESHOLD: usize = 100;
-
 #[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct Message {
     distance: u32,
@@ -388,7 +386,7 @@ fn expand_clusters<G>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, NodeState)>,
     radius: RadiusParam,
-    _n: u32,
+    target_size: u32,
 ) -> Stream<G, (u32, NodeState)>
 where
     G: Scope,
@@ -419,6 +417,14 @@ where
                     |state, message| state.updated(*message),
                     |state| state.deactivate(), // deactivate nodes with no messages
                 )
+                .inspect_batch(move |t, _data| {
+                    println!(
+                        "{:?} current radius: {} (guess step {})",
+                        t,
+                        radius.get(t),
+                        t.get_guess_step()
+                    )
+                })
                 .branch_all(
                     "can_send",
                     move |t, pair| pair.1.can_send(radius.get(&t), t.outer.get_generation()),
@@ -428,7 +434,7 @@ where
             let (output2, further2) = further.branch_all(
                 "uncovered_count_inner",
                 move |_t, pair| pair.1.is_uncovered(),
-                AUXILIARY_THRESHOLD,
+                target_size as usize,
             ); // Circulate while the auxiliary graph is too large
 
             further2.connect_loop(handle);
@@ -497,6 +503,7 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
     radius: RadiusParam,
     base: f64,
     n: u32,
+    target_size: u32,
     rand: Rc<RefCell<R>>,
 ) -> Stream<G, (u32, NodeState)>
 where
@@ -514,7 +521,7 @@ where
                 &edges,
                 &sample_centers(&nodes.concat(&cycle), base, n, rand),
                 radius,
-                n,
+                target_size,
             )
             .branch(move |_t, (_id, state)| !state.is_frozen());
             // .branch_all(move |_, (id, state)| state.is_uncovered());
@@ -522,7 +529,7 @@ where
             let (stable2, further2) = further.branch_all(
                 "uncovered_count_outer",
                 move |_t, pair| pair.1.is_uncovered(),
-                AUXILIARY_THRESHOLD,
+                target_size as usize,
             ); // Circulate while the auxiliary graph is too large
 
             further2.connect_loop(handle);
@@ -570,6 +577,7 @@ pub fn rand_cluster<G: Scope<Timestamp = ()>>(
         },
         base,
         n,
+        0,
         rand,
     );
 
@@ -597,6 +605,7 @@ pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(
     let rand = Rc::new(RefCell::new(rand));
 
     let radius = RadiusParam { init, step };
+    info!("radius configuration: {:?}", radius);
 
     let nodes = edges.nodes::<_, NodeState>(scope);
 
@@ -606,11 +615,12 @@ pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(
         let (handle, cycle) = inner_scope.feedback(summary);
 
         let (stable, further) =
-            build_clustering(&edges, &nodes.concat(&cycle), radius, 2.0, n, rand).branch_all(
-                "clustering complete",
-                |_t, (id, state)| state.is_center(*id),
-                memory as usize,
-            );
+            build_clustering(&edges, &nodes.concat(&cycle), radius, 2.0, n, memory, rand)
+                .branch_all(
+                    "clustering complete",
+                    |_t, (id, state)| state.is_center(*id),
+                    memory as usize,
+                );
 
         further
             .map(|(id, state)| (id, state.reset()))
