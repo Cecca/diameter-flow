@@ -42,10 +42,10 @@ impl Reporter {
         self.final_approx_time.replace(final_approx_time);
     }
 
-    pub fn append_counter(&mut self, event: CountEvent, count: u64) {
-        let (outer, inner) = event.iterations();
-        self.counters.push((event.as_string(), outer, inner, count));
-    }
+    // pub fn append_counter(&mut self, event: CountEvent, count: u64) {
+    //     let (outer, inner) = event.iterations();
+    //     self.counters.push((event.as_string(), outer, inner, count));
+    // }
 
     fn sha(&self) -> String {
         let datestr = self.date.to_rfc2822();

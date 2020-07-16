@@ -103,7 +103,7 @@ pub fn hyperball<G: Scope<Timestamp = ()>>(
         .nodes::<_, ()>(scope)
         .map(move |(id, ())| (id, State::new(p, id)));
 
-    let l1 = nodes.scope().count_logger().expect("missing logger");
+    // let l1 = nodes.scope().count_logger().expect("missing logger");
 
     let stop_times: Stream<G, u32> = nodes.scope().iterative::<u32, _, _>(|subscope| {
         let nodes = nodes.enter(subscope);
@@ -111,9 +111,10 @@ pub fn hyperball<G: Scope<Timestamp = ()>>(
 
         let (stable, updated) = edges
             .send(
-                &nodes.concat(&cycle).inspect_batch(move |t, data| {
-                    l1.log((CountEvent::Active(t.inner), data.len() as u64))
-                }),
+                &nodes.concat(&cycle),
+                // .inspect_batch(move |t, data| {
+                //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
+                // }),
                 false,
                 // Should send?
                 |_, _| true,

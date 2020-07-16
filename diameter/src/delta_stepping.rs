@@ -149,7 +149,7 @@ pub fn delta_stepping<G: Scope<Timestamp = ()>>(
 ) -> Stream<G, u32> {
     use std::collections::HashSet;
 
-    let l1 = scope.count_logger().expect("missing logger");
+    // let l1 = scope.count_logger().expect("missing logger");
     let nodes = if scope.index() == 0 {
         let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
         let dist = Uniform::new(0u32, n + 1);
@@ -170,9 +170,10 @@ pub fn delta_stepping<G: Scope<Timestamp = ()>>(
 
         let (stable, further) = delta_step(
             &edges,
-            &nodes.concat(&cycle).inspect_batch(move |t, data| {
-                l1.log((CountEvent::Active(t.inner), data.len() as u64))
-            }),
+            &nodes.concat(&cycle),
+            // .inspect_batch(move |t, data| {
+            //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
+            // }),
             delta,
         )
         // We should also keep the old states because otherwise we enter

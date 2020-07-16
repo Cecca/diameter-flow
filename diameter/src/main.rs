@@ -615,8 +615,8 @@ fn main() -> Result<()> {
         let ret_status = config.execute(move |worker| {
             let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
 
-            let (logging_probe, logging_input_handle) =
-                logging::init_count_logging(worker, Rc::clone(&reporter));
+            // let (logging_probe, logging_input_handle) =
+            //     logging::init_count_logging(worker, Rc::clone(&reporter));
 
             let load_type = if config2.offline {
                 info!("keeping dataset on disk");
@@ -690,12 +690,12 @@ fn main() -> Result<()> {
             info!("{:?}\tcomputed diameter", timer.elapsed());
             let elapsed = timer.elapsed();
 
-            // close the logging input and perform any outstanding work
-            logging_input_handle
-                .replace(None)
-                .expect("missing logging input handle")
-                .close();
-            worker.step_while(|| !logging_probe.done());
+            // // close the logging input and perform any outstanding work
+            // logging_input_handle
+            //     .replace(None)
+            //     .expect("missing logging input handle")
+            //     .close();
+            // worker.step_while(|| !logging_probe.done());
 
             if worker.index() == 0 {
                 let diameter: u32 = diameter_result.borrow().expect("missing result");

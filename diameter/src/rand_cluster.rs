@@ -325,7 +325,7 @@ where
     G::Timestamp: GetGeneration,
 {
     let mut stash = HashMap::new();
-    let l1 = nodes.scope().count_logger().expect("missing logger");
+    // let l1 = nodes.scope().count_logger().expect("missing logger");
 
     // we have to stash the nodes and sort them to make the center sampling
     // deterministic, for a fixed random generator.
@@ -346,7 +346,7 @@ where
                 if let Some(mut nodes) = stash.remove(&t) {
                     let generation = t.time().get_generation();
                     nodes.sort_by_key(|pair| pair.0);
-                    l1.log((CountEvent::Active(generation), nodes.len() as u64));
+                    // l1.log((CountEvent::Active(generation), nodes.len() as u64));
                     let mut out = output.session(&t);
                     let mut cnt = 0;
                     let cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
@@ -374,8 +374,8 @@ where
                         }));
                     }
                     // info!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
-                    l1.log((CountEvent::Centers(generation), cnt as u64));
-                    l1.log((CountEvent::Uncovered(generation), cnt_uncovered as u64));
+                    // l1.log((CountEvent::Centers(generation), cnt as u64));
+                    // l1.log((CountEvent::Uncovered(generation), cnt_uncovered as u64));
                 }
             });
         },
