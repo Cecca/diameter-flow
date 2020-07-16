@@ -11,6 +11,7 @@ use std::rc::Rc;
 use std::time::Duration;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
+use timely::dataflow::ProbeHandle;
 
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
@@ -453,8 +454,17 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
     n: u32,
     target_size: u32,
     rand: Rc<RefCell<R>>,
-) -> Stream<G, (u32, NodeState)> {
-    let clustering = nodes
+) -> (
+    Rc<RefCell<Option<Vec<(u32, NodeState)>>>>,
+    Rc<RefCell<Option<u32>>>,
+    ProbeHandle<G::Timestamp>,
+) {
+    use timely::dataflow::operators::Accumulate;
+
+    let local_states = Rc::new(RefCell::new(None));
+    let local_states_ref = Rc::clone(&local_states);
+
+    let (centers_count, probe) = nodes
         .scope()
         .iterative::<u32, _, _>(|inner_scope| {
             let nodes = nodes.enter(&inner_scope);
@@ -469,7 +479,6 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
                 target_size,
             )
             .branch(move |_t, (_id, state)| !state.is_frozen());
-            // .branch_all(move |_, (id, state)| state.is_uncovered());
 
             let (stable2, further2) = further.branch_all(
                 "uncovered_count_outer",
@@ -481,15 +490,43 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
 
             stable.concat(&stable2).leave()
         })
+        // Turn uncovered nodes into singleton clusters
         .map(|(id, state)| {
             if state.is_uncovered() {
                 (id, state.as_center(id, std::u32::MAX))
             } else {
                 (id, state)
             }
-        });
+        })
+        // Count how many centers we have locally, and at the same time collect all the states of this worker
+        .unary(Pipeline, "collect_and_count", move |_, _| {
+            move |input, output| {
+                input.for_each(|t, data| {
+                    let data = data.replace(Vec::new());
+                    let mut count = 0u32;
+                    for pair in data.into_iter() {
+                        if pair.1.is_center(pair.0) {
+                            count += 1;
+                        }
+                        local_states
+                            .borrow_mut()
+                            .get_or_insert_with(Vec::new)
+                            .push(pair);
+                    }
+                    output.session(&t).give(count);
+                });
+            }
+        })
+        .exchange(|_| 0)
+        .accumulate(0, |sum, data| {
+            for &x in data.iter() {
+                *sum += x;
+            }
+        })
+        .broadcast()
+        .collect_single();
 
-    clustering
+    (local_states_ref, centers_count, probe)
 }
 
 pub fn rand_cluster<A: timely::communication::Allocate>(
@@ -503,7 +540,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
 ) -> (Option<u32>, std::time::Duration) {
     use rand_xoshiro::Xoroshiro128StarStar;
 
-    let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
+    let (local_states, num_centers, probe) = worker.dataflow::<(), _, _>(|scope| {
         let nodes = edges.nodes::<_, NodeState>(scope);
 
         let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
@@ -514,15 +551,26 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
 
         let nodes = edges.nodes::<_, NodeState>(scope);
 
-        let clustering = build_clustering(&edges, &nodes, radius, base, n, 0, rand);
+        build_clustering(&edges, &nodes, radius, base, n, 0, rand)
+    });
 
+    let elapsed_clustering = run_to_completion(worker, probe);
+    info!("Clustering completed in {:?}", elapsed_clustering);
+
+    let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
+        let local_states = local_states.borrow_mut().take().into_iter().flatten();
+        let clustering = local_states.to_stream(scope);
         collect_and_approximate(edges, &clustering, final_approx_probe).collect_single()
     });
 
-    let elapsed = run_to_completion(worker, probe);
+    let elapsed_approximation = run_to_completion(worker, probe);
     let diameter = diameter_box.borrow_mut().take();
+    info!(
+        "Final diameter approximation in {:?}",
+        elapsed_approximation
+    );
 
-    (diameter, elapsed)
+    (diameter, elapsed_clustering + elapsed_approximation)
 }
 
 pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(

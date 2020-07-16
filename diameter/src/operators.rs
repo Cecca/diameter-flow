@@ -1,4 +1,3 @@
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -161,6 +160,5 @@ pub fn run_to_completion<A: Allocate, T: Timestamp>(
     // Run the dataflow and record the time
     let timer = Instant::now();
     worker.step_while(|| !probe.done());
-    info!("{:?}\tcomputed diameter", timer.elapsed());
     timer.elapsed()
 }
