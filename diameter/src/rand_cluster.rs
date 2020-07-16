@@ -266,7 +266,7 @@ trait GetGeneration {
     fn get_generation(&self) -> u32;
 }
 
-impl GetGeneration for Product<usize, u32> {
+impl GetGeneration for Product<(), u32> {
     fn get_generation(&self) -> u32 {
         self.inner
     }
@@ -439,7 +439,7 @@ fn remap_edges<G: Scope>(
         )
 }
 
-pub fn rand_cluster<G: Scope<Timestamp = usize>>(
+pub fn rand_cluster<G: Scope<Timestamp = ()>>(
     edges: DistributedEdges,
     scope: &mut G,
     radius: u32,

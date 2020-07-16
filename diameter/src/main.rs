@@ -619,7 +619,7 @@ fn main() {
             let final_approx_probe = Rc::new(RefCell::new(None));
             let final_approx_probe_ref = Rc::clone(&final_approx_probe);
 
-            let probe = worker.dataflow::<usize, _, _>(move |scope| {
+            let probe = worker.dataflow::<(), _, _>(move |scope| {
                 let mut probe = Handle::new();
 
                 let diameter_stream = match algorithm {

@@ -28,7 +28,7 @@ impl State {
     }
 }
 
-pub fn bfs<G: Scope<Timestamp = usize>>(
+pub fn bfs<G: Scope<Timestamp = ()>>(
     edges: DistributedEdges,
     scope: &mut G,
     n: u32,

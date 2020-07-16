@@ -92,7 +92,7 @@ impl Default for State {
     }
 }
 
-pub fn hyperball<G: Scope<Timestamp = usize>>(
+pub fn hyperball<G: Scope<Timestamp = ()>>(
     edges: DistributedEdges,
     scope: &mut G,
     p: usize,

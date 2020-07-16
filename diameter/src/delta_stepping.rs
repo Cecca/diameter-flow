@@ -93,7 +93,7 @@ impl State {
     }
 }
 
-fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
+fn delta_step<G: Scope<Timestamp = Product<(), u32>>>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, State)>,
     delta: u32,
@@ -140,7 +140,7 @@ fn delta_step<G: Scope<Timestamp = Product<usize, u32>>>(
     )
 }
 
-pub fn delta_stepping<G: Scope<Timestamp = usize>>(
+pub fn delta_stepping<G: Scope<Timestamp = ()>>(
     edges: DistributedEdges,
     scope: &mut G,
     delta: u32,
