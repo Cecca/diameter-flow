@@ -350,7 +350,6 @@ fn expand_clusters<G>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, NodeState)>,
     radius: u32,
-    target_size: u32,
 ) -> Stream<G, (u32, NodeState)>
 where
     G: Scope,
@@ -382,15 +381,9 @@ where
                     0,
                 ); // Circulate while someone has something to say
 
-            let (output2, further2) = further.branch_all(
-                "uncovered_count_inner",
-                move |_t, pair| pair.1.is_uncovered(),
-                target_size as usize,
-            ); // Circulate while the auxiliary graph is too large
+            further.connect_loop(handle);
 
-            further2.connect_loop(handle);
-
-            output.concat(&output2).leave()
+            output.leave()
         })
         .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.get_generation())))
 }
@@ -452,7 +445,6 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
     radius: u32,
     base: f64,
     n: u32,
-    target_size: u32,
     rand: Rc<RefCell<R>>,
 ) -> (
     Rc<RefCell<Option<Vec<(u32, NodeState)>>>>,
@@ -476,19 +468,12 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
                 &edges,
                 &sample_centers(&nodes.concat(&cycle), base, n, rand),
                 radius,
-                target_size,
             )
             .branch(move |_t, (_id, state)| !state.is_frozen());
 
-            let (stable2, further2) = further.branch_all(
-                "uncovered_count_outer",
-                move |_t, pair| pair.1.is_uncovered(),
-                target_size as usize,
-            ); // Circulate while the auxiliary graph is too large
+            further.connect_loop(handle);
 
-            further2.connect_loop(handle);
-
-            stable.concat(&stable2).leave()
+            stable.leave()
         })
         // Turn uncovered nodes into singleton clusters
         .map(|(id, state)| {
@@ -551,7 +536,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
 
         let nodes = edges.nodes::<_, NodeState>(scope);
 
-        build_clustering(&edges, &nodes, radius, base, n, 0, rand)
+        build_clustering(&edges, &nodes, radius, base, n, rand)
     });
 
     let elapsed_clustering = run_to_completion(worker, probe);
@@ -603,7 +588,7 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
 
             let nodes = edges.nodes::<_, NodeState>(scope);
 
-            build_clustering(&edges, &nodes, guess_radius, 2.0, n, memory, rand)
+            build_clustering(&edges, &nodes, guess_radius, 2.0, n, rand)
         });
         let elapsed_clustering = run_to_completion(worker, probe);
         info!(
