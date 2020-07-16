@@ -509,7 +509,7 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     for &layers in &[5, 10, 100] {
         for (basedata, max_weight) in &[
             (format!("livejournal-lcc-x{}", layers), 5_000_000),
-            (format!("sk-2005-lcc-x{}", layers), 5_000_000),
+            (format!("sk-2005-lcc-x{}", layers), 50_000_000),
         ] {
             if let Some(inner) = datasets.get(basedata) {
                 datasets.insert(
