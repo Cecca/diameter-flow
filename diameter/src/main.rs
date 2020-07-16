@@ -23,6 +23,7 @@ mod rand_cluster;
 mod reporter;
 mod sequential;
 
+use crate::operators::*;
 use anyhow::{anyhow, Result};
 use argh::FromArgs;
 use bytes::*;
@@ -628,15 +629,11 @@ fn main() -> Result<()> {
 
             let static_edges = dataset.load_static(worker, load_type);
             debug!("loaded edges statically");
-            let diameter_result = Rc::new(RefCell::new(None));
-            let diameter_result_ref = Rc::clone(&diameter_result);
             let final_approx_probe = Rc::new(RefCell::new(None));
             let final_approx_probe_ref = Rc::clone(&final_approx_probe);
 
-            let probe = worker.dataflow::<(), _, _>(move |scope| {
-                let mut probe = Handle::new();
-
-                let diameter_stream = match algorithm {
+            let (diameter_result, probe) = worker.dataflow::<(), _, _>(move |scope| {
+                match algorithm {
                     Algorithm::DeltaStepping(delta) => {
                         delta_stepping(static_edges, scope, delta, n, seed)
                     }
@@ -667,21 +664,8 @@ fn main() -> Result<()> {
                     Algorithm::Sequential => {
                         panic!("sequential algorithm not supported in dataflow")
                     }
-                };
-
-                diameter_stream
-                    .inspect_batch(|t, d| info!("[{:?}] The diameter lower bound is {:?}", t, d))
-                    .unary(Pipeline, "diameter collect", move |_, _| {
-                        move |input, output| {
-                            input.for_each(|t, data| {
-                                diameter_result_ref.borrow_mut().replace(data[0]);
-                                output.session(&t).give(());
-                            });
-                        }
-                    })
-                    .probe_with(&mut probe);
-
-                probe
+                }
+                .collect_single()
             });
 
             // Run the dataflow and record the time

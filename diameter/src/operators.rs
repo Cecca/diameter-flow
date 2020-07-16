@@ -3,8 +3,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use timely::dataflow::channels::pact::Pipeline;
+use timely::dataflow::ProbeHandle;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
+use timely::progress::Timestamp;
 use timely::Data;
 
 pub trait BranchAll<G: Scope, D: Data> {
@@ -121,5 +123,30 @@ impl<G: Scope, D: Data> MapTimed<G, D> for Stream<G, D> {
                 });
             }
         })
+    }
+}
+
+pub trait CollectSingle<T: Timestamp> {
+    fn collect_single(&self) -> (Rc<RefCell<Option<u32>>>, ProbeHandle<T>);
+}
+
+impl<G: Scope> CollectSingle<G::Timestamp> for Stream<G, u32> {
+    fn collect_single(&self) -> (Rc<RefCell<Option<u32>>>, ProbeHandle<G::Timestamp>) {
+        use timely::dataflow::operators::{Operator, Probe};
+
+        let result = Rc::new(RefCell::new(None));
+        let result_ref = Rc::clone(&result);
+        let probe = self
+            .unary(Pipeline, "collect_single", move |_, _| {
+                move |input, output| {
+                    input.for_each(|t, data| {
+                        result_ref.borrow_mut().replace(data[0]);
+                        output.session(&t).give(());
+                    });
+                }
+            })
+            .probe();
+
+        (result, probe)
     }
 }
