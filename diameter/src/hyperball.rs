@@ -92,85 +92,93 @@ impl Default for State {
     }
 }
 
-pub fn hyperball<G: Scope<Timestamp = ()>>(
+pub fn hyperball<A: timely::communication::Allocate>(
     edges: DistributedEdges,
-    scope: &mut G,
+    worker: &mut timely::worker::Worker<A>,
     p: usize,
     _seed: u64,
-) -> Stream<G, u32> {
-    // Init nodes
-    let nodes = edges
-        .nodes::<_, ()>(scope)
-        .map(move |(id, ())| (id, State::new(p, id)));
+) -> (Option<u32>, std::time::Duration) {
+    let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
+        // Init nodes
+        let nodes = edges
+            .nodes::<_, ()>(scope)
+            .map(move |(id, ())| (id, State::new(p, id)));
 
-    // let l1 = nodes.scope().count_logger().expect("missing logger");
+        // let l1 = nodes.scope().count_logger().expect("missing logger");
 
-    let stop_times: Stream<G, u32> = nodes.scope().iterative::<u32, _, _>(|subscope| {
-        let nodes = nodes.enter(subscope);
-        let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
+        let stop_times = nodes.scope().iterative::<u32, _, _>(|subscope| {
+            let nodes = nodes.enter(subscope);
+            let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
-        let (stable, updated) = edges
-            .send(
-                &nodes.concat(&cycle),
-                // .inspect_batch(move |t, data| {
-                //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
-                // }),
-                false,
-                // Should send?
-                |_, _| true,
-                // create message
-                |_time, state, _weight| Some(state.counter.clone()),
-                // Combine messages
-                HyperLogLogCounter::merge,
-                // Update state for nodes with messages
-                |state, message| state.update(message),
-                // Update the state for nodes without messages
-                |state| state.deactivate(),
-            )
-            // .branch(|_t, (_id, state)| state.updated);
-            // We have to keep cycling nodes because they may get re-activated
-            // at a later iteration
-            .branch_all("updated", |_, (_id, state)| state.updated, 0);
+            let (stable, updated) = edges
+                .send(
+                    &nodes.concat(&cycle),
+                    // .inspect_batch(move |t, data| {
+                    //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
+                    // }),
+                    false,
+                    // Should send?
+                    |_, _| true,
+                    // create message
+                    |_time, state, _weight| Some(state.counter.clone()),
+                    // Combine messages
+                    HyperLogLogCounter::merge,
+                    // Update state for nodes with messages
+                    |state, message| state.update(message),
+                    // Update the state for nodes without messages
+                    |state| state.deactivate(),
+                )
+                // .branch(|_t, (_id, state)| state.updated);
+                // We have to keep cycling nodes because they may get re-activated
+                // at a later iteration
+                .branch_all("updated", |_, (_id, state)| state.updated, 0);
 
-        updated.connect_loop(handle);
+            updated.connect_loop(handle);
 
-        let mut counters = HashMap::new();
-        // Get the iteration we are returning from, and output just that
-        stable
-            .unary_notify(
-                Pipeline,
-                "get_iteration",
-                None,
-                move |input, output, notificator| {
-                    input.for_each(|t, data| {
-                        counters
-                            .entry(t.time().clone())
-                            .and_modify(|c| *c += data.len())
-                            .or_insert(data.len());
-                        notificator.notify_at(t.retain());
-                    });
-                    notificator.for_each(|t, _, _| {
-                        info!(
-                            "{:?} are exiting at time {:?}",
-                            counters.remove(t.time()),
-                            t.time()
-                        );
-                        output.session(&t).give(t.time().inner);
-                    });
-                },
-            )
-            .leave()
+            let mut counters = HashMap::new();
+            // Get the iteration we are returning from, and output just that
+            stable
+                .unary_notify(
+                    Pipeline,
+                    "get_iteration",
+                    None,
+                    move |input, output, notificator| {
+                        input.for_each(|t, data| {
+                            counters
+                                .entry(t.time().clone())
+                                .and_modify(|c| *c += data.len())
+                                .or_insert(data.len());
+                            notificator.notify_at(t.retain());
+                        });
+                        notificator.for_each(|t, _, _| {
+                            info!(
+                                "{:?} are exiting at time {:?}",
+                                counters.remove(t.time()),
+                                t.time()
+                            );
+                            output.session(&t).give(t.time().inner);
+                        });
+                    },
+                )
+                .leave()
+        });
+
+        stop_times
+            .accumulate(0u32, |max, data| {
+                *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+            })
+            .inspect(|partial| info!("Partial maximum {:?}", partial))
+            .exchange(|_| 0)
+            .accumulate(0u32, |max, data| {
+                *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+            })
+            .collect_single()
     });
 
-    stop_times
-        .accumulate(0u32, |max, data| {
-            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
-        })
-        .inspect(|partial| info!("Partial maximum {:?}", partial))
-        .exchange(|_| 0)
-        .accumulate(0u32, |max, data| {
-            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
-        })
+    let elapsed = run_to_completion(worker, probe);
+    let diameter = diameter_box.borrow_mut().take();
+
+    (diameter, elapsed)
 }
 
 #[test]

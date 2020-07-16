@@ -547,41 +547,48 @@ where
     clustering
 }
 
-pub fn rand_cluster<G: Scope<Timestamp = ()>>(
+pub fn rand_cluster<A: timely::communication::Allocate>(
     edges: DistributedEdges,
-    scope: &mut G,
+    worker: &mut timely::worker::Worker<A>,
     radius: u32,
     base: f64,
     n: u32,
     seed: u64,
     final_approx_probe: Rc<RefCell<Option<Duration>>>,
-) -> Stream<G, u32> {
+) -> (Option<u32>, std::time::Duration) {
     use rand_xoshiro::Xoroshiro128StarStar;
 
-    let nodes = edges.nodes::<_, NodeState>(scope);
+    let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
+        let nodes = edges.nodes::<_, NodeState>(scope);
 
-    let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
-    for _ in 0..nodes.scope().index() {
-        rand.jump();
-    }
-    let rand = Rc::new(RefCell::new(rand));
+        let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
+        for _ in 0..nodes.scope().index() {
+            rand.jump();
+        }
+        let rand = Rc::new(RefCell::new(rand));
 
-    let nodes = edges.nodes::<_, NodeState>(scope);
+        let nodes = edges.nodes::<_, NodeState>(scope);
 
-    let clustering = build_clustering(
-        &edges,
-        &nodes,
-        RadiusParam {
-            init: radius,
-            step: 2,
-        },
-        base,
-        n,
-        0,
-        rand,
-    );
+        let clustering = build_clustering(
+            &edges,
+            &nodes,
+            RadiusParam {
+                init: radius,
+                step: 2,
+            },
+            base,
+            n,
+            0,
+            rand,
+        );
 
-    collect_and_approximate(edges, &clustering, final_approx_probe)
+        collect_and_approximate(edges, &clustering, final_approx_probe).collect_single()
+    });
+
+    let elapsed = run_to_completion(worker, probe);
+    let diameter = diameter_box.borrow_mut().take();
+
+    (diameter, elapsed)
 }
 
 pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(

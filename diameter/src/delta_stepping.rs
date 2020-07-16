@@ -1,6 +1,7 @@
 use crate::distributed_graph::*;
 use crate::logging::*;
 use crate::operators::*;
+use anyhow::{Context, Result};
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
@@ -140,68 +141,76 @@ fn delta_step<G: Scope<Timestamp = Product<(), u32>>>(
     )
 }
 
-pub fn delta_stepping<G: Scope<Timestamp = ()>>(
+pub fn delta_stepping<A: timely::communication::Allocate>(
     edges: DistributedEdges,
-    scope: &mut G,
+    worker: &mut timely::worker::Worker<A>,
     delta: u32,
     n: u32,
     seed: u64,
-) -> Stream<G, u32> {
+) -> (Option<u32>, std::time::Duration) {
     use std::collections::HashSet;
 
-    // let l1 = scope.count_logger().expect("missing logger");
-    let nodes = if scope.index() == 0 {
-        let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
-        let dist = Uniform::new(0u32, n + 1);
-        let root: u32 = dist.sample(&mut rng);
+    let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
+        let nodes = if scope.index() == 0 {
+            let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
+            let dist = Uniform::new(0u32, n + 1);
+            let root: u32 = dist.sample(&mut rng);
 
-        vec![(root, State::root())]
-    } else {
-        vec![]
-    }
-    .to_stream(scope)
-    .exchange(|p| p.0 as u64);
+            vec![(root, State::root())]
+        } else {
+            vec![]
+        }
+        .to_stream(scope)
+        .exchange(|p| p.0 as u64);
 
-    // Perform the delta steps, retiring at the end of each
-    // delta step the stable nodes
-    let distances = nodes.scope().iterative::<u32, _, _>(move |inner_scope| {
-        let nodes = nodes.enter(inner_scope);
-        let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
+        // Perform the delta steps, retiring at the end of each
+        // delta step the stable nodes
+        let distances = nodes.scope().iterative::<u32, _, _>(move |inner_scope| {
+            let nodes = nodes.enter(inner_scope);
+            let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
 
-        let (stable, further) = delta_step(
-            &edges,
-            &nodes.concat(&cycle),
-            // .inspect_batch(move |t, data| {
-            //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
-            // }),
-            delta,
-        )
-        // We should also keep the old states because otherwise we enter
-        // and endless loop
-        .branch_all(
-            "updated",
-            move |t, (_id, state)| {
-                state
-                    .distance
-                    .map(|d| d > delta * (t.inner + 1))
-                    .unwrap_or(true)
-            },
-            0,
-        );
+            let (stable, further) = delta_step(
+                &edges,
+                &nodes.concat(&cycle),
+                // .inspect_batch(move |t, data| {
+                //     l1.log((CountEvent::Active(t.inner), data.len() as u64))
+                // }),
+                delta,
+            )
+            // We should also keep the old states because otherwise we enter
+            // and endless loop
+            .branch_all(
+                "updated",
+                move |t, (_id, state)| {
+                    state
+                        .distance
+                        .map(|d| d > delta * (t.inner + 1))
+                        .unwrap_or(true)
+                },
+                0,
+            );
 
-        further.connect_loop(handle);
+            further.connect_loop(handle);
 
-        stable.leave()
+            stable.leave()
+        });
+
+        distances
+            .map(|(_id, state)| state.distance.expect("unreached node"))
+            .accumulate(0, |max, data| {
+                *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+            })
+            .inspect(|partial| info!("Partial maximum {:?}", partial))
+            .exchange(|_| 0)
+            .accumulate(0, |max, data| {
+                *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
+            })
+            .collect_single()
     });
 
-    distances
-        .map(|(_id, state)| state.distance.expect("unreached node"))
-        .accumulate(0, |max, data| {
-            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
-        })
-        .inspect(|partial| info!("Partial maximum {:?}", partial))
-        .exchange(|_| 0)
-        .accumulate(0, |max, data| {
-            *max = std::cmp::max(*data.iter().max().expect("empty collection"), *max)
-        })
+    let elapsed = run_to_completion(worker, probe);
+
+    let diameter = diameter_box.borrow_mut().take();
+
+    (diameter, elapsed)
 }

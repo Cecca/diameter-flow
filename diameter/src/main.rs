@@ -38,6 +38,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::rc::Rc;
+use std::time::Duration;
 use std::time::Instant;
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
 use timely::dataflow::channels::pact::Pipeline;
@@ -632,58 +633,65 @@ fn main() -> Result<()> {
             let final_approx_probe = Rc::new(RefCell::new(None));
             let final_approx_probe_ref = Rc::clone(&final_approx_probe);
 
-            let (diameter_result, probe) = worker.dataflow::<(), _, _>(move |scope| {
-                match algorithm {
-                    Algorithm::DeltaStepping(delta) => {
-                        delta_stepping(static_edges, scope, delta, n, seed)
-                    }
-                    Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, scope, p, seed),
-                    Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
-                        static_edges,
-                        scope,
-                        radius,
-                        base,
-                        n,
-                        seed,
-                        final_approx_probe,
-                    ),
-                    Algorithm::RandClusterGuess(memory, init, step) => {
-                        rand_cluster::rand_cluster_guess(
-                            static_edges,
-                            scope,
-                            memory,
-                            init,
-                            step,
-                            n,
-                            seed,
-                            final_approx_probe,
-                        )
-                    }
-
-                    Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
-                    Algorithm::Sequential => {
-                        panic!("sequential algorithm not supported in dataflow")
-                    }
+            let (diameter, elapsed): (Option<u32>, Duration) = match algorithm {
+                Algorithm::DeltaStepping(delta) => {
+                    delta_stepping(static_edges, worker, delta, n, seed)
                 }
-                .collect_single()
-            });
+                Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, worker, p, seed),
+                Algorithm::Bfs => bfs::bfs(static_edges, worker, n, seed),
+                Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
+                    static_edges,
+                    worker,
+                    radius,
+                    base,
+                    n,
+                    seed,
+                    final_approx_probe,
+                ),
+                Algorithm::RandClusterGuess(memory, init, step) => todo!(),
+                Algorithm::Sequential => panic!("sequential algorithm not supported in dataflow"),
+            };
 
-            // Run the dataflow and record the time
-            let timer = Instant::now();
-            worker.step_while(|| !probe.done());
-            info!("{:?}\tcomputed diameter", timer.elapsed());
-            let elapsed = timer.elapsed();
+            // let (diameter_result, probe) = worker.dataflow::<(), _, _>(move |scope| {
+            //     match algorithm {
+            //         Algorithm::HyperBall(p) => ,
+            //         Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
+            //             static_edges,
+            //             scope,
+            //             radius,
+            //             base,
+            //             n,
+            //             seed,
+            //             final_approx_probe,
+            //         ),
+            //         Algorithm::RandClusterGuess(memory, init, step) => {
+            //             rand_cluster::rand_cluster_guess(
+            //                 static_edges,
+            //                 scope,
+            //                 memory,
+            //                 init,
+            //                 step,
+            //                 n,
+            //                 seed,
+            //                 final_approx_probe,
+            //             )
+            //         }
 
-            // // close the logging input and perform any outstanding work
-            // logging_input_handle
-            //     .replace(None)
-            //     .expect("missing logging input handle")
-            //     .close();
-            // worker.step_while(|| !logging_probe.done());
+            //         Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
+            //         Algorithm::Sequential => {
+            //             panic!("sequential algorithm not supported in dataflow")
+            //         }
+            //     }
+            //     .collect_single()
+            // });
+
+            // // Run the dataflow and record the time
+            // let elapsed = run_to_completion(worker, probe);
 
             if worker.index() == 0 {
-                let diameter: u32 = diameter_result.borrow().expect("missing result");
-                reporter.borrow_mut().set_result(diameter, elapsed);
+                reporter
+                    .borrow_mut()
+                    .set_result(diameter.expect("missing diameter"), elapsed);
                 if let Some(final_approx_time) = final_approx_probe_ref.borrow_mut().take() {
                     reporter
                         .borrow_mut()

@@ -2,11 +2,14 @@ use crate::logging::*;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::time::{Duration, Instant};
+use timely::communication::Allocate;
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::ProbeHandle;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::progress::Timestamp;
+use timely::worker::Worker;
 use timely::Data;
 
 pub trait BranchAll<G: Scope, D: Data> {
@@ -149,4 +152,15 @@ impl<G: Scope> CollectSingle<G::Timestamp> for Stream<G, u32> {
 
         (result, probe)
     }
+}
+
+pub fn run_to_completion<A: Allocate, T: Timestamp>(
+    worker: &mut Worker<A>,
+    probe: ProbeHandle<T>,
+) -> Duration {
+    // Run the dataflow and record the time
+    let timer = Instant::now();
+    worker.step_while(|| !probe.done());
+    info!("{:?}\tcomputed diameter", timer.elapsed());
+    timer.elapsed()
 }
