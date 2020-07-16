@@ -609,7 +609,7 @@ impl Dataset {
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 edges_files.insert(chunk_id, path);
             } else if let Some(captures) = rex_weights.captures(str_name) {
-                info!("Loading edge weight file");
+                debug!("Loading edge weight file");
                 let digits = captures.get(1).unwrap();
                 let chunk_id: usize = digits.as_str().parse().expect("problem parsing");
                 weights_files.insert(chunk_id, path);

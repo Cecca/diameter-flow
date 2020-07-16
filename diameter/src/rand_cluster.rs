@@ -11,6 +11,8 @@ use std::rc::Rc;
 use std::time::Duration;
 use timely::dataflow::channels::pact::{Exchange as ExchangePact, Pipeline};
 use timely::dataflow::operators::aggregation::Aggregate;
+use timely::dataflow::operators::capture::event::*;
+use timely::dataflow::operators::capture::replay::Replay;
 use timely::dataflow::operators::generic::operator::Operator;
 use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
@@ -18,7 +20,7 @@ use timely::dataflow::Stream;
 use timely::order::Product;
 use timely::progress::Timestamp;
 
-const AUXILIARY_THRESHOLD: usize = 10000;
+const AUXILIARY_THRESHOLD: usize = 100;
 
 #[derive(Debug, Clone, Copy, Abomonation, Hash, Ord, PartialOrd, Eq, PartialEq)]
 struct Message {
@@ -68,6 +70,10 @@ impl Default for NodeState {
 }
 
 impl NodeState {
+    fn reset(&self) -> Self {
+        Self::default()
+    }
+
     fn is_uncovered(&self) -> bool {
         match self {
             Self::Uncovered => true,
@@ -195,6 +201,10 @@ impl NodeState {
         }
     }
 
+    fn is_center(&self, id: u32) -> bool {
+        self.root() == id
+    }
+
     fn as_center(&self, id: u32, generation: u32) -> Self {
         match &self {
             Self::Uncovered => Self::Covered {
@@ -266,9 +276,44 @@ trait GetGeneration {
     fn get_generation(&self) -> u32;
 }
 
-impl GetGeneration for Product<(), u32> {
+impl<T: Timestamp> GetGeneration for Product<T, u32> {
     fn get_generation(&self) -> u32 {
         self.inner
+    }
+}
+
+trait GetGuessStep {
+    fn get_guess_step(&self) -> u32;
+}
+
+impl GetGuessStep for () {
+    fn get_guess_step(&self) -> u32 {
+        0
+    }
+}
+
+impl GetGuessStep for u32 {
+    fn get_guess_step(&self) -> u32 {
+        *self
+    }
+}
+
+impl<O: Timestamp + GetGuessStep, I: Timestamp> GetGuessStep for Product<O, I> {
+    fn get_guess_step(&self) -> u32 {
+        self.outer.get_guess_step()
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct RadiusParam {
+    init: u32,
+    step: u32,
+}
+
+impl RadiusParam {
+    #[inline]
+    fn get<T: GetGuessStep>(&self, t: &T) -> u32 {
+        self.init * self.step.pow(t.get_guess_step())
     }
 }
 
@@ -342,17 +387,22 @@ where
 fn expand_clusters<G>(
     edges: &DistributedEdges,
     nodes: &Stream<G, (u32, NodeState)>,
-    radius: u32,
+    radius: RadiusParam,
     _n: u32,
 ) -> Stream<G, (u32, NodeState)>
 where
     G: Scope,
-    G::Timestamp: GetGeneration,
+    G::Timestamp: GetGeneration + GetGuessStep,
 {
     // let l1 = nodes.scope().count_logger().expect("missing logger");
 
     nodes
-        .map_timed(move |t, (id, state)| (id, state.reactivate_fringe(radius, t.get_generation())))
+        .map_timed(move |t, (id, state)| {
+            (
+                id,
+                state.reactivate_fringe(radius.get(&t), t.get_generation()),
+            )
+        })
         .scope()
         .iterative::<u32, _, _>(move |subscope| {
             let nodes = nodes.enter(subscope);
@@ -363,15 +413,15 @@ where
                 .send(
                     &nodes.concat(&cycle),
                     false,
-                    move |t, state| state.can_send(radius, t.outer.get_generation()),
-                    move |_time, state, weight| state.propagate(weight, radius),
+                    move |t, state| state.can_send(radius.get(&t), t.outer.get_generation()),
+                    move |t, state, weight| state.propagate(weight, radius.get(&t)),
                     |d1, d2| Message::merge(d1, d2), // aggregate messages
                     |state, message| state.updated(*message),
                     |state| state.deactivate(), // deactivate nodes with no messages
                 )
                 .branch_all(
                     "can_send",
-                    move |t, pair| pair.1.can_send(radius, t.outer.get_generation()),
+                    move |t, pair| pair.1.can_send(radius.get(&t), t.outer.get_generation()),
                     0,
                 ); // Circulate while someone has something to say
 
@@ -385,7 +435,9 @@ where
 
             output.concat(&output2).leave()
         })
-        .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.get_generation())))
+        .map_timed(move |t, (id, state)| {
+            (id, state.freeze_if_done(radius.get(&t), t.get_generation()))
+        })
 }
 
 fn remap_edges<G: Scope>(
@@ -439,25 +491,17 @@ fn remap_edges<G: Scope>(
         )
 }
 
-pub fn rand_cluster<G: Scope<Timestamp = ()>>(
-    edges: DistributedEdges,
-    scope: &mut G,
-    radius: u32,
+fn build_clustering<G: Scope, R: Rng + 'static>(
+    edges: &DistributedEdges,
+    nodes: &Stream<G, (u32, NodeState)>,
+    radius: RadiusParam,
     base: f64,
     n: u32,
-    seed: u64,
-    final_approx_probe: Rc<RefCell<Option<Duration>>>,
-) -> Stream<G, u32> {
-    use rand_xoshiro::Xoroshiro128StarStar;
-
-    let nodes = edges.nodes::<_, NodeState>(scope);
-
-    let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
-    for _ in 0..nodes.scope().index() {
-        rand.jump();
-    }
-    let rand = Rc::new(RefCell::new(rand));
-
+    rand: Rc<RefCell<R>>,
+) -> Stream<G, (u32, NodeState)>
+where
+    G::Timestamp: GetGuessStep,
+{
     let clustering = nodes
         .scope()
         .iterative::<u32, _, _>(|inner_scope| {
@@ -492,6 +536,88 @@ pub fn rand_cluster<G: Scope<Timestamp = ()>>(
                 (id, state)
             }
         });
+
+    clustering
+}
+
+pub fn rand_cluster<G: Scope<Timestamp = ()>>(
+    edges: DistributedEdges,
+    scope: &mut G,
+    radius: u32,
+    base: f64,
+    n: u32,
+    seed: u64,
+    final_approx_probe: Rc<RefCell<Option<Duration>>>,
+) -> Stream<G, u32> {
+    use rand_xoshiro::Xoroshiro128StarStar;
+
+    let nodes = edges.nodes::<_, NodeState>(scope);
+
+    let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
+    for _ in 0..nodes.scope().index() {
+        rand.jump();
+    }
+    let rand = Rc::new(RefCell::new(rand));
+
+    let nodes = edges.nodes::<_, NodeState>(scope);
+
+    let clustering = build_clustering(
+        &edges,
+        &nodes,
+        RadiusParam {
+            init: radius,
+            step: 2,
+        },
+        base,
+        n,
+        rand,
+    );
+
+    collect_and_approximate(edges, &clustering, final_approx_probe)
+}
+
+pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(
+    edges: DistributedEdges,
+    scope: &mut G,
+    memory: u32,
+    init: u32,
+    step: u32,
+    n: u32,
+    seed: u64,
+    final_approx_probe: Rc<RefCell<Option<Duration>>>,
+) -> Stream<G, u32> {
+    use rand_xoshiro::Xoroshiro128StarStar;
+
+    let nodes = edges.nodes::<_, NodeState>(scope);
+
+    let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
+    for _ in 0..nodes.scope().index() {
+        rand.jump();
+    }
+    let rand = Rc::new(RefCell::new(rand));
+
+    let radius = RadiusParam { init, step };
+
+    let nodes = edges.nodes::<_, NodeState>(scope);
+
+    let clustering = nodes.scope().iterative::<u32, _, _>(|inner_scope| {
+        let nodes = nodes.enter(inner_scope);
+        let summary = Product::new(Default::default(), 1u32);
+        let (handle, cycle) = inner_scope.feedback(summary);
+
+        let (stable, further) =
+            build_clustering(&edges, &nodes.concat(&cycle), radius, 2.0, n, rand).branch_all(
+                "clustering complete",
+                |_t, (id, state)| state.is_center(*id),
+                memory as usize,
+            );
+
+        further
+            .map(|(id, state)| (id, state.reset()))
+            .connect_loop(handle);
+
+        stable.leave()
+    });
 
     collect_and_approximate(edges, &clustering, final_approx_probe)
 }
