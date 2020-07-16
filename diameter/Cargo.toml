@@ -29,6 +29,7 @@ env_logger = "0.7"
 log = "0.4"
 dirs = "2"
 rusqlite = {version = "0.23", features = ["bundled"]}
+anyhow = "1"
 
 [build-dependencies]
 reqwest = "0.9"

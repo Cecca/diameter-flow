@@ -23,6 +23,7 @@ mod rand_cluster;
 mod reporter;
 mod sequential;
 
+use anyhow::{anyhow, Result};
 use argh::FromArgs;
 use bytes::*;
 use datasets::*;
@@ -549,7 +550,7 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     datasets
 }
 
-fn main() {
+fn main() -> Result<()> {
     if let Some("list") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
         if let Some(ddir) = std::env::args().nth(2) {
             let ddir = PathBuf::from(ddir);
@@ -558,7 +559,7 @@ fn main() {
         } else {
             info!("Specify a directory containing the datasets");
         }
-        return;
+        return Ok(());
     }
     if let Some("clean-edges") = std::env::args().nth(1).as_ref().map(|s| s.as_str()) {
         if let Some(ddir) = std::env::args().nth(2) {
@@ -573,14 +574,14 @@ fn main() {
         } else {
             info!("Specify a directory containing the datasets");
         }
-        return;
+        return Ok(());
     }
 
     let config = Config::create();
     logging::init_logging(config.verbose);
     if let Some(sha) = reporter::Reporter::new(config.clone()).already_run() {
         info!("Parameter configuration already run (sha {}), exiting", sha);
-        return;
+        return Ok(());
     }
 
     let mut datasets = datasets_map(config.ddir.clone());
@@ -591,7 +592,6 @@ fn main() {
     dataset.prepare();
     let meta = dataset.metadata();
     let n = meta.num_nodes;
-    let min_w = meta.min_weight;
     info!("Input graph stats: {:?}", meta);
 
     if config.hosts.is_some() && config.process_id.is_none() {
@@ -714,4 +714,6 @@ fn main() {
             Err(e) => panic!("{:?}", e),
         }
     }
+
+    Ok(())
 }
