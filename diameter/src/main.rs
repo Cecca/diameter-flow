@@ -23,8 +23,7 @@ mod rand_cluster;
 mod reporter;
 mod sequential;
 
-
-use anyhow::{Result};
+use anyhow::Result;
 use argh::FromArgs;
 use bytes::*;
 use datasets::*;
@@ -41,10 +40,6 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
-
-
-
-
 
 use timely::worker::Worker;
 
@@ -648,42 +643,20 @@ fn main() -> Result<()> {
                     seed,
                     final_approx_probe,
                 ),
-                Algorithm::RandClusterGuess(_memory, _init, _step) => todo!(),
+                Algorithm::RandClusterGuess(memory, init, step) => {
+                    rand_cluster::rand_cluster_guess(
+                        static_edges,
+                        worker,
+                        memory,
+                        init,
+                        step,
+                        n,
+                        seed,
+                        final_approx_probe,
+                    )
+                }
                 Algorithm::Sequential => panic!("sequential algorithm not supported in dataflow"),
             };
-
-            // let (diameter_result, probe) = worker.dataflow::<(), _, _>(move |scope| {
-            //     match algorithm {
-            //         Algorithm::HyperBall(p) => ,
-            //         Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
-            //             static_edges,
-            //             scope,
-            //             radius,
-            //             base,
-            //             n,
-            //             seed,
-            //             final_approx_probe,
-            //         ),
-            //         Algorithm::RandClusterGuess(memory, init, step) => {
-            //             rand_cluster::rand_cluster_guess(
-            //                 static_edges,
-            //                 scope,
-            //                 memory,
-            //                 init,
-            //                 step,
-            //                 n,
-            //                 seed,
-            //                 final_approx_probe,
-            //             )
-            //         }
-
-            //         Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
-            //         Algorithm::Sequential => {
-            //             panic!("sequential algorithm not supported in dataflow")
-            //         }
-            //     }
-            //     .collect_single()
-            // });
 
             // // Run the dataflow and record the time
             // let elapsed = run_to_completion(worker, probe);

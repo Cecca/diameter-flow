@@ -573,53 +573,76 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
     (diameter, elapsed_clustering + elapsed_approximation)
 }
 
-pub fn rand_cluster_guess<G: Scope<Timestamp = ()>>(
+pub fn rand_cluster_guess<A: timely::communication::Allocate>(
     edges: DistributedEdges,
-    scope: &mut G,
+    worker: &mut timely::worker::Worker<A>,
     memory: u32,
     init: u32,
     step: u32,
     n: u32,
     seed: u64,
     final_approx_probe: Rc<RefCell<Option<Duration>>>,
-) -> Stream<G, u32> {
-    // use rand_xoshiro::Xoroshiro128StarStar;
+) -> (Option<u32>, std::time::Duration) {
+    use rand_xoshiro::Xoroshiro128StarStar;
 
-    // let nodes = edges.nodes::<_, NodeState>(scope);
+    let mut times = Vec::new();
 
-    // let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
-    // for _ in 0..nodes.scope().index() {
-    //     rand.jump();
-    // }
-    // let rand = Rc::new(RefCell::new(rand));
+    // Do iterative guessing
+    let mut guess_radius = init;
+    let final_local_states = Rc::new(RefCell::new(None));
+    loop {
+        info!("Do clustering with radius {}", guess_radius);
+        let (local_states, num_centers, probe) = worker.dataflow::<(), _, _>(|scope| {
+            let nodes = edges.nodes::<_, NodeState>(scope);
 
-    // let radius = RadiusParam { init, step };
-    // info!("radius configuration: {:?}", radius);
+            let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
+            for _ in 0..nodes.scope().index() {
+                rand.jump();
+            }
+            let rand = Rc::new(RefCell::new(rand));
 
-    // let nodes = edges.nodes::<_, NodeState>(scope);
+            let nodes = edges.nodes::<_, NodeState>(scope);
 
-    // let clustering = nodes.scope().iterative::<u32, _, _>(|inner_scope| {
-    //     let nodes = nodes.enter(inner_scope);
-    //     let summary = Product::new(Default::default(), 1u32);
-    //     let (handle, cycle) = inner_scope.feedback(summary);
+            build_clustering(&edges, &nodes, guess_radius, 2.0, n, memory, rand)
+        });
+        let elapsed_clustering = run_to_completion(worker, probe);
+        info!(
+            "Clustering completed in {:?}, with {:?} clusters, radius {}",
+            elapsed_clustering,
+            num_centers.borrow(),
+            guess_radius
+        );
+        times.push(elapsed_clustering);
 
-    //     let (stable, further) =
-    //         build_clustering(&edges, &nodes.concat(&cycle), radius, 2.0, n, memory, rand)
-    //             .branch_all(
-    //                 "clustering complete",
-    //                 |_t, (id, state)| state.is_center(*id),
-    //                 memory as usize,
-    //             );
+        if num_centers.borrow().expect("missing centers count") <= memory {
+            info!("Small enough clustering built");
+            let states = local_states
+                .borrow_mut()
+                .take()
+                .expect("missing local states");
+            final_local_states.borrow_mut().replace(states);
+            break;
+        }
 
-    //     further
-    //         .map(|(id, state)| (id, state.reset()))
-    //         .connect_loop(handle);
+        guess_radius *= step;
+    }
 
-    //     stable.leave()
-    // });
+    let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
+        let local_states = final_local_states.borrow_mut().take().into_iter().flatten();
+        let clustering = local_states.to_stream(scope);
+        collect_and_approximate(edges, &clustering, final_approx_probe).collect_single()
+    });
 
-    // collect_and_approximate(edges, &clustering, final_approx_probe)
-    todo!()
+    let elapsed_approximation = run_to_completion(worker, probe);
+    let diameter = diameter_box.borrow_mut().take();
+    info!(
+        "Final diameter approximation in {:?}",
+        elapsed_approximation
+    );
+
+    let elapsed = elapsed_approximation + times.into_iter().sum();
+
+    (diameter, elapsed)
 }
 
 fn collect_and_approximate<G: Scope>(
