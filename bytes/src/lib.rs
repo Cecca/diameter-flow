@@ -9,7 +9,6 @@ use std::fmt::Debug;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
-
 #[derive(Clone, Copy)]
 pub enum LoadType {
     InMemory,
@@ -93,7 +92,6 @@ impl CompressedEdges {
                 let mut raw = Vec::new();
                 reader.read_to_end(&mut raw)?;
                 let weights = weights_path.map(|path| {
-                    println!("reading weights from {:?}", path);
                     let mut weights = Vec::new();
                     let mut reader = BitReader::<_, BE>::new(BufReader::new(
                         File::open(path).expect("failed to open the weights file"),
