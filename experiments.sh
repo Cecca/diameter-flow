@@ -49,44 +49,32 @@ function run_test() {
 }
 
 function run_social() {
-    for SEED in 12587 112985 246134 346235 2356 134190 23698 23049830 98743258
+    for SEED in 12587
     do
-    for DATASET in livejournal-lcc orkut-lcc
+    for DATASET in livejournal-lcc-x5-rweight livejournal-lcc-x10-rweight livejournal-lcc-x100-rweight
     do
-        # # BFS
-        # $BIN \
-        # --ddir /mnt/ssd/graphs \
-        # --hosts ~/working_hosts \
-        # --threads 4 \
-        # --seed $SEED \
-        # "bfs" \
-        # $DATASET
-
-        # # Hyperball
-        # for PARAM in 4
-        # do
-        # $BIN \
-        #     --ddir /mnt/ssd/graphs \
-        #     --hosts ~/working_hosts \
-        #     --threads 4 \
-        #     --seed $SEED \
-        #     "hyperball($PARAM)" \
-        #     $DATASET
-        # done
-
-        # Rand cluster
-        for PARAM in 1 2 4 8 16 32
+        # Delta stepping
+        for DELTA in 1 10 100 1000 10000
         do
-            for BASE in 2
-            do
-                $BIN \
-                    --ddir /mnt/ssd/graphs \
-                    --hosts ~/working_hosts \
-                    --threads 4 \
-                    --seed $SEED \
-                    "rand-cluster($PARAM,$BASE)" \
-                    $DATASET
-            done
+            $BIN \
+            --ddir /mnt/ssd/graphs \
+            --hosts ~/working_hosts \
+            --threads 4 \
+            --seed $SEED \
+            "delta-stepping($DELTA)" \
+            $DATASET
+        done
+        
+        # Rand cluster
+        for RADIUS in 1 10 100 1000 10000
+        do
+              $BIN \
+                  --ddir /mnt/ssd/graphs \
+                  --hosts ~/working_hosts \
+                  --threads 4 \
+                  --seed $SEED \
+                  "rand-cluster($RADIUS,2)" \
+                  $DATASET
         done
     done
     done
@@ -184,10 +172,10 @@ function run_web_large() {
 }
 
 
-function run_weighted() {
+function run_roads() {
     for SEED in 4398734 #11985714 #524098 124098
     do
-    for DATASET in USA USA-W USA-CTR
+    for DATASET in USA
     do
         # # Delta-stepping
         # for DELTA in 100000 1000000 10000000 100000000
@@ -202,16 +190,16 @@ function run_weighted() {
         # done
 
         # Rand cluster
-        for PARAM in 100 1000 10000 100000 #1000000
+        for MEMORY in 1000000 10000000
         do
-            for BASE in 2
+            for INIT in 100 1000
             do
                 $BIN \
                     --ddir /mnt/ssd/graphs \
                     --hosts ~/working_hosts \
                     --threads 4 \
                     --seed $SEED \
-                    "rand-cluster($PARAM,$BASE)" \
+                    "rand-cluster-guess($MEMORY,$INIT,10)" \
                     $DATASET
             done
         done
@@ -366,8 +354,8 @@ case $1 in
     test)
         run_test
     ;;
-    weighted)
-        run_weighted
+    roads)
+        run_roads
     ;;
     social)
         run_social
