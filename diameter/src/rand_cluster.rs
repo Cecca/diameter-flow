@@ -349,7 +349,7 @@ where
     G: Scope,
     G::Timestamp: GetGeneration,
 {
-    let l1 = nodes.scope().count_logger().expect("missing logger");
+    // let l1 = nodes.scope().count_logger().expect("missing logger");
 
     nodes
         .map_timed(move |t, (id, state)| (id, state.reactivate_fringe(radius, t.get_generation())))
@@ -493,7 +493,15 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             }
         });
 
-    let l_radius = nodes.scope().count_logger().expect("missing logger");
+    collect_and_approximate(edges, &clustering, final_approx_probe)
+}
+
+fn collect_and_approximate<G: Scope>(
+    edges: DistributedEdges,
+    clustering: &Stream<G, (u32, NodeState)>,
+    final_approx_probe: Rc<RefCell<Option<Duration>>>,
+) -> Stream<G, u32> {
+    // let l_radius = nodes.scope().count_logger().expect("missing logger");
     let auxiliary_graph = remap_edges(&edges, &clustering);
     let clusters_radii = clustering
         .map(|(_id, state)| (state.root(), state.distance()))
@@ -509,9 +517,9 @@ pub fn rand_cluster<G: Scope<Timestamp = usize>>(
             data.iter().for_each(|(_center, radius)| {
                 hist.entry(radius).and_modify(|c| *c += 1).or_insert(1);
             });
-            for (radius, count) in hist.drain() {
-                l_radius.log((CountEvent::RadiusHist(0, *radius), count as u64));
-            }
+            // for (radius, count) in hist.drain() {
+            //     l_radius.log((CountEvent::RadiusHist(0, *radius), count as u64));
+            // }
         });
 
     // Collect the auxiliary graph and compute the diameter on it
