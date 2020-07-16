@@ -124,6 +124,8 @@ enum Algorithm {
     DeltaStepping(u32),
     HyperBall(usize),
     RandCluster(u32, f64),
+    /// Parameterized by the size of the auxiliary graph
+    RandClusterGuess(u32),
     Bfs,
 }
 
@@ -141,6 +143,7 @@ impl Algorithm {
             Self::DeltaStepping(_) => "DeltaStepping".to_owned(),
             Self::HyperBall(_) => "HyperBall".to_owned(),
             Self::RandCluster(_, _) => "RandCluster".to_owned(),
+            Self::RandClusterGuess(_) => "RandClusterGuess".to_owned(),
             Self::Bfs => "Bfs".to_owned(),
         }
     }
@@ -151,6 +154,7 @@ impl Algorithm {
             Self::DeltaStepping(delta) => format!("{}", delta),
             Self::HyperBall(p) => format!("{}", p),
             Self::RandCluster(radius, base) => format!("{}:{}", radius, base),
+            Self::RandClusterGuess(memory) => format!("{}", memory),
             Self::Bfs => "".to_owned(),
         }
     }
@@ -165,6 +169,7 @@ impl TryFrom<&str> for Algorithm {
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
         let re_rand_cluster = Regex::new(r"rand-cluster\((\d+), *(\d+)\)").unwrap();
+        let re_rand_cluster_guess = Regex::new(r"rand-cluster-guess\((\d+)\)").unwrap();
         let re_bfs = Regex::new(r"bfs").unwrap();
         if let Some(_captures) = re_sequential.captures(value) {
             return Ok(Self::Sequential);
@@ -208,6 +213,15 @@ impl TryFrom<&str> for Algorithm {
                 .parse::<f64>()
                 .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
             return Ok(Self::RandCluster(radius, base));
+        }
+        if let Some(captures) = re_rand_cluster_guess.captures(value) {
+            let memory = captures
+                .get(1)
+                .ok_or_else(|| format!("unable to get first capture"))?
+                .as_str()
+                .parse::<u32>()
+                .or_else(|e| Err(format!("error parsing number: {:?}", e)))?;
+            return Ok(Self::RandClusterGuess(memory));
         }
         if let Some(_captures) = re_bfs.captures(value) {
             return Ok(Self::Bfs);
@@ -622,6 +636,7 @@ fn main() {
                         seed,
                         final_approx_probe,
                     ),
+                    Algorithm::RandClusterGuess(memory) => todo!(),
                     Algorithm::Bfs => bfs::bfs(static_edges, scope, n, seed),
                     Algorithm::Sequential => {
                         panic!("sequential algorithm not supported in dataflow")

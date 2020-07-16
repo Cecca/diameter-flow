@@ -21,10 +21,7 @@ pub trait BranchAll<G: Scope, D: Data> {
         P: Fn(G::Timestamp, &D) -> bool + 'static;
 }
 
-impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D>
-where
-    G::Timestamp: ToPair,
-{
+impl<G: Scope, D: Data> BranchAll<G, D> for Stream<G, D> {
     fn branch_all<P>(
         &self,
         name: &'static str,
@@ -36,7 +33,7 @@ where
     {
         use timely::dataflow::operators::*;
 
-        let logger = self.scope().count_logger().expect("missing logger");
+        // let logger = self.scope().count_logger().expect("missing logger");
         let worker_id = self.scope().index();
         let stash = Rc::new(RefCell::new(HashMap::new()));
         let stash2 = Rc::clone(&stash);
@@ -50,7 +47,7 @@ where
                             .iter()
                             .filter(|x| condition(t.time().clone(), x))
                             .count();
-                        logger.log((CountEvent::updated_nodes(t.time().clone()), cnt as u64));
+                        // logger.log((CountEvent::updated_nodes(t.time().clone()), cnt as u64));
                         output.session(&t).give(cnt);
                         stash
                             .borrow_mut()

@@ -16,6 +16,7 @@ use timely::dataflow::operators::*;
 use timely::dataflow::Scope;
 use timely::dataflow::Stream;
 use timely::order::Product;
+use timely::progress::Timestamp;
 
 const AUXILIARY_THRESHOLD: usize = 10000;
 
@@ -261,12 +262,25 @@ impl NodeState {
     }
 }
 
-fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
+trait GetGeneration {
+    fn get_generation(&self) -> u32;
+}
+
+impl GetGeneration for Product<usize, u32> {
+    fn get_generation(&self) -> u32 {
+        self.inner
+    }
+}
+
+fn sample_centers<G: Scope, R: Rng + 'static>(
     nodes: &Stream<G, (u32, NodeState)>,
     base: f64,
     n: u32,
     rand: Rc<RefCell<R>>,
-) -> Stream<G, (u32, NodeState)> {
+) -> Stream<G, (u32, NodeState)>
+where
+    G::Timestamp: GetGeneration,
+{
     let mut stash = HashMap::new();
     let l1 = nodes.scope().count_logger().expect("missing logger");
 
@@ -287,14 +301,13 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
             });
             notificator.for_each(|t, _, _| {
                 if let Some(mut nodes) = stash.remove(&t) {
-                    let generation = t.time().inner;
+                    let generation = t.time().get_generation();
                     nodes.sort_by_key(|pair| pair.0);
-                    l1.log((CountEvent::Active(t.inner), nodes.len() as u64));
+                    l1.log((CountEvent::Active(generation), nodes.len() as u64));
                     let mut out = output.session(&t);
-                    let population_size = nodes.len();
                     let mut cnt = 0;
-                    let mut cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
-                    let p = base.powi(t.time().inner as i32) / n as f64;
+                    let cnt_uncovered = nodes.iter().filter(|p| p.1.is_uncovered()).count();
+                    let p = base.powi(generation as i32) / n as f64;
                     if p <= 1.0 {
                         // info!("Probability is less than one (n is {}, p is {})", n, p);
                         for (id, state) in nodes.into_iter() {
@@ -318,8 +331,8 @@ fn sample_centers<G: Scope<Timestamp = Product<usize, u32>>, R: Rng + 'static>(
                         }));
                     }
                     // info!("Uncovered {}, sampled as centers {}", cnt_uncovered, cnt);
-                    l1.log((CountEvent::Centers(t.inner), cnt as u64));
-                    l1.log((CountEvent::Uncovered(t.inner), cnt_uncovered as u64));
+                    l1.log((CountEvent::Centers(generation), cnt as u64));
+                    l1.log((CountEvent::Uncovered(generation), cnt_uncovered as u64));
                 }
             });
         },
@@ -333,12 +346,13 @@ fn expand_clusters<G>(
     _n: u32,
 ) -> Stream<G, (u32, NodeState)>
 where
-    G: Scope<Timestamp = Product<usize, u32>>,
+    G: Scope,
+    G::Timestamp: GetGeneration,
 {
     let l1 = nodes.scope().count_logger().expect("missing logger");
 
     nodes
-        .map_timed(move |t, (id, state)| (id, state.reactivate_fringe(radius, t.inner)))
+        .map_timed(move |t, (id, state)| (id, state.reactivate_fringe(radius, t.get_generation())))
         .scope()
         .iterative::<u32, _, _>(move |subscope| {
             let nodes = nodes.enter(subscope);
@@ -349,7 +363,7 @@ where
                 .send(
                     &nodes.concat(&cycle),
                     false,
-                    move |t, state| state.can_send(radius, t.outer.inner),
+                    move |t, state| state.can_send(radius, t.outer.get_generation()),
                     move |_time, state, weight| state.propagate(weight, radius),
                     |d1, d2| Message::merge(d1, d2), // aggregate messages
                     |state, message| state.updated(*message),
@@ -357,7 +371,7 @@ where
                 )
                 .branch_all(
                     "can_send",
-                    move |t, pair| pair.1.can_send(radius, t.outer.inner),
+                    move |t, pair| pair.1.can_send(radius, t.outer.get_generation()),
                     0,
                 ); // Circulate while someone has something to say
 
@@ -371,7 +385,7 @@ where
 
             output.concat(&output2).leave()
         })
-        .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.inner)))
+        .map_timed(move |t, (id, state)| (id, state.freeze_if_done(radius, t.get_generation())))
 }
 
 fn remap_edges<G: Scope>(

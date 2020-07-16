@@ -256,7 +256,7 @@ impl DistributedEdges {
         update_no_msg: Fun,
     ) -> Stream<G, (u32, S)>
     where
-        G::Timestamp: ToPair,
+        // G::Timestamp: ToPair,
         P: Fn(G::Timestamp, &S) -> bool + 'static,
         Fm: Fn(G::Timestamp, &S, u32) -> Option<M> + 'static,
         Fa: Fn(&M, &M) -> M + Copy + 'static,
@@ -270,8 +270,8 @@ impl DistributedEdges {
 
         let message_batch = 8192;
 
-        let l1 = nodes.scope().count_logger().expect("Missing logger");
-        let l2 = l1.clone();
+        // let l1 = nodes.scope().count_logger().expect("Missing logger");
+        // let l2 = l1.clone();
 
         let mut stash = HashMap::new();
         let mut node_stash = HashMap::new();
@@ -311,10 +311,10 @@ impl DistributedEdges {
                         // Collect the input information
                         input.for_each(|t, data| {
                             let data = data.replace(Vec::new());
-                            l1.log((
-                                CountEvent::load_state_exchange(t.time().clone()),
-                                data.len() as u64,
-                            ));
+                            // l1.log((
+                            //     CountEvent::load_state_exchange(t.time().clone()),
+                            //     data.len() as u64,
+                            // ));
                             stash
                                 .entry(t.time().clone())
                                 .or_insert_with(HashMap::new)
@@ -393,10 +393,10 @@ impl DistributedEdges {
                     message_input.for_each(|t, data| {
                         let data = data.replace(Vec::new());
                         // debug!("Got {} messages", data.len());
-                        l2.log((
-                            CountEvent::load_message_exchange(t.time().clone()),
-                            data.len() as u64,
-                        ));
+                        // l2.log((
+                        //     CountEvent::load_message_exchange(t.time().clone()),
+                        //     data.len() as u64,
+                        // ));
                         let map = msg_stash
                             .entry(t.time().clone())
                             .or_insert_with(HashMap::new);
