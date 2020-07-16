@@ -625,8 +625,8 @@ fn main() -> Result<()> {
 
             let static_edges = dataset.load_static(worker, load_type);
             debug!("loaded edges statically");
-            let final_approx_probe = Rc::new(RefCell::new(None));
-            let final_approx_probe_ref = Rc::clone(&final_approx_probe);
+            let mut final_approx_probe = None;
+            let mut iteration_info = Vec::new();
 
             let (diameter, elapsed): (Option<u32>, Duration) = match algorithm {
                 Algorithm::DeltaStepping(delta) => {
@@ -641,7 +641,7 @@ fn main() -> Result<()> {
                     base,
                     n,
                     seed,
-                    final_approx_probe,
+                    &mut final_approx_probe,
                 ),
                 Algorithm::RandClusterGuess(memory, init, step) => {
                     rand_cluster::rand_cluster_guess(
@@ -652,23 +652,32 @@ fn main() -> Result<()> {
                         step,
                         n,
                         seed,
-                        final_approx_probe,
+                        &mut final_approx_probe,
+                        &mut iteration_info,
                     )
                 }
                 Algorithm::Sequential => panic!("sequential algorithm not supported in dataflow"),
             };
 
-            // // Run the dataflow and record the time
-            // let elapsed = run_to_completion(worker, probe);
-
             if worker.index() == 0 {
                 reporter
                     .borrow_mut()
                     .set_result(diameter.expect("missing diameter"), elapsed);
-                if let Some(final_approx_time) = final_approx_probe_ref.borrow_mut().take() {
+                if let Some(final_approx_time) = final_approx_probe.take() {
                     reporter
                         .borrow_mut()
                         .set_final_approx_time(final_approx_time);
+                }
+                for (iteration, (guess_radius, duration, size)) in
+                    iteration_info.into_iter().enumerate()
+                {
+                    info!("    {}: {:?} for {} centers", guess_radius, duration, size);
+                    reporter.borrow_mut().append_rand_cluster_iteration(
+                        iteration as u32,
+                        guess_radius,
+                        duration,
+                        size,
+                    );
                 }
                 reporter.borrow().report();
             }

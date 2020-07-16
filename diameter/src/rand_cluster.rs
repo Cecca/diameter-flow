@@ -521,7 +521,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
     base: f64,
     n: u32,
     seed: u64,
-    final_approx_probe: Rc<RefCell<Option<Duration>>>,
+    final_approx_probe: &mut Option<Duration>,
 ) -> (Option<u32>, std::time::Duration) {
     use rand_xoshiro::Xoroshiro128StarStar;
 
@@ -545,10 +545,11 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let local_states = local_states.borrow_mut().take().into_iter().flatten();
         let clustering = local_states.to_stream(scope);
-        collect_and_approximate(edges, &clustering, final_approx_probe).collect_single()
+        collect_and_approximate(edges, &clustering).collect_single()
     });
 
     let elapsed_approximation = run_to_completion(worker, probe);
+    final_approx_probe.replace(elapsed_approximation.clone());
     let diameter = diameter_box.borrow_mut().take();
     info!(
         "Final diameter approximation in {:?}",
@@ -566,11 +567,10 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
     step: u32,
     n: u32,
     seed: u64,
-    final_approx_probe: Rc<RefCell<Option<Duration>>>,
+    final_approx_probe: &mut Option<Duration>,
+    iteration_information: &mut Vec<(u32, Duration, u32)>,
 ) -> (Option<u32>, std::time::Duration) {
     use rand_xoshiro::Xoroshiro128StarStar;
-
-    let mut times = Vec::new();
 
     // Do iterative guessing
     let mut guess_radius = init;
@@ -597,7 +597,11 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
             num_centers.borrow(),
             guess_radius
         );
-        times.push(elapsed_clustering);
+        iteration_information.push((
+            guess_radius,
+            elapsed_clustering,
+            num_centers.borrow().expect("missing centers count"),
+        ));
 
         if num_centers.borrow().expect("missing centers count") <= memory {
             info!("Small enough clustering built");
@@ -615,17 +619,18 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let local_states = final_local_states.borrow_mut().take().into_iter().flatten();
         let clustering = local_states.to_stream(scope);
-        collect_and_approximate(edges, &clustering, final_approx_probe).collect_single()
+        collect_and_approximate(edges, &clustering).collect_single()
     });
 
     let elapsed_approximation = run_to_completion(worker, probe);
+    final_approx_probe.replace(elapsed_approximation.clone());
     let diameter = diameter_box.borrow_mut().take();
     info!(
         "Final diameter approximation in {:?}",
         elapsed_approximation
     );
 
-    let elapsed = elapsed_approximation + times.into_iter().sum();
+    let elapsed = elapsed_approximation + iteration_information.iter().map(|trip| trip.1).sum();
 
     (diameter, elapsed)
 }
@@ -633,7 +638,6 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
 fn collect_and_approximate<G: Scope>(
     edges: DistributedEdges,
     clustering: &Stream<G, (u32, NodeState)>,
-    final_approx_probe: Rc<RefCell<Option<Duration>>>,
 ) -> Stream<G, u32> {
     // let l_radius = nodes.scope().count_logger().expect("missing logger");
     let auxiliary_graph = remap_edges(&edges, &clustering);
@@ -742,7 +746,6 @@ fn collect_and_approximate<G: Scope>(
                             "Diameter approximation on auxiliary graph took {:?}",
                             elapsed
                         );
-                        final_approx_probe.borrow_mut().replace(elapsed);
                         if max_radius > diameter {
                             info!("Outputting max radius: {}!", max_radius);
                             output.session(&t).give(max_radius);

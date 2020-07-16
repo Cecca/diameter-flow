@@ -1,21 +1,19 @@
-
 use crate::Config;
 use chrono::prelude::*;
-
 
 use rusqlite::*;
 use rusqlite::{params, Connection};
 use sha2::{Digest, Sha256};
-
-
 
 use std::time::Duration;
 
 pub struct Reporter {
     date: DateTime<Utc>,
     config: Config,
-    // Table with Counter name, outer and inner iteration counters, and count
+    // Table with Counter name, outer and inner iteration counters, and count, no longer used
     counters: Vec<(String, u32, u32, u64)>,
+    // Table with iteration, radius, duration, and size of the graph
+    rand_cluster_guesses: Vec<(u32, u32, Duration, u32)>,
     diameter: Option<u32>,
     duration: Option<Duration>,
     final_approx_time: Option<Duration>,
@@ -27,6 +25,7 @@ impl Reporter {
             date: Utc::now(),
             config: config,
             counters: Vec::new(),
+            rand_cluster_guesses: Vec::new(),
             diameter: None,
             duration: None,
             final_approx_time: None,
@@ -46,6 +45,17 @@ impl Reporter {
     //     let (outer, inner) = event.iterations();
     //     self.counters.push((event.as_string(), outer, inner, count));
     // }
+
+    pub fn append_rand_cluster_iteration(
+        &mut self,
+        iteration: u32,
+        radius: u32,
+        duration: Duration,
+        num_centers: u32,
+    ) {
+        self.rand_cluster_guesses
+            .push((iteration, radius, duration, num_centers));
+    }
 
     fn sha(&self) -> String {
         let datestr = self.date.to_rfc2822();
@@ -135,6 +145,26 @@ impl Reporter {
             for (name, outer, inner, count) in self.counters.iter() {
                 stmt.execute(params![sha, name, outer, inner, *count as u32])
                     .expect("Failure to insert into counters table");
+            }
+
+            if !self.rand_cluster_guesses.is_empty() {
+                let mut stmt = tx.prepare(
+                    "INSERT INTO rand_cluster_iterations (sha, iteration, iteration_radius, duration_ms, num_centers)
+                    VALUES (?1, ?2, ?3, ?4, ?5)",
+                ).expect("failed to prepare statement");
+
+                for (iteration, iteration_radius, duration, num_centers) in
+                    self.rand_cluster_guesses.iter()
+                {
+                    stmt.execute(params![
+                        sha,
+                        iteration,
+                        iteration_radius,
+                        duration.as_millis() as u32,
+                        num_centers
+                    ])
+                    .expect("failed to execute statement");
+                }
             }
         }
 
@@ -242,6 +272,25 @@ fn create_tables_if_needed(conn: &Connection) {
         .expect("Error changing the table");
 
         bump(conn, 4);
+    }
+
+    if version < 5 {
+        info!("applying changes for version 5");
+
+        conn.execute(
+            "CREATE TABLE rand_cluster_iterations (
+                sha       TEXT NOT NULL,
+                iteration   INTEGER NOT NULL,
+                iteration_radius  INTEGER NOT NULL,
+                duration_ms     INTEGER NOT NULL,
+                num_centers    INTEGER NOT NULL,
+                FOREIGN KEY (sha) REFERENCES main (sha)
+            )",
+            NO_PARAMS,
+        )
+        .expect("Error creating table rand_cluster_iterations");
+
+        bump(conn, 5);
     }
 
     info!("database schema up tp date");
