@@ -533,6 +533,15 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         );
     }
 
+    for basedata in &["livejournal-lcc", "sk-2005-lcc"] {
+        if let Some(inner) = datasets.get(*basedata) {
+            datasets.insert(
+                format!("{}-rweight", basedata),
+                builder.rweight(13098235, inner.clone()),
+            );
+        }
+    }
+
     for &layers in &[5, 10, 100] {
         for basedata in &[
             format!("livejournal-lcc-x{}", layers),
