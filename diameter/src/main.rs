@@ -16,6 +16,7 @@ mod bfs;
 mod datasets;
 mod delta_stepping;
 mod distributed_graph;
+mod distributed_adjacencies;
 mod hyperball;
 mod logging;
 mod operators;
