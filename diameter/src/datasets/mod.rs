@@ -530,23 +530,31 @@ impl Dataset {
         let adj_file = self.adjacencies_file();
         if !adj_file.is_file() {
             info!("Turning edges into adjacency lists");
+            let mut pl = progress_logger::ProgressLogger::builder()
+                .with_items_name("edges")
+                .start();
             let mut adjacencies = HashMap::new();
             self.for_each(|u, v, w| {
                 adjacencies.entry(u).or_insert_with(Vec::new).push((v, w));
                 adjacencies.entry(v).or_insert_with(Vec::new).push((u, w));
+                pl.update_light(1u64);
             });
+            pl.stop();
             let n = adjacencies.len() as u32;
 
             let file = File::create(&adj_file).expect("error creating file");
             let mut writer = std::io::BufWriter::new(GzEncoder::new(file, Compression::default()));
             // let mut writer = std::io::BufWriter::new(file);
             bincode::serialize_into(&mut writer, &n).expect("problem serializing n");
-            let mut cnt = 0;
+            let mut pl = progress_logger::ProgressLogger::builder()
+                .with_expected_updates(n)
+                .with_items_name("nodes")
+                .start();
             for pair in adjacencies {
                 bincode::serialize_into(&mut writer, &pair).expect("failed to serialize");
-                cnt += 1;
+                pl.update_light(1u64);
             }
-            info!("Serialized {} nodes", cnt);
+            pl.stop();
         }
     }
 
