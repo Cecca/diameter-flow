@@ -4,7 +4,7 @@
 pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     edges: I,
     n: u32,
-) -> Vec<(u32, (u32, u32))> {
+) -> (Vec<(u32, (u32, u32))>, std::time::Duration) {
     use std::time::Instant;
 
     let neighbourhoods = init_neighbourhoods(edges, n);
@@ -22,10 +22,11 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
             distant_pairs.push(sssp(&neighbourhoods, v1, &mut reachable));
         }
     }
+    let elapsed = timer.elapsed();
     info!("diameter computation: elapsed {:?}", timer.elapsed());
 
     // distant_pairs.into_iter().max_by_key(|pair| pair.0).unwrap()
-    distant_pairs
+    (distant_pairs, elapsed)
 }
 
 /// Build neighbourhoods, as vectors of (weight, id) pairs
@@ -33,11 +34,16 @@ fn init_neighbourhoods<I: IntoIterator<Item = ((u32, u32), u32)>>(
     edges: I,
     n: u32,
 ) -> Vec<Vec<(u32, u32)>> {
+    let mut pl = progress_logger::ProgressLogger::builder()
+        .with_items_name("edges")
+        .start();
     let mut neighbourhoods = vec![Vec::new(); n as usize];
     for ((u, v), w) in edges {
         neighbourhoods[u as usize].push((w, v));
         neighbourhoods[v as usize].push((w, u));
+        pl.update_light(1u64);
     }
+    pl.stop();
     neighbourhoods
 }
 

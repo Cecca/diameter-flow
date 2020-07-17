@@ -733,6 +733,7 @@ fn collect_and_approximate<G: Scope>(
                     } else {
                         let start = std::time::Instant::now();
                         let diameter = approx_diameter(edges, n as u32)
+                            .0
                             .into_iter()
                             .map(|(approx, (u, v))| {
                                 let res = approx + radii[&(u as u32)] + radii[&(v as u32)];

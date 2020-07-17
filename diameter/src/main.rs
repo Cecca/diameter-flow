@@ -612,13 +612,21 @@ fn main() -> Result<()> {
     let config2 = config.clone();
 
     if algorithm.is_sequential() {
+        let mut reporter = reporter::Reporter::new(config2.clone());
         let edges = dataset.as_vec();
         let timer = std::time::Instant::now();
-        let (diam, _) = sequential::approx_diameter(edges, n)
+        let (eccentricities, diam_elapsed) = sequential::approx_diameter(edges, n);
+        let (diam, _) = eccentricities
             .into_iter()
             .max_by_key(|pair| pair.0)
             .unwrap();
-        info!("Diameter {}, computed in {:?}", diam, timer.elapsed());
+        let elapsed = timer.elapsed();
+        info!(
+            "Diameter {}, computed in {:?} ({:?} with data rearrangement)",
+            diam, diam_elapsed, elapsed
+        );
+        reporter.set_result(diam, diam_elapsed);
+        reporter.report();
     } else {
         let ret_status = config.execute(move |worker| {
             let reporter = Rc::new(RefCell::new(reporter::Reporter::new(config2.clone())));
