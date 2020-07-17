@@ -1,4 +1,3 @@
-use crate::distributed_adjacencies::*;
 use crate::distributed_graph::*;
 use bytes::*;
 use flate2::read::GzDecoder;
@@ -217,7 +216,7 @@ impl Dataset {
     }
 
     pub fn is_prepared(&self) -> bool {
-        self.edges_directory().is_dir() && self.adjacencies_file().is_file()
+        self.edges_directory().is_dir()
     }
 
     pub fn clean_edges(&self) {
@@ -525,37 +524,6 @@ impl Dataset {
                 }
             }
         }
-
-        // Create adjacency file
-        let adj_file = self.adjacencies_file();
-        if !adj_file.is_file() {
-            info!("Turning edges into adjacency lists");
-            let mut pl = progress_logger::ProgressLogger::builder()
-                .with_items_name("edges")
-                .start();
-            let mut adjacencies = HashMap::new();
-            self.for_each(|u, v, w| {
-                adjacencies.entry(u).or_insert_with(Vec::new).push((v, w));
-                adjacencies.entry(v).or_insert_with(Vec::new).push((u, w));
-                pl.update_light(1u64);
-            });
-            pl.stop();
-            let n = adjacencies.len() as u32;
-
-            let file = File::create(&adj_file).expect("error creating file");
-            let mut writer = std::io::BufWriter::new(GzEncoder::new(file, Compression::default()));
-            // let mut writer = std::io::BufWriter::new(file);
-            bincode::serialize_into(&mut writer, &n).expect("problem serializing n");
-            let mut pl = progress_logger::ProgressLogger::builder()
-                .with_expected_updates(n)
-                .with_items_name("nodes")
-                .start();
-            for pair in adjacencies {
-                bincode::serialize_into(&mut writer, &pair).expect("failed to serialize");
-                pl.update_light(1u64);
-            }
-            pl.stop();
-        }
     }
 
     pub fn for_each<F>(&self, mut action: F)
@@ -579,12 +547,6 @@ impl Dataset {
     pub fn edges_directory(&self) -> PathBuf {
         let mut path = self.dataset_directory();
         path.push("edges");
-        path
-    }
-
-    pub fn adjacencies_file(&self) -> PathBuf {
-        let mut path = self.dataset_directory();
-        path.push("adjacencies.bin");
         path
     }
 
@@ -668,30 +630,6 @@ impl Dataset {
                 )
             }
         })
-    }
-
-    pub fn load_adjacencies<A: Allocate>(&self, worker: &Worker<A>) -> DistributedAdjacencies {
-        let adj_file = self.adjacencies_file();
-        assert!(adj_file.is_file());
-        info!("Reading adjacencies from compressed file");
-        // let mut reader =
-        //     std::io::BufReader::new(File::open(&adj_file).expect("error opening file"));
-        let mut reader = std::io::BufReader::new(GzDecoder::new(
-            File::open(&adj_file).expect("error opening file"),
-        ));
-        let mut n: u32 = bincode::deserialize_from(&mut reader).expect("error in readin gn");
-        info!("Reading information about {} nodes", n);
-        let iter = std::iter::from_fn(move || {
-            if n == 0 {
-                None
-            } else {
-                let node_info = bincode::deserialize_from::<_, (u32, Vec<(u32, u32)>)>(&mut reader)
-                    .expect("error deserializing adjacency");
-                n -= 1;
-                Some(node_info)
-            }
-        });
-        DistributedAdjacencies::from_adjacencies(worker.index() as u32, worker.peers() as u32, iter)
     }
 
     /// Sets up a small dataflow to load a static set of edges, distributed among the workers

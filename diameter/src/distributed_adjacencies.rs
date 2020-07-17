@@ -15,40 +15,26 @@ pub struct DistributedAdjacencies {
 
 impl DistributedAdjacencies {
     pub fn from_edges(proc_id: u32, num_processors: u32, edges: &Dataset) -> Self {
-        let mut max_id = 0u32;
+        let meta = edges.metadata();
+        let n = meta.num_nodes;
+        let m = meta.num_edges;
+        let mut pl = progress_logger::ProgressLogger::builder()
+            .with_expected_updates(m)
+            .with_items_name("edges")
+            .start();
         let mut adjacencies = HashMap::new();
         edges.for_each(|u, v, w| {
-            max_id = std::cmp::max(max_id, std::cmp::max(u, v));
             if u % num_processors == proc_id {
                 adjacencies.entry(u).or_insert_with(Vec::new).push((v, w));
             }
             if v % num_processors == proc_id {
                 adjacencies.entry(v).or_insert_with(Vec::new).push((u, w));
             }
+            pl.update_light(1u64);
         });
+        pl.stop();
         Self {
-            n: max_id + 1,
-            proc_id,
-            num_processors,
-            adjacencies: Rc::new(adjacencies),
-        }
-    }
-
-    pub fn from_adjacencies<I: IntoIterator<Item = (u32, Vec<(u32, u32)>)>>(
-        proc_id: u32,
-        num_processors: u32,
-        adjs: I,
-    ) -> Self {
-        let mut max_id = 0u32;
-        let mut adjacencies = HashMap::new();
-        adjs.into_iter().for_each(|(id, neighs)| {
-            max_id = std::cmp::max(max_id, id);
-            if id % num_processors == proc_id {
-                adjacencies.insert(id, neighs);
-            }
-        });
-        Self {
-            n: max_id + 1,
+            n,
             proc_id,
             num_processors,
             adjacencies: Rc::new(adjacencies),
