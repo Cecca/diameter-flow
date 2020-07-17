@@ -34,6 +34,27 @@ impl DistributedAdjacencies {
         }
     }
 
+    pub fn from_adjacencies<I: IntoIterator<Item = (u32, Vec<(u32, u32)>)>>(
+        proc_id: u32,
+        num_processors: u32,
+        adjs: I,
+    ) -> Self {
+        let mut max_id = 0u32;
+        let mut adjacencies = HashMap::new();
+        adjs.into_iter().for_each(|(id, neighs)| {
+            max_id = std::cmp::max(max_id, id);
+            if id % num_processors == proc_id {
+                adjacencies.insert(id, neighs);
+            }
+        });
+        Self {
+            n: max_id + 1,
+            proc_id,
+            num_processors,
+            adjacencies: Rc::new(adjacencies),
+        }
+    }
+
     pub fn clone(obj: &Self) -> Self {
         Self {
             n: obj.n,

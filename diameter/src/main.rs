@@ -626,12 +626,14 @@ fn main() -> Result<()> {
             };
 
             // let static_edges = dataset.load_static(worker, load_type);
-            let adjacencies = DistributedAdjacencies::from_edges(
-                worker.index() as u32,
-                worker.peers() as u32,
-                &dataset,
-            );
-            debug!("loaded edges statically");
+            // let adjacencies = DistributedAdjacencies::from_edges(
+            //     worker.index() as u32,
+            //     worker.peers() as u32,
+            //     &dataset,
+            // );
+            let adj_timer = std::time::Instant::now();
+            let adjacencies = dataset.load_adjacencies(&worker);
+            info!("loaded adjacencies statically ({:?})", adj_timer.elapsed());
             let mut final_approx_probe = None;
             let mut iteration_info = Vec::new();
 
