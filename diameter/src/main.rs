@@ -534,14 +534,14 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     }
 
     for &layers in &[5, 10, 100] {
-        for (basedata, max_weight) in &[
-            (format!("livejournal-lcc-x{}", layers), 5_000_000),
-            (format!("sk-2005-lcc-x{}", layers), 50_000_000),
+        for basedata in &[
+            format!("livejournal-lcc-x{}", layers),
+            format!("sk-2005-lcc-x{}", layers),
         ] {
             if let Some(inner) = datasets.get(basedata) {
                 datasets.insert(
                     format!("{}-rweight", basedata),
-                    builder.rweight(*max_weight, 13098235, inner.clone()),
+                    builder.rweight(13098235, inner.clone()),
                 );
             }
         }

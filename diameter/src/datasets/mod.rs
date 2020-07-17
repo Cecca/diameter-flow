@@ -79,10 +79,10 @@ impl DatasetBuilder {
         }
     }
 
-    pub fn rweight(&self, max_weight: u32, seed: u64, inner: Dataset) -> Dataset {
+    pub fn rweight(&self, seed: u64, inner: Dataset) -> Dataset {
         Dataset {
             data_dir: self.data_dir.clone(),
-            kind: DatasetKind::RWeight(max_weight, seed, Box::new(inner)),
+            kind: DatasetKind::RWeight(seed, Box::new(inner)),
         }
     }
 
@@ -122,7 +122,7 @@ pub enum DatasetKind {
     Layered(usize, Box<Dataset>),
     LCC(Box<Dataset>),
     Mesh(u32),
-    RWeight(u32, u64, Box<Dataset>),
+    RWeight(u64, Box<Dataset>),
     // A mesh with two different edge weights, assigned randomly with
     // probability p and 1-p
     MeshBiweight(u32, f64, u32, u32, u64),
@@ -148,8 +148,8 @@ impl Dataset {
                 format!("layered::{}-{}", layers, inner.metadata_key())
             }
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
-            DatasetKind::RWeight(max_weight, seed, inner) => {
-                format!("rweight: {} {} {}", max_weight, seed, inner.metadata_key())
+            DatasetKind::RWeight(seed, inner) => {
+                format!("rweight: {} {}", seed, inner.metadata_key())
             }
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
@@ -307,19 +307,21 @@ impl Dataset {
                     info!("Compression took {:?}", timer.elapsed());
                 }
             }
-            DatasetKind::RWeight(max_weight, seed, inner) => {
-                assert!(max_weight > &0);
+            DatasetKind::RWeight(seed, inner) => {
                 use rand::distributions::Distribution;
                 use rand::prelude::*;
 
-                let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
-                let distribution = rand::distributions::Uniform::new_inclusive(1, max_weight);
                 inner.prepare();
                 let edges_dir = self.edges_directory();
                 info!("creating layered dataset into {:?}", edges_dir);
                 std::fs::create_dir_all(&edges_dir);
                 let inner_meta = inner.metadata();
-                let _n = inner_meta.num_nodes;
+                let n = inner_meta.num_nodes;
+
+                let max_weight = n;
+
+                let mut rng = rand_xoshiro::Xoshiro512StarStar::seed_from_u64(*seed);
+                let distribution = rand::distributions::Uniform::new_inclusive(1, max_weight);
 
                 let mut pl = progress_logger::ProgressLogger::builder()
                     .with_items_name("edges")
@@ -566,9 +568,7 @@ impl Dataset {
             DatasetKind::Layered(layers, inner) => {
                 format!("lcc::{}-{}", layers, inner.metadata_key())
             }
-            DatasetKind::RWeight(max_weight, seed, inner) => {
-                format!("lcc::{}-{}-{}", max_weight, seed, inner.metadata_key())
-            }
+            DatasetKind::RWeight(seed, inner) => format!("lcc::{}-{}", seed, inner.metadata_key()),
             DatasetKind::LCC(inner) => format!("lcc::{}", inner.metadata_key()),
             DatasetKind::Mesh(side) => format!("mesh::{}", side),
             DatasetKind::MeshBiweight(side, p, w1, w2, seed) => {
