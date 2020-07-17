@@ -14,7 +14,7 @@ pub struct DistributedAdjacencies {
 }
 
 impl DistributedAdjacencies {
-    fn from_edges(proc_id: u32, num_processors: u32, edges: &Dataset) -> Self {
+    pub fn from_edges(proc_id: u32, num_processors: u32, edges: &Dataset) -> Self {
         let mut max_id = 0u32;
         let mut adjacencies = HashMap::new();
         edges.for_each(|u, v, w| {
@@ -41,6 +41,14 @@ impl DistributedAdjacencies {
             num_processors: obj.num_processors,
             adjacencies: Rc::clone(&obj.adjacencies),
         }
+    }
+
+    pub fn nodes<G: Scope, S: ExchangeData + Default>(&self, scope: &mut G) -> Stream<G, (u32, S)> {
+        use timely::dataflow::operators::*;
+
+        // We materialize the iterator to satisfy the borrow checker
+        let keys = self.adjacencies.keys().copied().collect::<Vec<u32>>();
+        keys.to_stream(scope).map(|id| (id, S::default()))
     }
 
     #[allow(unused)]

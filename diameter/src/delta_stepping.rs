@@ -1,7 +1,6 @@
+use crate::distributed_adjacencies::*;
 use crate::distributed_graph::*;
-
 use crate::operators::*;
-
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
@@ -95,7 +94,7 @@ impl State {
 }
 
 fn delta_step<G: Scope<Timestamp = Product<(), u32>>>(
-    edges: &DistributedEdges,
+    edges: &DistributedAdjacencies,
     nodes: &Stream<G, (u32, State)>,
     delta: u32,
 ) -> Stream<G, (u32, State)> {
@@ -142,14 +141,12 @@ fn delta_step<G: Scope<Timestamp = Product<(), u32>>>(
 }
 
 pub fn delta_stepping<A: timely::communication::Allocate>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     worker: &mut timely::worker::Worker<A>,
     delta: u32,
     n: u32,
     seed: u64,
 ) -> (Option<u32>, std::time::Duration) {
-    
-
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
         let nodes = if scope.index() == 0 {
             let mut rng = Xoshiro256StarStar::seed_from_u64(seed);
@@ -170,7 +167,7 @@ pub fn delta_stepping<A: timely::communication::Allocate>(
             let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
 
             let (stable, further) = delta_step(
-                &edges,
+                &adjacencies,
                 &nodes.concat(&cycle),
                 // .inspect_batch(move |t, data| {
                 //     l1.log((CountEvent::Active(t.inner), data.len() as u64))

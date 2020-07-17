@@ -15,8 +15,8 @@ extern crate url;
 mod bfs;
 mod datasets;
 mod delta_stepping;
-mod distributed_graph;
 mod distributed_adjacencies;
+mod distributed_graph;
 mod hyperball;
 mod logging;
 mod operators;
@@ -29,6 +29,7 @@ use argh::FromArgs;
 use bytes::*;
 use datasets::*;
 use delta_stepping::*;
+use distributed_adjacencies::DistributedAdjacencies;
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -624,19 +625,24 @@ fn main() -> Result<()> {
                 LoadType::InMemory
             };
 
-            let static_edges = dataset.load_static(worker, load_type);
+            // let static_edges = dataset.load_static(worker, load_type);
+            let adjacencies = DistributedAdjacencies::from_edges(
+                worker.index() as u32,
+                worker.peers() as u32,
+                &dataset,
+            );
             debug!("loaded edges statically");
             let mut final_approx_probe = None;
             let mut iteration_info = Vec::new();
 
             let (diameter, elapsed): (Option<u32>, Duration) = match algorithm {
                 Algorithm::DeltaStepping(delta) => {
-                    delta_stepping(static_edges, worker, delta, n, seed)
+                    delta_stepping(adjacencies, worker, delta, n, seed)
                 }
-                Algorithm::HyperBall(p) => hyperball::hyperball(static_edges, worker, p, seed),
-                Algorithm::Bfs => bfs::bfs(static_edges, worker, n, seed),
+                Algorithm::HyperBall(p) => hyperball::hyperball(adjacencies, worker, p, seed),
+                Algorithm::Bfs => bfs::bfs(adjacencies, worker, n, seed),
                 Algorithm::RandCluster(radius, base) => rand_cluster::rand_cluster(
-                    static_edges,
+                    adjacencies,
                     worker,
                     radius,
                     base,
@@ -646,7 +652,7 @@ fn main() -> Result<()> {
                 ),
                 Algorithm::RandClusterGuess(memory, init, step) => {
                     rand_cluster::rand_cluster_guess(
-                        static_edges,
+                        adjacencies,
                         worker,
                         memory,
                         init,

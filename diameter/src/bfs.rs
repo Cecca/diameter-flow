@@ -1,11 +1,10 @@
+use crate::distributed_adjacencies::*;
 use crate::distributed_graph::*;
-
 use crate::operators::*;
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand_xoshiro::Xoshiro256StarStar;
 use timely::dataflow::Scope;
-
 
 #[derive(Debug, Clone, Abomonation)]
 struct State {
@@ -29,7 +28,7 @@ impl State {
 }
 
 pub fn bfs<A: timely::communication::Allocate>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     worker: &mut timely::worker::Worker<A>,
     n: u32,
     seed: u64,
@@ -59,7 +58,7 @@ pub fn bfs<A: timely::communication::Allocate>(
         let distances = nodes.scope().iterative::<u32, _, _>(move |inner_scope| {
             let (handle, cycle) = inner_scope.feedback(Product::new(Default::default(), 1));
             let nodes = nodes.enter(inner_scope);
-            let (inactive_nodes, active_nodes) = edges
+            let (inactive_nodes, active_nodes) = adjacencies
                 .send(
                     &nodes.concat(&cycle),
                     true,

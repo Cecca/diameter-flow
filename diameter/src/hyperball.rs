@@ -1,5 +1,5 @@
+use crate::distributed_adjacencies::*;
 use crate::distributed_graph::*;
-
 use crate::operators::*;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
@@ -93,14 +93,14 @@ impl Default for State {
 }
 
 pub fn hyperball<A: timely::communication::Allocate>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     worker: &mut timely::worker::Worker<A>,
     p: usize,
     _seed: u64,
 ) -> (Option<u32>, std::time::Duration) {
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(|scope| {
         // Init nodes
-        let nodes = edges
+        let nodes = adjacencies
             .nodes::<_, ()>(scope)
             .map(move |(id, ())| (id, State::new(p, id)));
 
@@ -110,7 +110,7 @@ pub fn hyperball<A: timely::communication::Allocate>(
             let nodes = nodes.enter(subscope);
             let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
-            let (stable, updated) = edges
+            let (stable, updated) = adjacencies
                 .send(
                     &nodes.concat(&cycle),
                     // .inspect_batch(move |t, data| {

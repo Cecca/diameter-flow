@@ -1,5 +1,5 @@
+use crate::distributed_adjacencies::*;
 use crate::distributed_graph::*;
-
 use crate::operators::*;
 use crate::sequential::*;
 use rand::Rng;
@@ -347,7 +347,7 @@ where
 }
 
 fn expand_clusters<G>(
-    edges: &DistributedEdges,
+    adjacencies: &DistributedAdjacencies,
     nodes: &Stream<G, (u32, NodeState)>,
     radius: u32,
 ) -> Stream<G, (u32, NodeState)>
@@ -365,7 +365,7 @@ where
 
             let (handle, cycle) = subscope.feedback(Product::new(Default::default(), 1));
 
-            let (output, further) = edges
+            let (output, further) = adjacencies
                 .send(
                     &nodes.concat(&cycle),
                     false,
@@ -389,7 +389,7 @@ where
 }
 
 fn remap_edges<G: Scope>(
-    edges: &DistributedEdges,
+    adjacencies: &DistributedAdjacencies,
     clustering: &Stream<G, (u32, NodeState)>,
 ) -> Stream<G, ((u32, u32), u32)> {
     use std::collections::hash_map::DefaultHasher;
@@ -406,7 +406,7 @@ fn remap_edges<G: Scope>(
         }
     });
 
-    edges
+    adjacencies
         .triplets(&clustering, |((_u, state_u), (_v, state_v), w)| {
             let d_u = state_u.distance();
             let d_v = state_v.distance();
@@ -440,7 +440,7 @@ fn remap_edges<G: Scope>(
 }
 
 fn build_clustering<G: Scope, R: Rng + 'static>(
-    edges: &DistributedEdges,
+    adjacencies: &DistributedAdjacencies,
     nodes: &Stream<G, (u32, NodeState)>,
     radius: u32,
     base: f64,
@@ -465,7 +465,7 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
             let (handle, cycle) = inner_scope.feedback(summary);
 
             let (stable, further) = expand_clusters(
-                &edges,
+                &adjacencies,
                 &sample_centers(&nodes.concat(&cycle), base, n, rand),
                 radius,
             )
@@ -515,7 +515,7 @@ fn build_clustering<G: Scope, R: Rng + 'static>(
 }
 
 pub fn rand_cluster<A: timely::communication::Allocate>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     worker: &mut timely::worker::Worker<A>,
     radius: u32,
     base: f64,
@@ -526,7 +526,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
     use rand_xoshiro::Xoroshiro128StarStar;
 
     let (local_states, num_centers, probe) = worker.dataflow::<(), _, _>(|scope| {
-        let nodes = edges.nodes::<_, NodeState>(scope);
+        let nodes = adjacencies.nodes::<_, NodeState>(scope);
 
         let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
         for _ in 0..nodes.scope().index() {
@@ -534,9 +534,9 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
         }
         let rand = Rc::new(RefCell::new(rand));
 
-        let nodes = edges.nodes::<_, NodeState>(scope);
+        let nodes = adjacencies.nodes::<_, NodeState>(scope);
 
-        build_clustering(&edges, &nodes, radius, base, n, rand)
+        build_clustering(&adjacencies, &nodes, radius, base, n, rand)
     });
 
     let elapsed_clustering = run_to_completion(worker, probe);
@@ -545,7 +545,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let local_states = local_states.borrow_mut().take().into_iter().flatten();
         let clustering = local_states.to_stream(scope);
-        collect_and_approximate(edges, &clustering).collect_single()
+        collect_and_approximate(adjacencies, &clustering).collect_single()
     });
 
     let elapsed_approximation = run_to_completion(worker, probe);
@@ -560,7 +560,7 @@ pub fn rand_cluster<A: timely::communication::Allocate>(
 }
 
 pub fn rand_cluster_guess<A: timely::communication::Allocate>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     worker: &mut timely::worker::Worker<A>,
     memory: u32,
     init: u32,
@@ -578,7 +578,7 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
     loop {
         info!("Do clustering with radius {}", guess_radius);
         let (local_states, num_centers, probe) = worker.dataflow::<(), _, _>(|scope| {
-            let nodes = edges.nodes::<_, NodeState>(scope);
+            let nodes = adjacencies.nodes::<_, NodeState>(scope);
 
             let mut rand = Xoroshiro128StarStar::seed_from_u64(seed);
             for _ in 0..nodes.scope().index() {
@@ -586,9 +586,9 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
             }
             let rand = Rc::new(RefCell::new(rand));
 
-            let nodes = edges.nodes::<_, NodeState>(scope);
+            let nodes = adjacencies.nodes::<_, NodeState>(scope);
 
-            build_clustering(&edges, &nodes, guess_radius, 2.0, n, rand)
+            build_clustering(&adjacencies, &nodes, guess_radius, 2.0, n, rand)
         });
         let elapsed_clustering = run_to_completion(worker, probe);
         info!(
@@ -619,7 +619,7 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
     let (diameter_box, probe) = worker.dataflow::<(), _, _>(move |scope| {
         let local_states = final_local_states.borrow_mut().take().into_iter().flatten();
         let clustering = local_states.to_stream(scope);
-        collect_and_approximate(edges, &clustering).collect_single()
+        collect_and_approximate(adjacencies, &clustering).collect_single()
     });
 
     let elapsed_approximation = run_to_completion(worker, probe);
@@ -636,11 +636,11 @@ pub fn rand_cluster_guess<A: timely::communication::Allocate>(
 }
 
 fn collect_and_approximate<G: Scope>(
-    edges: DistributedEdges,
+    adjacencies: DistributedAdjacencies,
     clustering: &Stream<G, (u32, NodeState)>,
 ) -> Stream<G, u32> {
     // let l_radius = nodes.scope().count_logger().expect("missing logger");
-    let auxiliary_graph = remap_edges(&edges, &clustering);
+    let auxiliary_graph = remap_edges(&adjacencies, &clustering);
     let clusters_radii = clustering
         .map(|(_id, state)| (state.root(), state.distance()))
         .aggregate(
