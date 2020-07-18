@@ -364,7 +364,7 @@ impl CompressedPairsWriter {
         let mut writers = Vec::new();
         for part_id in 0..(self.node_blocks * self.node_blocks) {
             let p = get_path(part_id);
-            println!("opening {:?}", p);
+            // println!("opening {:?}", p);
             let writer = BufWriter::new(File::create(p)?);
             let writer = stream::DifferenceStreamWriter::new(writer);
             writers.push(writer);
@@ -446,7 +446,7 @@ impl CompressedTripletsWriter {
         let mut writers = Vec::new();
         for part_id in 0..(self.node_blocks * self.node_blocks) {
             let p = get_path(part_id);
-            println!("opening {:?}", p);
+            // println!("opening {:?}", p);
             let writer = BufWriter::new(File::create(p)?);
             let weights_writer =
                 BitWriter::<_, BE>::new(BufWriter::new(File::create(get_path_weights(part_id))?));
