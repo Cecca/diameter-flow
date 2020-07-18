@@ -555,6 +555,18 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
             }
         }
     }
+
+    datasets.insert(
+        "livejournal-lcc-x40-rweight".to_owned(),
+        builder.rweight(
+            13451845,
+            builder.layered(40, datasets["livejournal-lcc"].clone()),
+        ),
+    );
+    datasets.insert(
+        "USA-x20".to_owned(),
+        builder.layered(20, datasets["USA"].clone()),
+    );
     datasets
 }
 
