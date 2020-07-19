@@ -39,6 +39,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use timely::communication::{Allocator, Configuration as TimelyConfig, WorkerGuards};
@@ -401,6 +402,14 @@ impl Config {
             let step = std::time::Duration::from_secs(1);
             let mut killed = false;
             let mut should_exit = false;
+            let terminated = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let terminated2 = std::sync::Arc::clone(&terminated);
+
+            ctrlc::set_handler(move || {
+                terminated2.store(true, Ordering::SeqCst);
+            })
+            .expect("Error setting Ctrl-C handler");
+
             while !should_exit {
                 std::thread::sleep(step);
                 let should_kill = timer.elapsed() > timeout;
@@ -414,9 +423,10 @@ impl Config {
                             should_exit = true;
                         }
                         None => {
-                            if should_kill {
+                            if should_kill || terminated.load(Ordering::SeqCst) {
+                                info!("Killing subprocess");
                                 h.kill().expect("problem killing subprocess");
-                                killed = true;
+                                killed = should_kill;
                                 should_exit = true;
                             }
                         }
