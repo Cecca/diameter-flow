@@ -17,6 +17,7 @@ pub struct Reporter {
     diameter: Option<u32>,
     duration: Option<Duration>,
     final_approx_time: Option<Duration>,
+    killed: bool,
 }
 
 impl Reporter {
@@ -29,6 +30,7 @@ impl Reporter {
             diameter: None,
             duration: None,
             final_approx_time: None,
+            killed: false,
         }
     }
 
@@ -105,11 +107,39 @@ impl Reporter {
         .unwrap_or(None)
     }
 
+    pub fn killed(&mut self, time: Duration) {
+        self.killed = true;
+        self.duration.replace(time);
+    }
+
     pub fn report(&self) {
         let sha = self.sha();
         let dbpath = Self::get_db_path();
         let mut conn = Connection::open(dbpath).expect("error connecting to the database");
         create_tables_if_needed(&conn);
+
+        if self.killed {
+            conn.execute(
+            "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms, offline, final_diameter_time_ms, killed )
+                VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13 )",
+                params![
+                    sha,
+                    self.date.to_rfc3339(),
+                    format!("{}", self.config.seed()),
+                    self.config.threads.unwrap_or(1) as u32,
+                    self.config.hosts_string(),
+                    self.config.dataset,
+                    self.config.algorithm.name(),
+                    self.config.algorithm.parameters_string(),
+                    -1,
+                    self.duration.expect("missing total time").as_millis() as u32,
+                    self.config.offline,
+                    self.final_approx_time.map(|dur| dur.as_millis() as u32),
+                    true
+                ],
+            )
+            .expect("error inserting into main table");
+        }
 
         let tx = conn.transaction().expect("problem starting transaction");
 
@@ -291,6 +321,18 @@ fn create_tables_if_needed(conn: &Connection) {
         .expect("Error creating table rand_cluster_iterations");
 
         bump(conn, 5);
+    }
+
+    if version < 6 {
+        info!("applying changes for version 6");
+
+        conn.execute(
+            "ALTER TABLE main ADD killed BOOLEAN DEFAULT FALSE",
+            NO_PARAMS,
+        )
+        .expect("Error creating table rand_cluster_iterations");
+
+        bump(conn, 6);
     }
 
     info!("database schema up tp date");

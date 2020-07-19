@@ -369,10 +369,14 @@ impl Config {
         F: Fn(&mut Worker<Allocator>) -> T + Send + Sync + 'static,
     {
         if self.hosts.is_some() && self.process_id.is_none() {
+            let timeout = std::env::var("DIAMETER_TIMEOUT")
+                .unwrap_or("3600".to_owned())
+                .parse::<u64>()
+                .expect("failed to parse the timeout");
             let exec = std::env::args().nth(0).unwrap();
             info!("spawning executable {:?}", exec);
             // This is the top level invocation, which should spawn the processes with ssh
-            let handles: Vec<std::process::Child> = self
+            let mut handles: Vec<std::process::Child> = self
                 .hosts
                 .as_ref()
                 .unwrap()
@@ -391,9 +395,39 @@ impl Config {
                 })
                 .collect();
 
-            for mut h in handles {
-                info!("Waiting for ssh process to finish");
-                h.wait().expect("problem waiting for the ssh process");
+            info!("Busy wait for ssh process to finish");
+            let timer = std::time::Instant::now();
+            let timeout = std::time::Duration::from_secs(timeout);
+            let step = std::time::Duration::from_secs(1);
+            let mut killed = false;
+            let mut should_exit = false;
+            while !should_exit {
+                std::thread::sleep(step);
+                let should_kill = timer.elapsed() > timeout;
+                if should_kill {
+                    warn!("TIMEOUT: Killing subprocesses");
+                }
+                for h in handles.iter_mut() {
+                    match h.try_wait().expect("problem waiting for the ssh process") {
+                        Some(status) => {
+                            info!("subprocess terminated with {:?}", status);
+                            should_exit = true;
+                        }
+                        None => {
+                            if should_kill {
+                                h.kill().expect("problem killing subprocess");
+                                killed = true;
+                                should_exit = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if killed {
+                let mut rep = reporter::Reporter::new(self.clone());
+                rep.killed(timer.elapsed());
+                rep.report();
             }
 
             Err(ExecError::RemoteExecution)
