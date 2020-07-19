@@ -564,8 +564,8 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         ),
     );
     datasets.insert(
-        "USA-x40".to_owned(),
-        builder.layered(40, datasets["USA"].clone()),
+        "USA-x20".to_owned(),
+        builder.layered(20, datasets["USA"].clone()),
     );
     datasets
 }
