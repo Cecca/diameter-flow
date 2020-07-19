@@ -23,6 +23,7 @@ impl DistributedAdjacencies {
             .with_items_name("edges")
             .start();
         let mut adjacencies = HashMap::new();
+        let mut cnt = 0;
         edges.for_each(|u, v, w| {
             if u % num_processors == proc_id {
                 adjacencies.entry(u).or_insert_with(Vec::new).push((v, w));
@@ -31,7 +32,9 @@ impl DistributedAdjacencies {
                 adjacencies.entry(v).or_insert_with(Vec::new).push((u, w));
             }
             pl.update_light(1u64);
+            cnt += 1;
         });
+        assert!(cnt == meta.num_edges);
         pl.stop();
         Self {
             n,
