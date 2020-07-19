@@ -695,6 +695,19 @@ fn main() -> Result<()> {
                 worker.peers() as u32,
                 &dataset,
             );
+            // Barrier to synchronize on dataset loading
+            info!("Waiting for others to load the dataset");
+            let (mut input, probe) = worker.dataflow::<(), _, _>(|scope| {
+                use timely::dataflow::operators::input::Input;
+                use timely::dataflow::operators::*;
+                let (input, stream) = scope.new_input::<()>();
+                let probe = stream.broadcast().probe();
+                (input, probe)
+            });
+            input.send(());
+            input.close();
+            worker.step_while(|| !probe.done());
+
             info!("loaded adjacencies statically ({:?})", adj_timer.elapsed());
             let mut final_approx_probe = None;
             let mut iteration_info = Vec::new();
