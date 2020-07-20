@@ -577,15 +577,10 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         );
     }
 
-    for basedata in &["livejournal-lcc", "sk-2005-lcc"] {
-        if let Some(inner) = datasets.get(*basedata) {
-            datasets.insert(
-                format!("{}-rweight", basedata),
-                builder.rweight(13098235, inner.clone()),
-            );
-        }
-    }
-
+    datasets.insert(
+        "sk-2005-lcc-rweight".to_owned(),
+        builder.rweight(13451845, datasets["sk-2005-lcc"].clone()),
+    );
     datasets.insert(
         "livejournal-lcc-x10-rweight".to_owned(),
         builder.layered(
