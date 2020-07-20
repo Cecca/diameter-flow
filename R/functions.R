@@ -61,15 +61,6 @@ add_graph_type <- function(data) {
         ))
 }
 
-add_family <- function(data) {
-    data %>%
-        mutate(graph_family = case_when(
-            str_detect(dataset, "USA") ~ "USA",
-            str_detect(dataset, "livejournal") ~ "livejournal",
-            str_detect(dataset, "sk-2005") ~ "sk-2005",
-        ))
-}
-
 static_diam_vs_time <- function(to_plot) {
     to_plot <- to_plot %>%
         mutate(total_time = total_time_ms / 1000) %>%

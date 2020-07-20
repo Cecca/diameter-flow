@@ -6,7 +6,6 @@ mod stream;
 
 use bitstream_io::*;
 use std::fmt::Debug;
-use std::fs::File;
 use std::io::{Read, Result as IOResult, Write};
 use std::path::{Path, PathBuf};
 
@@ -394,65 +393,6 @@ impl Drop for CompressedPairsWriter {
     fn drop(&mut self) {
         self.flush()
             .expect("problems flushing the compressed pairs writer");
-    }
-}
-
-pub struct CompressedTripletsWriterStream {
-    output_path: PathBuf,
-    writers: Vec<(
-        stream::DifferenceStreamWriter<File>,
-        BitWriter<Box<dyn Write>, BE>,
-    )>,
-    current_file_id: usize,
-    matrix: Matrix,
-    written_edges: u64,
-}
-
-impl CompressedTripletsWriterStream {
-    pub fn to_file<P: AsRef<Path>>(path: P, node_blocks: u32, n: u32) -> Self {
-        let mut writers = Vec::new();
-        for part_id in 0..(node_blocks * node_blocks) {
-            let edges_writer = Self::get_edges_writer(&path.as_ref().to_path_buf(), part_id);
-            let weights_writer = Self::get_weights_writer(&path.as_ref().to_path_buf(), part_id);
-            writers.push((edges_writer, weights_writer));
-        }
-
-        Self {
-            output_path: path.as_ref().to_path_buf(),
-            current_file_id: 0,
-            writers,
-            matrix: Matrix::new(node_blocks, n),
-            written_edges: 0,
-        }
-    }
-
-    fn get_edges_writer(base: &PathBuf, id: u32) -> stream::DifferenceStreamWriter<File> {
-        let path = base.join(format!("part-{}.bin", id));
-        stream::DifferenceStreamWriter::new(File::create(path).expect("error opening file"))
-    }
-
-    fn get_weights_writer(base: &PathBuf, id: u32) -> BitWriter<Box<dyn Write>, BE> {
-        let path = base.join(format!("weights-{}.bin", id));
-        BitWriter::<_, BE>::new(Box::new(std::io::BufWriter::new(
-            File::create(path).expect("error opening file"),
-        )))
-    }
-
-    pub fn write(&mut self, (u, v, w): (u32, u32, u32)) {
-        let z = morton::pair_to_zorder((u, v));
-        let (ewriter, wwriter) = &mut self.writers[self.matrix.row_major_block((u, v)) as usize];
-        ewriter.write(z).expect("error writing edge");
-        wwriter.write(32, w).expect("error writing weight");
-    }
-
-    pub fn flush(self) {
-        for (ewriter, wwriter) in self.writers.into_iter() {
-            ewriter.close().expect("error closing stream");
-            wwriter
-                .into_writer()
-                .flush()
-                .expect("error flushing stream");
-        }
     }
 }
 
