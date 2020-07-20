@@ -313,7 +313,7 @@ impl Dataset {
 
                 inner.prepare();
                 let edges_dir = self.edges_directory();
-                info!("creating layered dataset into {:?}", edges_dir);
+                info!("creating reweighted dataset into {:?}", edges_dir);
                 std::fs::create_dir_all(&edges_dir);
                 let inner_meta = inner.metadata();
                 let n = inner_meta.num_nodes;
@@ -328,13 +328,13 @@ impl Dataset {
                     .with_expected_updates(inner_meta.num_edges)
                     .start();
 
-                let mut compressor = CompressedTripletsWriter::to_file(edges_dir, 32);
+                let mut compressor = CompressedTripletsWriterStream::to_file(edges_dir, 32, n);
                 inner.for_each(|u, v, _orig_weight| {
                     let w = distribution.sample(&mut rng);
                     compressor.write((u, v, w));
                     pl.update_light(1u64);
                 });
-
+                compressor.flush();
                 pl.stop();
             }
 

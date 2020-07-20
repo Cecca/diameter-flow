@@ -10,4 +10,6 @@ suppressPackageStartupMessages({
     library(ggiraph)
     library(Hmisc)
     library(latex2exp)
+    library(units)
+    library(ggforce)
 })
