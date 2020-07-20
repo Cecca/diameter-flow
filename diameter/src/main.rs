@@ -582,6 +582,10 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         builder.rweight(13451845, datasets["sk-2005-lcc"].clone()),
     );
     datasets.insert(
+        "twitter-2010-lcc-rweight".to_owned(),
+        builder.rweight(13451845, builder.lcc(datasets["twitter-2010"].clone())),
+    );
+    datasets.insert(
         "livejournal-lcc-x10-rweight".to_owned(),
         builder.layered(
             10,
