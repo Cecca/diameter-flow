@@ -586,26 +586,30 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         }
     }
 
-    for &layers in &[5, 10, 100] {
-        for basedata in &[
-            format!("livejournal-lcc-x{}", layers),
-            format!("sk-2005-lcc-x{}", layers),
-        ] {
-            if let Some(inner) = datasets.get(basedata) {
-                datasets.insert(
-                    format!("{}-rweight", basedata),
-                    builder.rweight(13098235, inner.clone()),
-                );
-            }
-        }
-    }
-
+    datasets.insert(
+        "livejournal-lcc-x10-rweight".to_owned(),
+        builder.layered(
+            10,
+            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
+        ),
+    );
+    datasets.insert(
+        "livejournal-lcc-x20-rweight".to_owned(),
+        builder.layered(
+            20,
+            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
+        ),
+    );
     datasets.insert(
         "livejournal-lcc-x40-rweight".to_owned(),
-        builder.rweight(
-            13451845,
-            builder.layered(40, datasets["livejournal-lcc"].clone()),
+        builder.layered(
+            40,
+            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
         ),
+    );
+    datasets.insert(
+        "USA-x10".to_owned(),
+        builder.layered(10, datasets["USA"].clone()),
     );
     datasets.insert(
         "USA-x20".to_owned(),
