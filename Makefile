@@ -15,7 +15,7 @@ install:
 	cargo install --path diameter --force
 
 .PHONY: deps
-deps: java/webgraph-3.6.3.jar java/dsiutils-2.6.2.jar
+deps: java/webgraph-3.6.3.jar java/dsiutils-2.6.5.jar
 
 try-java-small: java/BVGraphToEdges.class
 	rm -rf /tmp/out.bin
@@ -47,12 +47,12 @@ java/webgraph-3.6.3.jar: java/webgraph-3.6.3-bin.tar.gz
 	cd java && tar -xvf webgraph-3.6.3-bin.tar.gz --strip-components=1 \
 	 webgraph-3.6.3/webgraph-3.6.3.jar
 
-java/dsiutils-2.6.2.jar: java/webgraph-deps.tar.gz
+java/dsiutils-2.6.5.jar: java/webgraph-deps.tar.gz
 	cd java && tar -xvf webgraph-deps.tar.gz \
-	 dsiutils-2.6.2.jar \
-	 fastutil-8.3.0.jar \
+	 dsiutils-2.6.5.jar \
+	 fastutil-8.3.1.jar \
 	 jsap-2.1.jar \
-	 slf4j-api-1.7.26.jar
+	 slf4j-api-1.7.30.jar
 
 .PHONY: analysis
 analysis:
