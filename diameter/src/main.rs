@@ -560,20 +560,10 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "colorado-x2".to_owned(),
         builder.layered(2, datasets.get("colorado").unwrap().clone()),
     );
-    for &layers in &[5, 10, 100] {
+    for &layers in &[2, 4, 6, 8, 10] {
         datasets.insert(
             format!("USA-x{}", layers),
             builder.layered(layers, datasets.get("USA").unwrap().clone()),
-        );
-        datasets.insert(
-            format!("livejournal-lcc-x{}", layers),
-            builder.layered(layers, datasets.get("livejournal-lcc").unwrap().clone()),
-        );
-    }
-    for &layers in &[5, 10] {
-        datasets.insert(
-            format!("sk-2005-lcc-x{}", layers),
-            builder.layered(layers, datasets.get("sk-2005-lcc").unwrap().clone()),
         );
     }
 
