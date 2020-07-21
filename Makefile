@@ -35,7 +35,7 @@ convert-twitter: java/BVGraphToEdges.class
 	/mnt/ssd/tmp/out.bin
 
 java/BVGraphToEdges.class: java/BVGraphToEdges.java
-	cd java && javac -cp webgraph-3.6.3.jar:slf4j-api-1.7.26.jar:dsiutils-2.6.2.jar:fastutil-8.3.0.jar:jsap-2.1.jar BVGraphToEdges.java
+	cd java && javac -cp webgraph-3.6.3.jar:slf4j-api-1.7.30.jar:dsiutils-2.6.5.jar:fastutil-8.3.1.jar:jsap-2.1.jar BVGraphToEdges.java
 
 java/webgraph-3.6.3-bin.tar.gz:
 	cd java && curl -O http://webgraph.di.unimi.it/webgraph-3.6.3-bin.tar.gz
