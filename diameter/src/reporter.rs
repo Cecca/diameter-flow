@@ -139,13 +139,12 @@ impl Reporter {
                 ],
             )
             .expect("error inserting into main table");
-        }
+        } else {
+            let tx = conn.transaction().expect("problem starting transaction");
 
-        let tx = conn.transaction().expect("problem starting transaction");
-
-        {
-            // Insert into main table
-            tx.execute(
+            {
+                // Insert into main table
+                tx.execute(
                 "INSERT INTO main ( sha, date, seed, threads, hosts, dataset, algorithm, parameters, diameter, total_time_ms, offline, final_diameter_time_ms )
                  VALUES ( ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12 )",
                 params![
@@ -165,40 +164,41 @@ impl Reporter {
             )
             .expect("error inserting into main table");
 
-            // Insert into counters table
-            let mut stmt = tx
-                .prepare(
-                    "INSERT INTO counters ( sha, counter, outer_iter, inner_iter, count
+                // Insert into counters table
+                let mut stmt = tx
+                    .prepare(
+                        "INSERT INTO counters ( sha, counter, outer_iter, inner_iter, count
                     ) VALUES ( ?1, ?2, ?3, ?4, ?5 )",
-                )
-                .expect("failed to prepare statement");
-            for (name, outer, inner, count) in self.counters.iter() {
-                stmt.execute(params![sha, name, outer, inner, *count as u32])
-                    .expect("Failure to insert into counters table");
-            }
+                    )
+                    .expect("failed to prepare statement");
+                for (name, outer, inner, count) in self.counters.iter() {
+                    stmt.execute(params![sha, name, outer, inner, *count as u32])
+                        .expect("Failure to insert into counters table");
+                }
 
-            if !self.rand_cluster_guesses.is_empty() {
-                let mut stmt = tx.prepare(
+                if !self.rand_cluster_guesses.is_empty() {
+                    let mut stmt = tx.prepare(
                     "INSERT INTO rand_cluster_iterations (sha, iteration, iteration_radius, duration_ms, num_centers)
                     VALUES (?1, ?2, ?3, ?4, ?5)",
                 ).expect("failed to prepare statement");
 
-                for (iteration, iteration_radius, duration, num_centers) in
-                    self.rand_cluster_guesses.iter()
-                {
-                    stmt.execute(params![
-                        sha,
-                        iteration,
-                        iteration_radius,
-                        duration.as_millis() as u32,
-                        num_centers
-                    ])
-                    .expect("failed to execute statement");
+                    for (iteration, iteration_radius, duration, num_centers) in
+                        self.rand_cluster_guesses.iter()
+                    {
+                        stmt.execute(params![
+                            sha,
+                            iteration,
+                            iteration_radius,
+                            duration.as_millis() as u32,
+                            num_centers
+                        ])
+                        .expect("failed to execute statement");
+                    }
                 }
             }
-        }
 
-        tx.commit().expect("error committing insertions");
+            tx.commit().expect("error committing insertions");
+        }
         conn.close().expect("error inserting into the database");
     }
 }
