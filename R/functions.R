@@ -17,6 +17,12 @@ table_main <- function(con, path) {
     tbl(con, "main")
 }
 
+table_rand_cluster_iterations <- function(con, path) {
+    print(paste("Referencing rand_cluster_iterations table", path))
+    tbl(con, "rand_cluster_iterations")
+}
+
+
 # The path argument is just a trick to make drake notice that something happened
 table_counters <- function(con, path) {
     print(paste("Referencing counters table", path))

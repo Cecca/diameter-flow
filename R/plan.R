@@ -1,8 +1,16 @@
 con <- db_connection()
 
 plan <- drake_plan(
+    killed_dstepping = table_main(con, file_in("diameter-results.sqlite")) %>%
+        filter(killed, algorithm == "DeltaStepping") %>%
+        collect(),
+
+
     main_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        filter(!killed) %>%
+        filter(algorithm %in% c("RandClusterGuess", "DeltaStepping", "Sequential")) %>%
         collect() %>%
+        bind_rows(killed_dstepping) %>%
         mutate(n_hosts = str_count(hosts, "eridano")) %>%
         # Select 12 hosts and the sequential algorithm
         filter(n_hosts %in% c(12, 0)) %>%
@@ -10,7 +18,6 @@ plan <- drake_plan(
         mutate(diameter = if_else(algorithm %in% c("Bfs", "DeltaStepping"),
                                   as.integer(2 * diameter),
                                   diameter)) %>%
-        filter(!killed) %>%
         mutate(
             total_time = set_units(total_time_ms, "ms") %>% set_units("s"),
             final_diameter_time = set_units(final_diameter_time_ms, "ms") %>% set_units("s"),
@@ -45,6 +52,15 @@ plan <- drake_plan(
             )) %>%
             drop_na()
     },
+
+    parameter_dep_data = main_data %>%
+        filter(dataset == "USA", 
+               algorithm == "RandClusterGuess",
+               parameters == "100000:29,10") %>%
+        inner_join(table_rand_cluster_iterations(con, file_in("diameter-results.sqlite")) %>% collect()) %>%
+        mutate(duration = set_units(duration_ms, "ms")) %>%
+        select(-duration_ms)
+    ,
 
     plot_diameter_time = main_data %>%
         filter(dataset %in% c("sk-2005-lcc-rweight", 
@@ -98,6 +114,12 @@ plan <- drake_plan(
         filter(dataset %in% c("sk-2005-lcc-rweight", 
                               "twitter-2010-lcc-rweight", 
                               "USA-x10")) %>%
+        mutate(killed=as.logical(killed)) %>%
+        mutate(total_time = if_else(killed, 5*3600.0, as.double(drop_units(total_time))),
+               final_diameter_time = drop_units(final_diameter_time)) %>%
+        mutate(label=if_else(killed, 
+                             "timed out > 5h", 
+                             scales::number(total_time, suffix=" s"))) %>%
         mutate(dataset = case_when(
             str_detect(dataset, "sk-2005") ~ "sk-2005",
             str_detect(dataset, "twitter-2010") ~ "twitter-2010",
@@ -111,16 +133,27 @@ plan <- drake_plan(
         geom_col(position="dodge", width=0.4) +
         # geom_col(aes(y=final_diameter_time, fill=algorithm), 
         #          width=0.4,
-        #          color="black",
+        #          fill="#351410",
         #          show.legend=F,
         #          position="dodge") +
-        scale_y_unit(breaks=c(0, 1000,2000,3000)) +
+        geom_text(aes(label=label,
+                       y=total_time+500),
+                   position=position_dodge(.8),
+                   color="black",
+                   size=3,
+                   show.legend=FALSE) +
+        scale_y_continuous("time", breaks=c(0,3000,6000,9000,12000,15000)) +
         scale_fill_manual(values=list(
             "DeltaStepping" = "gray",
             "RandClusterGuess" = "#B34537"
         )) +
+        # annotate("text",
+        #          label="timed out",
+        #          hjust=1,
+        #          x=2.5,
+        #          y=14000) +
         theme_tufte() +
-        theme(legend.position="top",
+        theme(legend.position="none",
               panel.grid.major.x=element_blank(),
               panel.grid.minor.x=element_blank(),
               panel.grid.minor.y=element_blank(),
@@ -153,7 +186,7 @@ plan <- drake_plan(
             "RandClusterGuess" = "#B34537"
         )) +
         theme_tufte() +
-        theme(legend.position="top",
+        theme(legend.position=c(.8, .8),
               panel.grid.major.x=element_blank(),
               panel.grid.minor.x=element_blank(),
               panel.grid.minor.y=element_blank(),
@@ -164,6 +197,126 @@ plan <- drake_plan(
 
     figure_time = ggsave("export/time.png", plot_time, width=4,height=4),
     figure_diam = ggsave("export/diameter.png", plot_diameter, width=4,height=4),
+
+    plot_parameter_dep_time = {
+        plotdata <- parameter_dep_data %>%
+            mutate(duration = set_units(duration, "s")) %>%
+            filter(iteration_radius >= 290) %>%
+            arrange(iteration_radius) %>%
+            mutate(iteration_radius_multiple = iteration_radius / 2900,
+                   duration = drop_units(duration))
+        durations <- plotdata %>% select(duration) %>% pull()
+
+        ggplot(plotdata, aes(x=iteration_radius_multiple, y=duration)) +
+            geom_point() +
+            geom_linerange(aes(ymin=0,
+                               ymax=duration)) +
+            geom_rangeframe() +
+            # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
+            scale_y_continuous(trans="log10", breaks=durations) +
+            # scale_y_unit(trans="log10",
+            #              breaks=c(237, 570, 1452, 4688, 13065)) +
+            scale_x_continuous(trans="log10",
+                            labels=c("0.1", "1", "10", "100", "1000"),
+                            breaks=c(0.1, 1, 10,100,1000)) +
+            labs(x="radius guess, as multiple of the average edge weight") +
+            theme_tufte()
+    }
+    ,
+
+    plot_parameter_dep_time_cumulative = {
+        plotdata <- parameter_dep_data %>%
+            mutate(duration = set_units(duration, "s")) %>%
+            filter(iteration_radius >= 290) %>%
+            arrange(iteration_radius) %>%
+            mutate(iteration_radius_multiple = iteration_radius / 2900,
+                cumulative_time = cumsum(duration) %>% drop_units())
+
+        ggplot(plotdata, aes(x=iteration_radius_multiple, y=cumulative_time)) +
+            geom_point() +
+            geom_line() +
+            geom_rangeframe() +
+            # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
+            scale_y_continuous(trans="log10",
+                         breaks=c(237, 570, 1452, 4688, 13065)) +
+            scale_x_continuous(trans="log10",
+                            labels=c("0.1", "1", "10", "100", "1000"),
+                            breaks=c(0.1, 1, 10,100,1000)) +
+            labs(x="radius guess, as multiple of the average edge weight",
+                 y="cumulative time") +
+            theme_tufte()
+    }
+    ,
+
+    plot_parameter_dep_size = parameter_dep_data %>%
+        mutate(duration = set_units(duration, "s")) %>%
+        filter(iteration_radius >= 290) %>%
+        arrange(iteration_radius) %>%
+        mutate(iteration_radius_multiple = iteration_radius / 2900) %>%
+        ggplot(aes(x=iteration_radius_multiple, y=num_centers)) +
+        geom_point() +
+        geom_line() +
+        geom_rangeframe() +
+        # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
+        # scale_y_unit(breaks=c(237, 570, 1452, 4688, 13065)) +
+        scale_x_continuous(trans="log10", labels=c("0.1", "1", "10", "100", "1000"),
+                           breaks=c(0.1,1,10,100,1000)) +
+        scale_y_continuous(trans="log10") +
+        labs(x="radius guess, as multiple of the average edge weight",
+             y="size of the auxiliary graph (nodes)") +
+        theme_tufte()
+    ,
+
+    figure_parameter_dep = {
+        p <- plot_grid(
+            plot_parameter_dep_time + theme(axis.title.x = element_blank()), 
+            plot_parameter_dep_time_cumulative, 
+            plot_parameter_dep_size + theme(axis.title.x = element_blank()),
+            align="h",
+            ncol=3)
+        ggsave("export/param_dep.png", p, width=8, height=3)
+    },
+
+    data_scalability = main_data %>%
+        filter(dataset %in% c("USA", "USA-x10", "USA-x5"),
+               !killed,
+               parameters %in% c("10000000:20000,10", "", "2950000000")) %>%
+        mutate(scale = as.integer(str_extract(dataset, "\\d+"))) %>%
+        replace_na(list(scale = 1)) %>%
+        group_by(scale, algorithm, parameters) %>%
+        summarise(total_time = mean(total_time)) %>%
+        ungroup()
+    ,
+
+    plot_scalability_n = data_scalability %>%
+        mutate(total_time=drop_units(total_time)) %>%
+        ggplot(aes(scale, total_time, color=algorithm)) +
+        geom_point() +
+        geom_line() +
+        geom_label_repel(aes(label=scales::number(total_time,
+                                                  suffix=" s")),
+                         show.legend=F) +
+        geom_rangeframe() +
+        # scale_y_unit() +
+        scale_x_continuous(breaks = c(1,5,10),
+                           labels = c("USA", "USA-x5", "USA-x10")) +
+        scale_color_manual(values=c(
+            "DeltaStepping" = "#808080",
+            "Sequential" = "#4C4CFF",
+            "RandClusterGuess" = "#B34537"
+        )) +
+        labs(x="dataset",
+             y="time (s)") +
+        theme_tufte() +
+        theme(legend.position = c(.8, .8),
+            #   axis.line.y.left = element_line(size=.5),
+            #   axis.line.x.bottom = element_line(size=.5),
+        )
+    ,
+
+    figure_scalability_n =
+        ggsave("export/scalability_n.png", plot_scalability_n, width=8, height=3)
+    ,
 
     # Use only entries that report the time it takes to 
     # time_dependency_data = table_main(con, file_in("diameter-results.sqlite")) %>%

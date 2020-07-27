@@ -13,4 +13,5 @@ suppressPackageStartupMessages({
     library(units)
     library(ggforce)
     library(ggthemes)
+    library(ggrepel)
 })
