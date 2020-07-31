@@ -12,6 +12,7 @@ plan <- drake_plan(
         collect() %>%
         bind_rows(killed_dstepping) %>%
         mutate(n_hosts = str_count(hosts, "eridano")) %>%
+        mutate(algorithm = if_else(algorithm == "RandClusterGuess", "ClusterDiameter", algorithm)) %>%
         # Select 12 hosts and the sequential algorithm
         filter(n_hosts %in% c(12, 0)) %>%
         filter(!(dataset %in% c("sk-2005", "USA-E"))) %>%
@@ -23,6 +24,25 @@ plan <- drake_plan(
             final_diameter_time = set_units(final_diameter_time_ms, "ms") %>% set_units("s"),
         ) %>%
         select(-hosts, -total_time_ms, -final_diameter_time_ms)
+    ,
+
+    diameter_insight_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        filter(sha %in% c("f5da6e", "f556bd", "bfe3e5", "2525cd", "be685f")) %>%
+        collect() %>%
+        mutate(
+            total_time = set_units(total_time_ms, "ms") %>% set_units("s"),
+            final_diameter_time = set_units(final_diameter_time_ms, "ms") %>% set_units("s"),
+            clustering_time = total_time - final_diameter_time,
+        ) %>%
+        separate(parameters, into=c("radius", "base"), convert=T) %>%
+        mutate(iteration_radius = case_when(
+            radius == 295 ~ 290,
+            radius == 2950 ~ 2900,
+            radius == 29500 ~ 29000,
+            radius == 295000 ~ 290000,
+            radius == 2950000 ~ 2900000,
+        )) %>%
+        select(iteration_radius, diameter)
     ,
 
     bounds_data = {
@@ -55,11 +75,12 @@ plan <- drake_plan(
 
     parameter_dep_data = main_data %>%
         filter(dataset == "USA", 
-               algorithm == "RandClusterGuess",
+               algorithm == "ClusterDiameter",
                parameters == "100000:29,10") %>%
         inner_join(table_rand_cluster_iterations(con, file_in("diameter-results.sqlite")) %>% collect()) %>%
         mutate(duration = set_units(duration_ms, "ms")) %>%
-        select(-duration_ms)
+        select(-duration_ms, -diameter) %>%
+        inner_join(diameter_insight_data)
     ,
 
     plot_diameter_time = main_data %>%
@@ -104,7 +125,7 @@ plan <- drake_plan(
     figure_diam_vs_time = ggsave("export/diam_vs_time.png",
                                     plot_diameter_time,
                                     width=6,
-                                    height=4),
+                                    height=4, dpi=300),
 
     interactive_diam_vs_time = girafe(ggobj=plot_diameter_time,
                                       width_svg=7,
@@ -145,7 +166,7 @@ plan <- drake_plan(
         scale_y_continuous("time", breaks=c(0,3000,6000,9000,12000,15000)) +
         scale_fill_manual(values=list(
             "DeltaStepping" = "gray",
-            "RandClusterGuess" = "#B34537"
+            "ClusterDiameter" = "#B34537"
         )) +
         # annotate("text",
         #          label="timed out",
@@ -183,7 +204,7 @@ plan <- drake_plan(
         # # scale_fill_brewer(type="seq", palette="Dark2") +
         scale_fill_manual(values=list(
             "DeltaStepping" = "gray",
-            "RandClusterGuess" = "#B34537"
+            "ClusterDiameter" = "#B34537"
         )) +
         theme_tufte() +
         theme(legend.position=c(.8, .8),
@@ -195,8 +216,8 @@ plan <- drake_plan(
               panel.ontop = TRUE)
     ,
 
-    figure_time = ggsave("export/time.png", plot_time, width=4,height=4),
-    figure_diam = ggsave("export/diameter.png", plot_diameter, width=4,height=4),
+    figure_time = ggsave("export/time.png", plot_time, width=4,height=4, dpi=300),
+    figure_diam = ggsave("export/diameter.png", plot_diameter, width=4,height=4, dpi=300),
 
     plot_parameter_dep_time = {
         plotdata <- parameter_dep_data %>%
@@ -209,17 +230,44 @@ plan <- drake_plan(
 
         ggplot(plotdata, aes(x=iteration_radius_multiple, y=duration)) +
             geom_point() +
-            geom_linerange(aes(ymin=0,
-                               ymax=duration)) +
-            geom_rangeframe() +
+            geom_line() +
+            # geom_linerange(aes(ymin=0,
+            #                    ymax=duration)) +
+            geom_rangeframe(color="black") +
             # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
-            scale_y_continuous(trans="log10", breaks=durations) +
+            scale_y_continuous(trans="log10", 
+                               label=scales::number_format(),
+                               breaks=durations) +
             # scale_y_unit(trans="log10",
             #              breaks=c(237, 570, 1452, 4688, 13065)) +
             scale_x_continuous(trans="log10",
                             labels=c("0.1", "1", "10", "100", "1000"),
                             breaks=c(0.1, 1, 10,100,1000)) +
-            labs(x="radius guess, as multiple of the average edge weight") +
+            labs(x="radius guess, as multiple of the average edge weight",
+                 y="duration (s)") +
+            theme_tufte()
+    }
+    ,
+
+    plot_parameter_dep_diameter = {
+        plotdata <- parameter_dep_data %>%
+            mutate(duration = set_units(duration, "s")) %>%
+            filter(iteration_radius >= 290) %>%
+            arrange(iteration_radius) %>%
+            mutate(iteration_radius_multiple = iteration_radius / 2900,
+                   duration = drop_units(duration))
+
+        ggplot(plotdata, aes(x=iteration_radius_multiple, y=diameter)) +
+            geom_point() +
+            geom_line() +
+            geom_rangeframe(color="black") +
+            scale_y_continuous(#trans="log10", 
+                               label=scales::number_format(scale=0.0000001)) +
+            scale_x_continuous(trans="log10",
+                            labels=c("0.1", "1", "10", "100", "1000"),
+                            breaks=c(0.1, 1, 10,100,1000)) +
+            labs(x="radius guess, as multiple of the average edge weight",
+                 y="diameter (millions)") +
             theme_tufte()
     }
     ,
@@ -235,7 +283,7 @@ plan <- drake_plan(
         ggplot(plotdata, aes(x=iteration_radius_multiple, y=cumulative_time)) +
             geom_point() +
             geom_line() +
-            geom_rangeframe() +
+            geom_rangeframe(color="black") +
             # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
             scale_y_continuous(trans="log10",
                          breaks=c(237, 570, 1452, 4688, 13065)) +
@@ -243,7 +291,7 @@ plan <- drake_plan(
                             labels=c("0.1", "1", "10", "100", "1000"),
                             breaks=c(0.1, 1, 10,100,1000)) +
             labs(x="radius guess, as multiple of the average edge weight",
-                 y="cumulative time") +
+                 y="cumulative time (s)") +
             theme_tufte()
     }
     ,
@@ -256,7 +304,7 @@ plan <- drake_plan(
         ggplot(aes(x=iteration_radius_multiple, y=num_centers)) +
         geom_point() +
         geom_line() +
-        geom_rangeframe() +
+        geom_rangeframe(color="black") +
         # geom_text_repel(aes(label=cumulative_time %>% drop_units())) +
         # scale_y_unit(breaks=c(237, 570, 1452, 4688, 13065)) +
         scale_x_continuous(trans="log10", labels=c("0.1", "1", "10", "100", "1000"),
@@ -270,11 +318,12 @@ plan <- drake_plan(
     figure_parameter_dep = {
         p <- plot_grid(
             plot_parameter_dep_time + theme(axis.title.x = element_blank()), 
-            plot_parameter_dep_time_cumulative, 
-            plot_parameter_dep_size + theme(axis.title.x = element_blank()),
+            # plot_parameter_dep_time_cumulative, 
+            plot_parameter_dep_size,# + theme(axis.title.x = element_blank()),
+            plot_parameter_dep_diameter + theme(axis.title.x = element_blank()),
             align="h",
             ncol=3)
-        ggsave("export/param_dep.png", p, width=8, height=3)
+        ggsave("export/param_dep.png", p, width=8, height=3, dpi=300)
     },
 
     data_scalability = main_data %>%
@@ -290,20 +339,20 @@ plan <- drake_plan(
 
     plot_scalability_n = data_scalability %>%
         mutate(total_time=drop_units(total_time)) %>%
-        ggplot(aes(scale, total_time, color=algorithm)) +
+        ggplot(aes(scale, total_time, color=algorithm, shape=algorithm)) +
         geom_point() +
         geom_line() +
         geom_label_repel(aes(label=scales::number(total_time,
                                                   suffix=" s")),
                          show.legend=F) +
-        geom_rangeframe() +
-        # scale_y_unit() +
+        
+        geom_rangeframe(color="black") +
         scale_x_continuous(breaks = c(1,5,10),
                            labels = c("USA", "USA-x5", "USA-x10")) +
         scale_color_manual(values=c(
             "DeltaStepping" = "#808080",
             "Sequential" = "#4C4CFF",
-            "RandClusterGuess" = "#B34537"
+            "ClusterDiameter" = "#B34537"
         )) +
         labs(x="dataset",
              y="time (s)") +
@@ -315,7 +364,7 @@ plan <- drake_plan(
     ,
 
     figure_scalability_n =
-        ggsave("export/scalability_n.png", plot_scalability_n, width=8, height=3)
+        ggsave("export/scalability_n.png", plot_scalability_n, width=8, height=3, dpi=300)
     ,
 
     # Use only entries that report the time it takes to 
