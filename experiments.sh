@@ -4,6 +4,8 @@ set -e
 
 BIN=$HOME/.cargo/bin/diameter-flow
 
+GRAPHS_DIR=~/graphs/
+
 # Five hour timeout
 export DIAMETER_TIMEOUT=18000
 
@@ -16,7 +18,7 @@ function run_social() {
         for DELTA in $AVG_WEIGHT
         do
             $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 8 \
             --seed $SEED \
@@ -28,7 +30,7 @@ function run_social() {
         for RADIUS in $AVG_WEIGHT $(( $AVG_WEIGHT / 2 ))
         do
               $BIN \
-                  --ddir /mnt/ssd/graphs \
+                  --ddir $GRAPHS_DIR\
                   --hosts ~/diameter-hosts \
                   --threads 8 \
                   --seed $SEED \
@@ -47,7 +49,7 @@ function run_web() {
         for DELTA in $AVG_WEIGHT
         do
             $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 8 \
             --seed $SEED \
@@ -59,7 +61,7 @@ function run_web() {
         for RADIUS in $AVG_WEIGHT $(( $AVG_WEIGHT / 2 ))
         do
               $BIN \
-                  --ddir /mnt/ssd/graphs \
+                  --ddir $GRAPHS_DIR\
                   --hosts ~/diameter-hosts \
                   --threads 8 \
                   --seed $SEED \
@@ -79,7 +81,7 @@ function run_roads() {
         for DELTA in $AVG_WEIGHT
         do
             $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 8 \
             --seed $SEED \
@@ -91,7 +93,7 @@ function run_roads() {
         for RADIUS in $AVG_WEIGHT $(( $AVG_WEIGHT / 2 ))
         do
               $BIN \
-                  --ddir /mnt/ssd/graphs \
+                  --ddir $GRAPHS_DIR\
                   --hosts ~/diameter-hosts \
                   --threads 8 \
                   --seed $SEED \
@@ -112,7 +114,7 @@ function run_scalability() {
         DATASET=USA
         AVG_WEIGHT=2950
         $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts /tmp/hosts-$NUM_HOSTS \
             --threads 8 \
             --seed $SEED \
@@ -128,7 +130,7 @@ function run_scalability_n() {
     for DATASET in USA USA-x5 USA-x10
     do
         $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 8 \
             --seed $SEED \
@@ -136,7 +138,7 @@ function run_scalability_n() {
             $DATASET
 
         $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 8 \
             --seed $SEED \
@@ -144,7 +146,7 @@ function run_scalability_n() {
             $DATASET
 
         $BIN \
-            --ddir /mnt/ssd/graphs \
+            --ddir $GRAPHS_DIR\
             --hosts ~/diameter-hosts \
             --threads 4 \
             --seed $SEED \
