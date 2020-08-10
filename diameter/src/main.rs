@@ -557,17 +557,6 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
     }
 
     datasets.insert(
-        "colorado-x2".to_owned(),
-        builder.layered(2, datasets.get("colorado").unwrap().clone()),
-    );
-    for &layers in &[2, 4, 6, 8, 10] {
-        datasets.insert(
-            format!("USA-x{}", layers),
-            builder.layered(layers, datasets.get("USA").unwrap().clone()),
-        );
-    }
-
-    datasets.insert(
         "sk-2005-lcc-rweight".to_owned(),
         builder.rweight(13451845, datasets["sk-2005-lcc"].clone()),
     );
@@ -576,33 +565,12 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         builder.rweight(13451845, builder.lcc(datasets["twitter-2010"].clone())),
     );
     datasets.insert(
-        "livejournal-lcc-x10-rweight".to_owned(),
-        builder.layered(
-            10,
-            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
-        ),
-    );
-    datasets.insert(
-        "livejournal-lcc-x20-rweight".to_owned(),
-        builder.layered(
-            20,
-            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
-        ),
-    );
-    datasets.insert(
-        "livejournal-lcc-x40-rweight".to_owned(),
-        builder.layered(
-            40,
-            builder.rweight(13451845, datasets["livejournal-lcc"].clone()),
-        ),
+        "USA-x5".to_owned(),
+        builder.layered(10, datasets["USA"].clone()),
     );
     datasets.insert(
         "USA-x10".to_owned(),
         builder.layered(10, datasets["USA"].clone()),
-    );
-    datasets.insert(
-        "USA-x20".to_owned(),
-        builder.layered(20, datasets["USA"].clone()),
     );
     datasets
 }
