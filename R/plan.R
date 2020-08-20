@@ -26,6 +26,22 @@ plan <- drake_plan(
         select(-hosts, -total_time_ms, -final_diameter_time_ms)
     ,
 
+    scalability_data = table_main(con, file_in("diameter-results.sqlite")) %>%
+        filter(!killed) %>%
+        filter(algorithm %in% c("RandClusterGuess"),
+               dataset %in% c("USA", "USA-x10"),
+               parameters == "10000000:2950,10") %>%
+        collect() %>%
+        mutate(n_hosts = str_count(hosts, "eridano")) %>%
+        mutate(algorithm = if_else(algorithm == "RandClusterGuess", "ClusterDiameter", algorithm)) %>%
+        # Select 12 hosts and the sequential algorithm
+        mutate(
+            total_time = set_units(total_time_ms, "ms") %>% set_units("s"),
+            final_diameter_time = set_units(final_diameter_time_ms, "ms") %>% set_units("s"),
+        ) %>%
+        select(-hosts, -total_time_ms, -final_diameter_time_ms)
+    ,
+
     diameter_insight_data = table_main(con, file_in("diameter-results.sqlite")) %>%
         filter(sha %in% c("f5da6e", "f556bd", "bfe3e5", "2525cd", "be685f")) %>%
         collect() %>%

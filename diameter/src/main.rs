@@ -564,9 +564,15 @@ fn datasets_map(ddir: PathBuf) -> HashMap<String, Dataset> {
         "twitter-2010-lcc-rweight".to_owned(),
         builder.rweight(13451845, builder.lcc(datasets["twitter-2010"].clone())),
     );
+    for &factor in &[2, 4, 6, 8, 10, 12] {
+        datasets.insert(
+            format!("USA-x{}", factor),
+            builder.layered(factor, datasets["USA"].clone()),
+        );
+    }
     datasets.insert(
         "USA-x5".to_owned(),
-        builder.layered(10, datasets["USA"].clone()),
+        builder.layered(5, datasets["USA"].clone()),
     );
     datasets.insert(
         "USA-x10".to_owned(),
