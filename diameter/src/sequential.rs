@@ -29,6 +29,25 @@ pub fn approx_diameter<I: IntoIterator<Item = ((u32, u32), u32)>>(
     (distant_pairs, elapsed)
 }
 
+pub fn single_pass<I: IntoIterator<Item = ((u32, u32), u32)>>(
+    edges: I,
+    n: u32,
+) -> (Vec<(u32, (u32, u32))>, std::time::Duration) {
+    use std::time::Instant;
+
+    let neighbourhoods = init_neighbourhoods(edges, n);
+    let mut reachable = vec![false; n as usize];
+
+    let mut distant_pairs = Vec::new();
+
+    let timer = Instant::now();
+    let pair = sssp(&neighbourhoods, 0, &mut reachable);
+    distant_pairs.push(pair);
+    let elapsed = timer.elapsed();
+
+    (distant_pairs, elapsed)
+}
+
 /// Build neighbourhoods, as vectors of (weight, id) pairs
 fn init_neighbourhoods<I: IntoIterator<Item = ((u32, u32), u32)>>(
     edges: I,

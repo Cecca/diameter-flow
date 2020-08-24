@@ -122,6 +122,7 @@ impl Hosts {
 #[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 enum Algorithm {
     Sequential,
+    SequentialSingle,
     DeltaStepping(u32),
     HyperBall(usize),
     RandCluster(u32, f64),
@@ -134,6 +135,7 @@ impl Algorithm {
     fn is_sequential(&self) -> bool {
         match self {
             Self::Sequential => true,
+            Self::SequentialSingle => true,
             _ => false,
         }
     }
@@ -141,6 +143,7 @@ impl Algorithm {
     pub fn name(&self) -> String {
         match self {
             Self::Sequential => "Sequential".to_owned(),
+            Self::SequentialSingle => "SequentialSingle".to_owned(),
             Self::DeltaStepping(_) => "DeltaStepping".to_owned(),
             Self::HyperBall(_) => "HyperBall".to_owned(),
             Self::RandCluster(_, _) => "RandCluster".to_owned(),
@@ -152,6 +155,7 @@ impl Algorithm {
     pub fn parameters_string(&self) -> String {
         match self {
             Self::Sequential => "".to_owned(),
+            Self::SequentialSingle => "".to_owned(),
             Self::DeltaStepping(delta) => format!("{}", delta),
             Self::HyperBall(p) => format!("{}", p),
             Self::RandCluster(radius, base) => format!("{}:{}", radius, base),
@@ -167,12 +171,16 @@ impl TryFrom<&str> for Algorithm {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         use regex::Regex;
         let re_sequential = Regex::new(r"sequential").unwrap();
+        let re_sequential_single = Regex::new(r"sequential-single").unwrap();
         let re_delta_stepping = Regex::new(r"delta-stepping\((\d+)\)").unwrap();
         let re_hyperball = Regex::new(r"hyperball\((\d+)\)").unwrap();
         let re_rand_cluster = Regex::new(r"rand-cluster\((\d+), *(\d+)\)").unwrap();
         let re_rand_cluster_guess =
             Regex::new(r"rand-cluster-guess\((\d+), *(\d+), *(\d+)\)").unwrap();
         let re_bfs = Regex::new(r"bfs").unwrap();
+        if let Some(_captures) = re_sequential_single.captures(value) {
+            return Ok(Self::SequentialSingle);
+        }
         if let Some(_captures) = re_sequential.captures(value) {
             return Ok(Self::Sequential);
         }
@@ -638,7 +646,11 @@ fn main() -> Result<()> {
         let mut reporter = reporter::Reporter::new(config2.clone());
         let edges = dataset.as_vec();
         let timer = std::time::Instant::now();
-        let (eccentricities, diam_elapsed) = sequential::approx_diameter(edges, n);
+        let (eccentricities, diam_elapsed) = match algorithm {
+            Algorithm::Sequential => sequential::approx_diameter(edges, n),
+            Algorithm::SequentialSingle => sequential::single_pass(edges, n),
+            _ => panic!(),
+        };
         let (diam, _) = eccentricities
             .into_iter()
             .max_by_key(|pair| pair.0)
@@ -717,7 +729,9 @@ fn main() -> Result<()> {
                         &mut iteration_info,
                     )
                 }
-                Algorithm::Sequential => panic!("sequential algorithm not supported in dataflow"),
+                Algorithm::Sequential | Algorithm::SequentialSingle => {
+                    panic!("sequential algorithm not supported in dataflow")
+                }
             };
 
             if worker.index() == 0 {
